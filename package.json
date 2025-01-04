@@ -1,0 +1,22 @@
+{
+  "name": "dynamic-app",
+  "version": "1.0.0",
+  "description": "A fully dynamic app for forms, actions, and custom logic",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.7.9",
+    "express": "^4.21.2",
+    "mysql2": "^3.12.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "author": "vykanand",
+  "license": "MIT"
+}
