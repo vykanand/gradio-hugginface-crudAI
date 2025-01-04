@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const apiKeys = [
-  "Your-api-key"
+  
 ];
 
 let currentApiKeyIndex = 0;
