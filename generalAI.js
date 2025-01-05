@@ -1,7 +1,8 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+const { GoogleGenerativeAI } = require( "@google/generative-ai");
 
 const apiKeys = [
-  
+  "AIzaSyD-uup_a5xjMR7HS5Uf9I44KqoH63qogoU",
+  "AIzaSyBUvsUIJn1mVJ8iqEX59IG4LXJp1pnZZXQ",
 ];
 
 let currentApiKeyIndex = 0;
@@ -86,7 +87,7 @@ const processChunks = async (chunks) => {
 };
 
 // Main function to process HTML content
-export const processHtmlLLM = async (htmlContent) => {
+const processHtmlLLM = async (htmlContent) => {
   console.log("Starting HTML processing...");
 
   // Convert HTML to plain text
@@ -108,3 +109,5 @@ export const processHtmlLLM = async (htmlContent) => {
   console.log("HTML processing completed check the results!");
   return finalResponse;
 };
+
+module.exports = processHtmlLLM;

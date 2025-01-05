@@ -1,171 +1,158 @@
-import express from "express";
-import bodyParser from "body-parser";
-import { processHtmlLLM } from "./generalAI.js";
-import mysql from "mysql2/promise";
+const express = require("express");
+const cors = require("cors");
+const mysql = require("mysql2/promise");
+const processHtmlLLM = require("./generalAI.js");
 
 const app = express();
-app.use(bodyParser.json());
+const PORT = 3000;
 
-// Database connection details
-const dbConfig = {
+app.use(express.json());
+app.use(cors());
+
+// Create a MySQL connection pool
+const pool = mysql.createPool({
   host: "localhost",
   user: "root",
   password: "niveus@123",
   database: "dynamic_app",
+  waitForConnections: true,
+  connectionLimit: 10, // Set appropriate connection limit based on load
+  queueLimit: 0, // Unlimited queue (adjust as necessary)
+});
+
+console.log("MySQL pool created.");
+
+// Function to fetch table structure including columns and their datatypes
+async function getTableStructure(entity) {
+  const connection = await pool.getConnection();
+
+  try {
+    const [columns] = await connection.query(`DESCRIBE ${entity}`);
+    return columns.map((column) => ({
+      name: column.Field,
+      type: column.Type,
+      nullable: column.Null === "YES",
+      key: column.Key,
+    }));
+  } catch (error) {
+    console.error("Error fetching table structure:", error.message);
+    return { error: "Failed to fetch table structure." };
+  } finally {
+    connection.release(); // Release the connection back to the pool
+  }
+}
+
+const cleanAndSanitizeSQL = (text) => {
+  // Regex to match a single valid SQL query, ensuring table/entity names and date/time functions retain their original casing
+  const entityNameRegex = /(?<!\w)(?:`?)([a-zA-Z_][a-zA-Z0-9_]*)(?:`?)(?!\w)/g; // Match table/entity names with their casing
+  const sqlKeywordRegex = /\b(DATE\(\)|NOW\(\))\b/gi; // Match DATE() and NOW() functions
+  const sqlQueryRegex =
+    /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|REPLACE|MERGE|BEGIN|COMMIT|ROLLBACK|SET|SHOW|USE|DESCRIBE|GRANT|REVOKE|LOCK|UNLOCK|TABLE|PROCEDURE|FUNCTION|INDEX|VIEW)\b[^\;]*\;/i;
+
+  // Find the first valid SQL query
+  const match = text.match(sqlQueryRegex);
+
+  if (match) {
+    // Extract and replace DATE() and NOW() functions with their current SQL format
+    const query = match[0]
+      .replace(entityNameRegex, (entityName) => {
+        return entityName.toLowerCase() === entityName
+          ? entityName
+          : entityName; // Retain original casing
+      })
+      .replace(sqlKeywordRegex, (match) => {
+        return match.toUpperCase(); // Convert DATE() and NOW() to uppercase for consistency
+      })
+      .trim();
+
+    return query; // Return the sanitized and cleaned query
+  } else {
+    return null; // No valid SQL query found
+  }
 };
 
-async function interpretPrompt(prompt) {
-  const p = `Interpret the following prompt for a CRUD operation in JSON format with keys: action, entity, params.
-  action: create, fetch, update, delete
-Prompt: "${prompt}"`;
+// Function to fetch all tables in the database
+async function getAllTables() {
+  const connection = await pool.getConnection();
 
   try {
-    const result = await processHtmlLLM(p);
-    const json = extractJson(result);
-    if (!json) {
-      throw new Error("Invalid JSON returned from the LLM processing.");
-    }
-    return json;
-  } catch (error) {
-    console.error("Error interpreting the prompt:", error.message);
-    throw new Error(
-      "Error interpreting the prompt. Please try again with a valid request."
+    const [tables] = await connection.query("SHOW TABLES");
+    return tables.map(
+      (table) => table[`Tables_in_${connection.config.database}`]
     );
-  }
-}
-
-function extractJson(textbody) {
-  try {
-    // Use regex to extract JSON from the body, whether it's enclosed in backticks or not
-    const jsonMatch = textbody.match(
-      /```(?:json)?\s*([\s\S]*?)\s*```|{[\s\S]*}/
-    );
-    if (jsonMatch && jsonMatch[1]) {
-      return JSON.parse(jsonMatch[1].trim());
-    } else if (jsonMatch) {
-      return JSON.parse(jsonMatch[0].trim());
-    }
-    throw new Error("No valid JSON object found in the text.");
   } catch (error) {
-    console.error("Error extracting JSON:", error.message);
-    return null; // Return null if JSON parsing fails
-  }
-}
-
-async function executeCRUDOperation(json) {
-  try {
-    json = extractJson(JSON.stringify(json));
-    if (!json) {
-      throw new Error("Invalid JSON provided.");
-    }
-  } catch (error) {
-    console.error("Failed to parse JSON from textbody:", error.message);
-    return null;
-  }
-
-  const { action, entity, params } = json;
-
-  console.log(
-    `Executing action: ${action} on entity: ${entity} with params:`,
-    params
-  );
-
-  const connection = await mysql.createConnection(dbConfig);
-  let result;
-
-  try {
-    let query;
-    let values;
-
-    switch (action.toLowerCase()) {
-      case "create":
-        query = `INSERT INTO ${entity} (${Object.keys(params).join(
-          ", "
-        )}) VALUES (${Object.keys(params)
-          .map(() => "?")
-          .join(", ")})`;
-        values = Object.values(params);
-        result = await connection.execute(query, values);
-        console.log("Record added successfully.");
-        break;
-
-      case "fetch":
-        query = `SELECT * FROM ${entity} WHERE ${Object.keys(params)
-          .map((key) => `${key} = ?`)
-          .join(" AND ")}`;
-        values = Object.values(params);
-        const [rows] = await connection.execute(query, values);
-        console.log("Fetched Records:", rows);
-        result = rows;
-        break;
-
-      case "update":
-        if (!params.id) {
-          console.error("Update requires an 'id' field in params.");
-          break;
-        }
-        const { id, ...updateParams } = params;
-        query = `UPDATE ${entity} SET ${Object.keys(updateParams)
-          .map((key) => `${key} = ?`)
-          .join(", ")} WHERE id = ?`;
-        values = [...Object.values(updateParams), id];
-        result = await connection.execute(query, values);
-        console.log("Record updated successfully.");
-        break;
-
-      case "delete":
-        if (!params.id) {
-          console.error("Delete requires an 'id' field in params.");
-          break;
-        }
-        query = `DELETE FROM ${entity} WHERE id = ?`;
-        values = [params.id];
-        result = await connection.execute(query, values);
-        console.log("Record deleted successfully.");
-        break;
-
-      default:
-        console.error(`Unknown action: ${action}`);
-    }
-  } catch (error) {
-    console.error("Database Operation Error:", error.message);
-    result = null;
+    console.error("Error fetching tables:", error.message);
+    return { error: "Failed to fetch tables." };
   } finally {
-    await connection.end();
+    connection.release(); // Release the connection back to the pool
   }
-
-  return result;
 }
 
-app.post("/crud", async (req, res) => {
-  const { prompt } = req.body;
-
-  if (!prompt) {
-    return res.status(400).json({ error: "Prompt is required" });
-  }
-
+// Route to handle /database GET requests to fetch the whole database schema
+app.get("/database", async (req, res) => {
   try {
-    const interpretedJSON = await interpretPrompt(prompt);
-
-    if (!interpretedJSON) {
-      return res.status(400).json({ error: "Invalid JSON provided." });
+    // Fetch all tables in the database
+    const tables = await getAllTables();
+    if (tables.error) {
+      return res.status(400).json({ error: tables.error });
     }
 
-    const result = await executeCRUDOperation(interpretedJSON);
-
-    if (result && result.length > 0) {
-      res.status(200).json({ message: result });
-    } else {
-      res.status(200).json({ message: "No records found." });
+    // Fetch structure for each table
+    const schema = {};
+    for (const table of tables) {
+      const tableStructure = await getTableStructure(table);
+      if (tableStructure.error) {
+        return res.status(400).json({ error: tableStructure.error });
+      }
+      schema[table] = tableStructure;
     }
+
+    // Return the entire database schema as the response
+    res.json(schema);
   } catch (error) {
-    console.error("Error:", error.message);
-    res.status(500).json({ error: error.message });
+    console.error("Error fetching database schema:", error);
+    res.status(500).json({ error: "Failed to fetch database schema" });
   }
 });
 
-// Start the server
-const PORT = 3000;
+// Route to handle /:entity POST requests (unchanged)
+app.post("/:entity", async (req, res) => {
+  const entity = req.params.entity;
+  const prompt = req.body.prompt;
+
+  try {
+    // Fetch table structure
+    const tableStructure = await getTableStructure(entity);
+    if (tableStructure.error) {
+      throw new Error(tableStructure.error);
+    }
+
+    // Create a prompt for AI that includes the table structure
+    const promptForLLM = `
+  Provide a valid SQL query for the table ${entity} using today's date or current date.
+  Include any necessary date conditions using CURDATE() or CURRENT_TIMESTAMP if required.
+  ${JSON.stringify(tableStructure)}
+  ${prompt}
+`;
+
+    // Process the prompt and extract SQL query and values
+    const airesponse = await processHtmlLLM(promptForLLM);
+    console.log(airesponse);
+
+    // Clean and sanitize the SQL query
+    const sanitizedQuery = cleanAndSanitizeSQL(airesponse);
+    console.log(sanitizedQuery);
+
+    // Use the pool to execute the query
+    const [rows] = await pool.execute(sanitizedQuery);
+
+    res.json(rows); // Send the fetched records as response
+  } catch (error) {
+    console.error("Error executing query:", error);
+    res.status(500).json({ error: "Failed to execute query" });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
