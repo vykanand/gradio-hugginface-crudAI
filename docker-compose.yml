@@ -1,0 +1,27 @@
+version: '3.7'
+
+services:
+  nodejs-app:
+    build: .
+    container_name: nodejs-app
+    ports:
+      - "3000:3000"  # Exposes port 3000 for the app
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+    volumes:
+      - .:/usr/src/app  # Mount the current directory to the container
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"  # Exposes port 6379 for Redis
+    volumes:
+      - redis_data:/data  # Persist Redis data across container restarts
+
+volumes:
+  redis_data:
+    driver: local
