@@ -1,31 +1,40 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 const mysql = require("mysql2/promise");
+const redis = require("redis");
+
 const processHtmlLLM = require("./generalAI.js");
 
 const app = express();
 const PORT = 3000;
 
+// Middleware setup
 app.use(express.json());
 app.use(cors());
 
-// Create a MySQL connection pool
+// Redis client setup
+const redisClient = redis.createClient({
+  url: "redis://localhost:6379", // Replace with your Redis URL if needed
+});
+redisClient.on("error", (err) => console.error("Redis error:", err));
+redisClient.connect().then(() => console.log("Redis connected."));
+
+// MySQL connection pool setup
 const pool = mysql.createPool({
-  host: "localhost",
-  user: "root",
-  password: "niveus@123",
-  database: "dynamic_app",
+  host: "sql7.freemysqlhosting.net",
+  user: "sql7755772",
+  password: "LbQdGMH7w9",
+  database: "sql7755772",
   waitForConnections: true,
   connectionLimit: 10, // Set appropriate connection limit based on load
-  queueLimit: 0, // Unlimited queue (adjust as necessary)
+  queueLimit: 0,
 });
-
 console.log("MySQL pool created.");
 
-// Function to fetch table structure including columns and their datatypes
-async function getTableStructure(entity) {
+// Function to fetch table structure from the database
+async function getTableStructureFromDB(entity) {
   const connection = await pool.getConnection();
-
   try {
     const [columns] = await connection.query(`DESCRIBE ${entity}`);
     return columns.map((column) => ({
@@ -35,10 +44,36 @@ async function getTableStructure(entity) {
       key: column.Key,
     }));
   } catch (error) {
-    console.error("Error fetching table structure:", error.message);
-    return { error: "Failed to fetch table structure." };
+    console.error("Error fetching table structure from DB:", error.message);
+    return null;
   } finally {
-    connection.release(); // Release the connection back to the pool
+    connection.release();
+  }
+}
+
+// Function to get table structure with Redis caching
+async function getTableStructure(entity) {
+  try {
+    // Check cache
+    const cachedData = await redisClient.get(entity);
+    if (cachedData) {
+      console.log(`Cache hit for table: ${entity}`);
+      return JSON.parse(cachedData);
+    }
+
+    console.log(`Cache miss for table: ${entity}. Fetching from DB...`);
+    // Fetch from DB
+    const tableStructure = await getTableStructureFromDB(entity);
+    if (tableStructure) {
+      // Store in cache with 1-day expiry
+      await redisClient.set(entity, JSON.stringify(tableStructure), {
+        EX: 86400, // Expire in 1 day
+      });
+    }
+    return tableStructure;
+  } catch (error) {
+    console.error("Error accessing Redis or DB:", error.message);
+    return null;
   }
 }
 
@@ -46,6 +81,7 @@ const cleanAndSanitizeSQL = (text) => {
   // Regex to match a single valid SQL query, ensuring table/entity names and date/time functions retain their original casing
   const entityNameRegex = /(?<!\w)(?:`?)([a-zA-Z_][a-zA-Z0-9_]*)(?:`?)(?!\w)/g; // Match table/entity names with their casing
   const sqlKeywordRegex = /\b(DATE\(\)|NOW\(\))\b/gi; // Match DATE() and NOW() functions
+  const dateFunctionRegex = /\b(DATE\(\)|CURRENT_TIMESTAMP)\b/gi; // Detect date-related functions
   const sqlQueryRegex =
     /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|REPLACE|MERGE|BEGIN|COMMIT|ROLLBACK|SET|SHOW|USE|DESCRIBE|GRANT|REVOKE|LOCK|UNLOCK|TABLE|PROCEDURE|FUNCTION|INDEX|VIEW)\b[^\;]*\;/i;
 
@@ -53,7 +89,10 @@ const cleanAndSanitizeSQL = (text) => {
   const match = text.match(sqlQueryRegex);
 
   if (match) {
-    // Extract and replace DATE() and NOW() functions with their current SQL format
+    // Check if the query contains any date-related keywords
+    const containsDateFunction = dateFunctionRegex.test(text);
+
+    // Modify query to include date conditions if necessary
     const query = match[0]
       .replace(entityNameRegex, (entityName) => {
         return entityName.toLowerCase() === entityName
@@ -63,6 +102,8 @@ const cleanAndSanitizeSQL = (text) => {
       .replace(sqlKeywordRegex, (match) => {
         return match.toUpperCase(); // Convert DATE() and NOW() to uppercase for consistency
       })
+      .replace(/(?<=\s)DATE\(/g, "CURDATE(") // Ensure CURDATE() format is used
+      .replace(/(?<=\s)CURRENT_TIMESTAMP\b/g, "CURRENT_TIMESTAMP") // Ensure CURRENT_TIMESTAMP format is used
       .trim();
 
     return query; // Return the sanitized and cleaned query
@@ -74,7 +115,6 @@ const cleanAndSanitizeSQL = (text) => {
 // Function to fetch all tables in the database
 async function getAllTables() {
   const connection = await pool.getConnection();
-
   try {
     const [tables] = await connection.query("SHOW TABLES");
     return tables.map(
@@ -82,40 +122,39 @@ async function getAllTables() {
     );
   } catch (error) {
     console.error("Error fetching tables:", error.message);
-    return { error: "Failed to fetch tables." };
+    return null;
   } finally {
-    connection.release(); // Release the connection back to the pool
+    connection.release();
   }
 }
 
-// Route to handle /database GET requests to fetch the whole database schema
+// Route to fetch database schema
 app.get("/database", async (req, res) => {
   try {
-    // Fetch all tables in the database
     const tables = await getAllTables();
-    if (tables.error) {
-      return res.status(400).json({ error: tables.error });
+    if (!tables) {
+      return res.status(500).json({ error: "Failed to fetch tables." });
     }
 
-    // Fetch structure for each table
     const schema = {};
     for (const table of tables) {
       const tableStructure = await getTableStructure(table);
-      if (tableStructure.error) {
-        return res.status(400).json({ error: tableStructure.error });
+      if (tableStructure) {
+        schema[table] = tableStructure;
+      } else {
+        console.error(`Failed to fetch structure for table: ${table}`);
       }
-      schema[table] = tableStructure;
     }
 
-    // Return the entire database schema as the response
     res.json(schema);
   } catch (error) {
-    console.error("Error fetching database schema:", error);
-    res.status(500).json({ error: "Failed to fetch database schema" });
+    console.error("Error fetching database schema:", error.message);
+    res.status(500).json({ error: "Failed to fetch database schema." });
   }
 });
 
-// Route to handle /:entity POST requests (unchanged)
+// Route to handle dynamic SQL generation and execution
+// Route to handle dynamic SQL generation and execution
 app.post("/:entity", async (req, res) => {
   const entity = req.params.entity;
   const prompt = req.body.prompt;
@@ -123,36 +162,81 @@ app.post("/:entity", async (req, res) => {
   try {
     // Fetch table structure
     const tableStructure = await getTableStructure(entity);
-    if (tableStructure.error) {
-      throw new Error(tableStructure.error);
+    if (!tableStructure) {
+      return res.status(500).json({ error: "Failed to fetch table structure." });
     }
 
-    // Create a prompt for AI that includes the table structure
+    // Create prompt for AI
     const promptForLLM = `
-  Provide a valid SQL query for the table ${entity} using today's date or current date.
-  Include any necessary date conditions using CURDATE() or CURRENT_TIMESTAMP if required.
-  ${JSON.stringify(tableStructure)}
-  ${prompt}
-`;
+      Generate a valid SQL query based on the following table structure and request. Ensure the query is formatted using (triple backticks) sql (end triple backticks) and follows SQL standards.
+      ${entity}
+      ${JSON.stringify(tableStructure)}
+      ${prompt}
+      Only generate SQL queries. Do not include explanations, comments, or any additional text.
+    `;
 
-    // Process the prompt and extract SQL query and values
+    // Get AI response
     const airesponse = await processHtmlLLM(promptForLLM);
-    console.log(airesponse);
+    console.log("AI Response:", airesponse);
 
-    // Clean and sanitize the SQL query
     const sanitizedQuery = cleanAndSanitizeSQL(airesponse);
     console.log(sanitizedQuery);
 
-    // Use the pool to execute the query
+    // Use the pool to execute the query directly
     const [rows] = await pool.execute(sanitizedQuery);
 
-    res.json(rows); // Send the fetched records as response
+    if (rows.length === 0) {
+      return res.json({ message: "No records found." });
+    }
+
+    res.json(rows);
+
   } catch (error) {
-    console.error("Error executing query:", error);
-    res.status(500).json({ error: "Failed to execute query" });
+    console.error("Error executing query on first attempt:", error.message);
+
+    // Retry logic: If the query fails, pass the failed query back to LLM and retry once
+    try {
+      console.log("Retrying query generation with LLM...");
+
+      // Get AI response again to fix any potential issues
+      let retryAiResponse = await processHtmlLLM(`
+        The previous query failed to execute properly. Please revise the query based on the following table structure and the original request.
+        ${entity}
+        ${JSON.stringify(await getTableStructure(entity))}
+        Original query: ${sanitizedQuery}
+        Original error: ${error.message}
+        Please ensure the query is correct and follows SQL standards. Only generate SQL queries without explanations, comments, or additional text.
+      `);
+      
+      console.log("Retry AI Response:", retryAiResponse);
+
+      let retrySanitizedQuery = cleanAndSanitizeSQL(retryAiResponse);
+      console.log("Retry Sanitized Query:", retrySanitizedQuery);
+
+      // Try to execute the retry query
+      let [retryRows, retryFields] = await pool.execute(retrySanitizedQuery);
+
+      if (retryRows.length === 0) {
+        return res.json({ message: "No records found." });
+      }
+
+      // Return the result of the retried query
+      res.json(retryRows);
+
+    } catch (retryError) {
+      console.error("Error executing retried query:", retryError.message);
+      res.status(500).json({ error: "Failed to execute query after retry." });
+    }
   }
 });
 
+
+// Root route
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+// Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
