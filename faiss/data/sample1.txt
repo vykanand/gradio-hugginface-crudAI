@@ -1,0 +1,5 @@
+The quick brown fox jumps over the lazy dog. This is a sample text file that we'll use for testing our FAISS indexing system.
+
+Machine learning and artificial intelligence are transforming the way we work with data. Natural language processing enables computers to understand and work with human language in ways that were impossible just a few years ago.
+
+Vector embeddings allow us to convert text into numerical representations that capture semantic meaning, making it possible to perform similarity searches and find related content efficiently.

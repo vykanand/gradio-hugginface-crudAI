@@ -168,11 +168,11 @@ app.post("/:entity", async (req, res) => {
 
     // Create prompt for AI
     const promptForLLM = `
-      Generate a valid SQL query based on the following table structure and request. Ensure the query is formatted using (triple backticks) sql (end triple backticks) and follows SQL standards.
+      Generate a valid SQL query based on the following table structure and request. Ensure the query is formatted using (start triple backticks) sql (end triple backticks) and follows SQL standards.
       ${entity}
       ${JSON.stringify(tableStructure)}
       ${prompt}
-      Only generate SQL queries. Do not include explanations, comments, or any additional text.
+      Constraints: Only generate SQL queries. Do not include explanations, comments, or any additional text.
     `;
 
     // Get AI response

@@ -67,7 +67,7 @@
     const tableContainer = document.getElementById('item-table');
     tableContainer.innerHTML = '<div class="spinner-border text-primary" role="status"></div> Loading items...';
 
-    const endpoint = new URLSearchParams(window.location.search).get('endpoint') || 'http://localhost:3000/items';
+    const endpoint = new URLSearchParams(window.location.search).get('endpoint') || 'http://localhost:3000/users';
     prompt = prompt || 'select all';
 
     try {

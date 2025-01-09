@@ -1,0 +1,50 @@
+{
+  "files": {
+    "data/sample1.txt": 1736414776918,
+    "data/sample2.txt": 1736414776955,
+    "data/sample3.txt": 1736414776987,
+    "data/sample4.txt": 1736414777020
+  },
+  "sentences": [
+    "The quick brown fox jumps over the lazy dog",
+    "This is a sample text file that we'll use for testing our FAISS indexing system",
+    "Machine learning and artificial intelligence are transforming the way we work with data",
+    "Natural language processing enables computers to understand and work with human language in ways that were impossible just a few years ago",
+    "Vector embeddings allow us to convert text into numerical representations that capture semantic meaning, making it possible to perform similarity searches and find related content efficiently",
+    "Deep learning models have revolutionized artificial intelligence research and applications",
+    "Neural networks can now process and understand language with remarkable accuracy",
+    "Text processing and natural language understanding are key components of modern AI systems",
+    "By converting words and sentences into vector representations, we can perform complex operations on text data",
+    "The field of AI continues to evolve rapidly, with new breakthroughs in machine learning happening regularly",
+    "Researchers are constantly developing new ways to improve how computers process and understand human language",
+    "Data analytics and processing systems help organizations make sense of large amounts of information",
+    "Modern data pipelines can handle both structured and unstructured data efficiently",
+    "Big data technologies enable us to process massive datasets and extract meaningful insights",
+    "The combination of data processing and machine learning creates powerful tools for data analysis",
+    "Information retrieval systems use sophisticated algorithms to find and rank relevant content",
+    "By analyzing patterns in data, we can discover hidden relationships and make better decisions",
+    "Data visualization and analytics tools help us understand complex patterns in information",
+    "Advanced analytics techniques combine statistical analysis with machine learning to extract insights",
+    "Real-time data processing enables organizations to make decisions quickly based on current information",
+    "Analytics dashboards provide interactive ways to explore and analyze data patterns",
+    "Modern business intelligence systems integrate data processing, machine learning, and visualization tools to create comprehensive analytics solutions"
+  ],
+  "fileToIndices": {
+    "data/sample1.txt": [
+      0,
+      5
+    ],
+    "data/sample2.txt": [
+      5,
+      6
+    ],
+    "data/sample3.txt": [
+      11,
+      6
+    ],
+    "data/sample4.txt": [
+      17,
+      5
+    ]
+  }
+}

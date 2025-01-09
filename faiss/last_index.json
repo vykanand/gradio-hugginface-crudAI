@@ -1,0 +1,27 @@
+{
+  "files": {
+    "data/sample3.txt": 1736414424.6071255,
+    "data/sample2.txt": 1736414411.5340147,
+    "data/sample1.txt": 1736414400.3989196,
+    "data/sample4.txt": 1736414569.7872803
+  },
+  "total_vectors": 22,
+  "file_to_indices": {
+    "data/sample3.txt": [
+      0,
+      6
+    ],
+    "data/sample2.txt": [
+      6,
+      6
+    ],
+    "data/sample1.txt": [
+      12,
+      5
+    ],
+    "data/sample4.txt": [
+      17,
+      5
+    ]
+  }
+}

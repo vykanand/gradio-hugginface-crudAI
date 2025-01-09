@@ -1,54 +1,31 @@
-const { GoogleGenerativeAI } = require( "@google/generative-ai");
-
-const apiKeys = [
-  "AIzaSyD-uup_a5xjMR7HS5Uf9I44KqoH63qogoU",
-  "AIzaSyBUvsUIJn1mVJ8iqEX59IG4LXJp1pnZZXQ",
-];
-
-let currentApiKeyIndex = 0;
-
-// Get the next API key in rotation
-const getNextApiKey = () => {
-  currentApiKeyIndex = (currentApiKeyIndex + 1) % apiKeys.length;
-  return apiKeys[currentApiKeyIndex];
-};
-
-// Function to send a question to Gemini AI
+// Function to send a question to external AI server
 const askQuestion = async (question) => {
-  let apiKey = getNextApiKey();
-  let retries = apiKeys.length; // Try each key once before failing
-
   console.log("Starting to process the question...");
 
-  while (retries > 0) {
-    try {
-      console.log(`Using API key: ${apiKey}`);
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-      console.log("AI model initialized.");
-
-      const chat = model.startChat();
-      console.log("Chat session started.");
-
-      console.log("Sending question to AI...");
-      const result = await chat.sendMessage(question);
-      console.log("Question sent.");
-
-      console.log("Waiting for AI response...");
-      const responseText = await result.response.text();
-      console.log("Received response.");
-
-      return responseText.trim();
-    } catch (error) {
-      console.error(`Error with API key ${apiKey}: ${error.message}`);
-      retries--;
-      if (retries > 0) {
-        console.log("Retrying with next API key...");
-        apiKey = getNextApiKey(); // Rotate to next API key
-      } else {
-        throw new Error("All API keys have been tried and failed.");
+  try {
+    const response = await fetch(
+      "https://gitops-production.up.railway.app/aiserver",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          aiquestion: question,
+          sessionId: "vsacs",
+        }),
       }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+
+    const data = await response.json();
+    return data.response || data;
+  } catch (error) {
+    console.error(`Error with API request: ${error.message}`);
+    throw error;
   }
 };
 
@@ -73,9 +50,8 @@ const processChunks = async (chunks) => {
     console.log(`Processing chunk ${index + 1} of ${totalChunks}...`);
     try {
       const response = await askQuestion(chunk);
-      combinedResponse += response + " "; // Combine responses
+      combinedResponse += response + " ";
 
-      // Calculate and log the percentage completed
       const percentageCompleted = ((index + 1) / totalChunks) * 100;
       console.log(`Progress: ${percentageCompleted.toFixed(2)}% completed.`);
     } catch (error) {
@@ -90,16 +66,14 @@ const processChunks = async (chunks) => {
 const processHtmlLLM = async (htmlContent) => {
   console.log("Starting HTML processing...");
 
-  // Convert HTML to plain text
   console.log("Converting HTML to plain text...");
   const plainText = htmlContent
-    .replace(/<\/?[^>]+>/gi, "") // Strip HTML tags
-    .replace(/&nbsp;/g, " "); // Strip HTML tags
+    .replace(/<\/?[^>]+>/gi, "")
+    .replace(/&nbsp;/g, " ");
   console.log("HTML converted to plain text.");
 
-  // Set chunk size based on known token limit
-  const tokenLimit = 20000; // Example token limit
-  const chunkSize = Math.floor(tokenLimit * 0.95); // Use 95% of token limit for safety
+  const tokenLimit = 20000;
+  const chunkSize = Math.floor(tokenLimit * 0.95);
   console.log(`Chunking text into chunks of size ${chunkSize}...`);
   const chunks = chunkText(plainText, chunkSize);
 
