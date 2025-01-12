@@ -1,7 +1,15 @@
 // Function to send a question to external AI server
-const askQuestion = async (question) => {
+const askQuestion = async (question, session) => {
   console.log("Starting to process the question...");
-
+  let requestBody;
+  if (session) {
+    requestBody = {
+      aiquestion: question,
+      sessionId: session,
+    };
+  } else {
+    requestBody = { aiquestion: question };
+  }
   try {
     const response = await fetch(
       "https://gitops-production.up.railway.app/aiserver",
@@ -10,10 +18,7 @@ const askQuestion = async (question) => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          aiquestion: question,
-          sessionId: "vjiaso",
-        }),
+        body: JSON.stringify(requestBody),
       }
     );
 
@@ -22,6 +27,7 @@ const askQuestion = async (question) => {
     }
 
     const data = await response.json();
+    console.log(data);
     return data.response || data;
   } catch (error) {
     console.error(`Error with API request: ${error.message}`);
@@ -41,7 +47,7 @@ const chunkText = (text, chunkSize) => {
 };
 
 // Process all text chunks and combine responses
-const processChunks = async (chunks) => {
+const processChunks = async (chunks,sessionId) => {
   console.log("Processing chunks...");
   let combinedResponse = "";
   const totalChunks = chunks.length;
@@ -49,7 +55,7 @@ const processChunks = async (chunks) => {
   for (const [index, chunk] of chunks.entries()) {
     console.log(`Processing chunk ${index + 1} of ${totalChunks}...`);
     try {
-      const response = await askQuestion(chunk);
+      const response = await askQuestion(chunk, sessionId);
       combinedResponse += response + " ";
 
       const percentageCompleted = ((index + 1) / totalChunks) * 100;
@@ -63,7 +69,7 @@ const processChunks = async (chunks) => {
 };
 
 // Main function to process HTML content
-const processHtmlLLM = async (htmlContent) => {
+const processHtmlLLM = async (htmlContent, sessionId) => {
   console.log("Starting HTML processing...");
 
   console.log("Converting HTML to plain text...");
@@ -78,10 +84,10 @@ const processHtmlLLM = async (htmlContent) => {
   const chunks = chunkText(plainText, chunkSize);
 
   console.log("Processing chunks...");
-  const finalResponse = await processChunks(chunks);
+  const finalResponse = await processChunks(chunks, sessionId);
 
   console.log("HTML processing completed check the results!");
   return finalResponse;
 };
 
-module.exports = processHtmlLLM;
+module.exports = {processHtmlLLM};

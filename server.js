@@ -21,11 +21,20 @@ redisClient.on("error", (err) => console.error("Redis error:", err));
 redisClient.connect().then(() => console.log("Redis connected."));
 
 // MySQL connection pool setup
+// const pool = mysql.createPool({
+//   host: "sql7.freemysqlhosting.net",
+//   user: "sql7755772",
+//   password: "LbQdGMH7w9",
+//   database: "sql7755772",
+//   waitForConnections: true,
+//   connectionLimit: 10, // Set appropriate connection limit based on load
+//   queueLimit: 0,
+// });
 const pool = mysql.createPool({
-  host: "sql7.freemysqlhosting.net",
-  user: "sql7755772",
-  password: "LbQdGMH7w9",
-  database: "sql7755772",
+  host: "localhost",
+  user: "root",
+  password: "niveus@123",
+  database: "dynamic_app",
   waitForConnections: true,
   connectionLimit: 10, // Set appropriate connection limit based on load
   queueLimit: 0,

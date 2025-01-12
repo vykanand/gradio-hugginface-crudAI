@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Chat Interface</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #efeae2;
+            color: #4a4a4a;
+        }
+        .chat-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #e5ddd5;
+            background-image: linear-gradient(rgba(229, 221, 213, 0.9), rgba(229, 221, 213, 0.9)),
+                            repeating-linear-gradient(45deg, #f1f1f1 0%, #f1f1f1 2%, transparent 2%, transparent 4%);
+        }
+        .chat-header {
+            background: #075e54;
+            color: white;
+            padding: 15px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .session-controls {
+            background: #128c7e;
+            padding: 10px 15px;
+            border-bottom: 1px solid #0c796c;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        #chatInput {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 20px;
+            font-size: 14px;
+            background: white;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        #sessionInput {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 15px;
+            font-size: 14px;
+            background: white;
+        }
+        button {
+            padding: 8px 20px;
+            background: #25d366;
+            color: white;
+            border: none;
+            border-radius: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #22bf5b;
+        }
+        button:disabled {
+            background: #a5a5a5;
+            cursor: not-allowed;
+        }
+        .response-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .message {
+            max-width: 80%;
+            margin: 8px 0;
+            padding: 10px 15px;
+            border-radius: 7.5px;
+            position: relative;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+        .user-message {
+            background: #dcf8c6;
+            margin-left: auto;
+            border-radius: 15px 15px 5px 15px;
+        }
+        .ai-message {
+            background: white;
+            margin-right: auto;
+            border-radius: 15px 15px 15px 5px;
+        }
+        .ai-message ul, .ai-message ol {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+        .ai-message p {
+            margin: 8px 0;
+        }
+        .ai-message li {
+            margin: 4px 0;
+        }
+        .ai-message pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+        .ai-message code {
+            font-family: monospace;
+            background: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .typing-indicator {
+            padding: 15px;
+            background: white;
+            border-radius: 15px;
+            display: inline-block;
+            margin: 10px 0;
+            position: relative;
+        }
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #90a4ae;
+            border-radius: 50%;
+            margin-right: 3px;
+            animation: wave 1.3s linear infinite;
+        }
+        .dot:nth-child(2) { animation-delay: -1.1s; }
+        .dot:nth-child(3) { animation-delay: -0.9s; }
+
+        @keyframes wave {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-4px); }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>AI Chat Interface</h2>
+        </div>
+        <div class="session-controls">
+            <div class="input-group">
+                <input type="text" id="sessionInput" placeholder="Enter Session ID">
+                <button onclick="setSession()">Set Session</button>
+            </div>
+            <p style="color: white; margin: 5px 0;">Active Session: <strong><span id="activeSession">None</span></strong></p>
+        </div>
+        <div class="response-area" id="responseArea"></div>
+        <div style="padding: 20px; background: #f0f0f0; border-top: 1px solid #ddd;">
+            <div class="input-group">
+                <input type="text" 
+                       id="chatInput" 
+                       placeholder="Type your message..." 
+                       disabled
+                       onkeypress="if(event.key === 'Enter') sendMessage()">
+                <button onclick="sendMessage()" id="sendButton" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSession = null;
+        let isWaitingForResponse = false;
+
+        async function fetchChatHistory(sessionId) {
+            const responseArea = document.getElementById('responseArea');
+            const typingIndicator = showTypingIndicator();
+
+            try {
+                const response = await fetch('https://gitops-production.up.railway.app/aiserver', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        aiquestion: "Show me the previous chat history for this session.",
+                        sessionId: sessionId
+                    })
+                });
+
+                typingIndicator.remove();
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const aiDiv = document.createElement('div');
+                    aiDiv.className = 'message ai-message';
+                    aiDiv.innerHTML = `<strong>AI:</strong><p>${formatResponse(data.response)}</p>`;
+                    responseArea.appendChild(aiDiv);
+                    responseArea.scrollTop = responseArea.scrollHeight;
+                }
+            } catch (error) {
+                console.error('Error fetching chat history:', error);
+            }
+        }
+
+        function getSessionFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionParam = urlParams.get('session');
+            if (sessionParam) {
+                currentSession = sessionParam;
+                const sessionInput = document.getElementById('sessionInput');
+                const chatInput = document.getElementById('chatInput');
+                const sendButton = document.getElementById('sendButton');
+                
+                sessionInput.value = currentSession;
+                document.getElementById('activeSession').textContent = currentSession;
+                chatInput.disabled = false;
+                sendButton.disabled = false;
+                sessionInput.disabled = true;
+                
+                fetchChatHistory(currentSession);
+            }
+        }
+
+        window.onload = function() {
+            getSessionFromURL();
+        }
+
+        function setSession() {
+            const sessionInput = document.getElementById('sessionInput');
+            const chatInput = document.getElementById('chatInput');
+            const sendButton = document.getElementById('sendButton');
+            
+            if (sessionInput.value.trim()) {
+                currentSession = sessionInput.value.trim();
+                document.getElementById('activeSession').textContent = currentSession;
+                chatInput.disabled = false;
+                sendButton.disabled = false;
+                sessionInput.disabled = true;
+                
+                const newUrl = new URL(window.location.href);
+                newUrl.searchParams.set('session', currentSession);
+                window.history.pushState({}, '', newUrl);
+                
+                fetchChatHistory(currentSession);
+            }
+        }
+
+        function showTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'typing-indicator';
+            indicator.innerHTML = `
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            `;
+            document.getElementById('responseArea').appendChild(indicator);
+            return indicator;
+        }
+
+        function formatResponse(text) {
+            return text
+                .replace(/\n\n+/g, '</p><p>')
+                .replace(/\n/g, '<br>')
+                .replace(/•\s/g, '• ')
+                .replace(/(\d+\.\s)/g, '<br>$1')
+                .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>');
+        }
+
+        async function sendMessage() {
+            if (isWaitingForResponse) return;
+            
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            const responseArea = document.getElementById('responseArea');
+
+            if (!currentSession || !message) return;
+
+            try {
+                isWaitingForResponse = true;
+                
+                const userDiv = document.createElement('div');
+                userDiv.className = 'message user-message';
+                userDiv.innerHTML = `<strong>You:</strong> ${message}`;
+                responseArea.appendChild(userDiv);
+                
+                input.value = '';
+                responseArea.scrollTop = responseArea.scrollHeight;
+                
+                const typingIndicator = showTypingIndicator();
+
+                const response = await fetch('https://gitops-production.up.railway.app/aiserver', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        aiquestion: message,
+                        sessionId: currentSession
+                    })
+                });
+
+                typingIndicator.remove();
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                const aiDiv = document.createElement('div');
+                aiDiv.className = 'message ai-message';
+                aiDiv.innerHTML = `<strong>AI:</strong><p>${formatResponse(data.response)}</p>`;
+                responseArea.appendChild(aiDiv);
+                
+                responseArea.scrollTop = responseArea.scrollHeight;
+            } catch (error) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'message error-message';
+                errorDiv.innerHTML = `<strong>System:</strong> Connection error - Please check your internet connection`;
+                responseArea.appendChild(errorDiv);
+                console.error('Connection error:', error);
+            } finally {
+                isWaitingForResponse = false;
+            }
+        }
+    </script>
+</body>
+</html>
