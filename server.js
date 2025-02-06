@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const mysql = require("mysql2/promise");
-const redis = require("redis");
+// const redis = require("redis");
 
 const processHtmlLLM = require("./generalAI.js");
 
@@ -14,11 +14,11 @@ app.use(express.json());
 app.use(cors());
 
 // Redis client setup
-const redisClient = redis.createClient({
-  url: "redis://localhost:6379", // Replace with your Redis URL if needed
-});
-redisClient.on("error", (err) => console.error("Redis error:", err));
-redisClient.connect().then(() => console.log("Redis connected."));
+// const redisClient = redis.createClient({
+//   url: "redis://localhost:6379", // Replace with your Redis URL if needed
+// });
+// redisClient.on("error", (err) => console.error("Redis error:", err));
+// redisClient.connect().then(() => console.log("Redis connected."));
 
 // MySQL connection pool setup
 // const pool = mysql.createPool({
@@ -41,8 +41,31 @@ const pool = mysql.createPool({
 });
 console.log("MySQL pool created.");
 
-// Function to fetch table structure from the database
-async function getTableStructureFromDB(entity) {
+// Function to get table structure with Redis caching
+async function getTableStructure(entity) {
+  // try {
+  //   // Check cache
+  //   const cachedData = await redisClient.get(entity);
+  //   if (cachedData) {
+  //     console.log(`Cache hit for table: ${entity}`);
+  //     return JSON.parse(cachedData);
+  //   }
+
+  //   console.log(`Cache miss for table: ${entity}. Fetching from DB...`);
+  //   // Fetch from DB
+  //   const tableStructure = await getTableStructureFromDB(entity);
+  //   if (tableStructure) {
+  //     // Store in cache with 1-day expiry
+  //     await redisClient.set(entity, JSON.stringify(tableStructure), {
+  //       EX: 86400, // Expire in 1 day
+  //     });
+  //   }
+  //   return tableStructure;
+  // } catch (error) {
+  //   console.error("Error accessing Redis or DB:", error.message);
+  //   return null;
+  // }
+
   const connection = await pool.getConnection();
   try {
     const [columns] = await connection.query(`DESCRIBE ${entity}`);
@@ -59,67 +82,6 @@ async function getTableStructureFromDB(entity) {
     connection.release();
   }
 }
-
-// Function to get table structure with Redis caching
-async function getTableStructure(entity) {
-  try {
-    // Check cache
-    const cachedData = await redisClient.get(entity);
-    if (cachedData) {
-      console.log(`Cache hit for table: ${entity}`);
-      return JSON.parse(cachedData);
-    }
-
-    console.log(`Cache miss for table: ${entity}. Fetching from DB...`);
-    // Fetch from DB
-    const tableStructure = await getTableStructureFromDB(entity);
-    if (tableStructure) {
-      // Store in cache with 1-day expiry
-      await redisClient.set(entity, JSON.stringify(tableStructure), {
-        EX: 86400, // Expire in 1 day
-      });
-    }
-    return tableStructure;
-  } catch (error) {
-    console.error("Error accessing Redis or DB:", error.message);
-    return null;
-  }
-}
-
-const cleanAndSanitizeSQL = (text) => {
-  // Regex to match a single valid SQL query, ensuring table/entity names and date/time functions retain their original casing
-  const entityNameRegex = /(?<!\w)(?:`?)([a-zA-Z_][a-zA-Z0-9_]*)(?:`?)(?!\w)/g; // Match table/entity names with their casing
-  const sqlKeywordRegex = /\b(DATE\(\)|NOW\(\))\b/gi; // Match DATE() and NOW() functions
-  const dateFunctionRegex = /\b(DATE\(\)|CURRENT_TIMESTAMP)\b/gi; // Detect date-related functions
-  const sqlQueryRegex =
-    /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|REPLACE|MERGE|BEGIN|COMMIT|ROLLBACK|SET|SHOW|USE|DESCRIBE|GRANT|REVOKE|LOCK|UNLOCK|TABLE|PROCEDURE|FUNCTION|INDEX|VIEW)\b[^\;]*\;/i;
-
-  // Find the first valid SQL query
-  const match = text.match(sqlQueryRegex);
-
-  if (match) {
-    // Check if the query contains any date-related keywords
-    const containsDateFunction = dateFunctionRegex.test(text);
-
-    // Modify query to include date conditions if necessary
-    const query = match[0]
-      .replace(entityNameRegex, (entityName) => {
-        return entityName.toLowerCase() === entityName
-          ? entityName
-          : entityName; // Retain original casing
-      })
-      .replace(sqlKeywordRegex, (match) => {
-        return match.toUpperCase(); // Convert DATE() and NOW() to uppercase for consistency
-      })
-      .replace(/(?<=\s)DATE\(/g, "CURDATE(") // Ensure CURDATE() format is used
-      .replace(/(?<=\s)CURRENT_TIMESTAMP\b/g, "CURRENT_TIMESTAMP") // Ensure CURRENT_TIMESTAMP format is used
-      .trim();
-
-    return query; // Return the sanitized and cleaned query
-  } else {
-    return null; // No valid SQL query found
-  }
-};
 
 // Function to fetch all tables in the database
 async function getAllTables() {
@@ -162,83 +124,141 @@ app.get("/database", async (req, res) => {
   }
 });
 
-// Route to handle dynamic SQL generation and execution
+// Add XML parsing function for SQL commands
+  function extractSQLFromXML(aiResponse) {
+  // Case-insensitive regex that handles different tag formats and whitespace
+  const sqlRegex = /<\s*sqlcommand|SQL\s*>([\s\S]*?)<\/\s*(sqlcommand|SQL)\s*>/i;
+  const match = aiResponse.match(sqlRegex);
+  
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  throw new Error(`No valid SQL block found in AI response. Received: ${aiResponse}`);
+}
+
+// Modified cleanAndSanitizeSQL to handle XML
+const cleanAndSanitizeSQL = (text) => {
+  try {
+    // First extract SQL from XML
+    const sqlCommand = extractSQLFromXML(text);
+
+    // Then proceed with original sanitization
+    const entityNameRegex =
+      /(?<!\w)(?:`?)([a-zA-Z_][a-zA-Z0-9_]*)(?:`?)(?!\w)/g;
+    const sqlKeywordRegex = /\b(DATE\(\)|NOW\(\))\b/gi;
+    const dateFunctionRegex = /\b(DATE\(\)|CURRENT_TIMESTAMP)\b/gi;
+    const sqlQueryRegex =
+      /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|REPLACE|MERGE|BEGIN|COMMIT|ROLLBACK|SET|SHOW|USE|DESCRIBE|GRANT|REVOKE|LOCK|UNLOCK|TABLE|PROCEDURE|FUNCTION|INDEX|VIEW)\b[^\;]*\;/i;
+
+    const match = sqlCommand.match(sqlQueryRegex);
+
+    if (match) {
+      const query = match[0]
+        .replace(entityNameRegex, (entityName) => entityName)
+        .replace(sqlKeywordRegex, (match) => match.toUpperCase())
+        .replace(/(?<=\s)DATE\(/g, "CURDATE(")
+        .replace(/(?<=\s)CURRENT_TIMESTAMP\b/g, "CURRENT_TIMESTAMP")
+        .trim();
+
+      return query;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error parsing SQL from XML:", error.message);
+    return null;
+  }
+};
+
 // Route to handle dynamic SQL generation and execution
 app.post("/:entity", async (req, res) => {
   const entity = req.params.entity;
   const prompt = req.body.prompt;
 
   try {
-    // Fetch table structure
     const tableStructure = await getTableStructure(entity);
     if (!tableStructure) {
-      return res.status(500).json({ error: "Failed to fetch table structure." });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch table structure." });
     }
 
-    // Create prompt for AI
+    // Updated prompt to specify XML format
     const promptForLLM = `
-      Generate a valid SQL query based on the following table structure and request. Ensure the query is formatted using (start triple backticks) sql (end triple backticks) and follows SQL standards.
-      ${entity}
-      ${JSON.stringify(tableStructure)}
-      ${prompt}
-      Constraints: Only generate SQL queries. Do not include explanations, comments, or any additional text.
-    `;
+  Generate SQL wrapped in <SQL> tags:
+  Table: ${entity}
+  Structure: ${JSON.stringify(tableStructure)}
+  Request: ${prompt}
+  
+  Return ONLY:
+  <SQL>
+    -- Valid SQL query here --
+  </SQL>
+`;
 
-    // Get AI response
     const airesponse = await processHtmlLLM(promptForLLM);
     console.log("AI Response:", airesponse);
 
     const sanitizedQuery = cleanAndSanitizeSQL(airesponse);
-    console.log(sanitizedQuery);
-
-    // Use the pool to execute the query directly
-    const [rows] = await pool.execute(sanitizedQuery);
-
-    if (rows.length === 0) {
-      return res.json({ message: "No records found." });
+    if (!sanitizedQuery) {
+      throw new Error("Failed to extract valid SQL from AI response");
     }
 
-    res.json(rows);
+    console.log("Sanitized Query:", sanitizedQuery);
+    const [rows] = await pool.execute(sanitizedQuery);
+    console.log("Query executed row:-",rows);
+
+    res.json({
+      data: rows.length === 0 ? { message: "No records found." } : rows,
+      query: sanitizedQuery, // Add the sanitized query to the response
+    });
 
   } catch (error) {
-    console.error("Error executing query on first attempt:", error.message);
+    console.error("Initial error:", error.message);
 
-    // Retry logic: If the query fails, pass the failed query back to LLM and retry once
     try {
-      console.log("Retrying query generation with LLM...");
+      console.log("Attempting retry...");
 
-      // Get AI response again to fix any potential issues
-      let retryAiResponse = await processHtmlLLM(`
-        The previous query failed to execute properly. Please revise the query based on the following table structure and the original request.
-        ${entity}
-        ${JSON.stringify(await getTableStructure(entity))}
-        Original query: ${sanitizedQuery}
-        Original error: ${error.message}
-        Please ensure the query is correct and follows SQL standards. Only generate SQL queries without explanations, comments, or additional text.
-      `);
-      
-      console.log("Retry AI Response:", retryAiResponse);
+      // Enhanced retry prompt with XML format requirement
+      const retryPrompt = `
+        Previous query failed. Please fix the SQL command wrapped in <sqlcommand> tags.
+        Error: ${error.message}
+        Original request:
+        Table: ${entity}
+        Structure: ${JSON.stringify(await getTableStructure(entity))}
+        Request: ${prompt}
+        
+        Return ONLY the corrected SQL in <sqlcommand> tags with:
+        - Proper XML formatting
+        - Valid SQL syntax
+        - No additional text
+      `;
 
-      let retrySanitizedQuery = cleanAndSanitizeSQL(retryAiResponse);
-      console.log("Retry Sanitized Query:", retrySanitizedQuery);
+      const retryResponse = await processHtmlLLM(retryPrompt);
+      console.log("Retry AI Response:", retryResponse);
 
-      // Try to execute the retry query
-      let [retryRows, retryFields] = await pool.execute(retrySanitizedQuery);
-
-      if (retryRows.length === 0) {
-        return res.json({ message: "No records found." });
+      const retryQuery = cleanAndSanitizeSQL(retryResponse);
+      if (!retryQuery) {
+        throw new Error("Failed to extract valid SQL from retry response");
       }
 
-      // Return the result of the retried query
-      res.json(retryRows);
+      console.log("Retry Sanitized Query:", retryQuery);
+      const [retryRows] = await pool.execute(retryQuery);
 
+      res.json({
+        data:
+          retryRows.length === 0 ? { message: "No records found." } : retryRows,
+        query: retryQuery,
+      });
     } catch (retryError) {
-      console.error("Error executing retried query:", retryError.message);
-      res.status(500).json({ error: "Failed to execute query after retry." });
+      console.error("Retry failed:", retryError.message);
+      res.status(500).json({
+        error: "Failed after retry",
+        details: retryError.message,
+        originalError: error.message,
+      });
     }
   }
 });
-
 
 // Root route
 app.get("/", (req, res) => {
