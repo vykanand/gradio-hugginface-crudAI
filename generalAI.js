@@ -1,35 +1,48 @@
-// Function to send a question to external AI server
 const askQuestion = async (question) => {
   console.log("Starting to process the question...");
+  const maxRetries = 3;
+  const baseDelay = 2000;
 
-  try {
-    const response = await fetch(
-      "https://gitops-production.up.railway.app/aiserver",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          aiquestion: question,
-          sessionId: "vjiaso",
-        }),
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(
+        "https://gitops-production.up.railway.app/aiserver",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            aiquestion: question,
+            sessionId: "wkqgml2",
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.response || data;
       }
-    );
 
-    if (!response.ok) {
+      if (attempt < maxRetries - 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, baseDelay * (attempt + 1))
+        );
+        continue;
+      }
       throw new Error(`HTTP error! status: ${response.status}`);
+    } catch (error) {
+      if (attempt === maxRetries - 1) {
+        console.error(`Error with API request: ${error.message}`);
+        throw error;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, baseDelay * (attempt + 1))
+      );
     }
-
-    const data = await response.json();
-    return data.response || data;
-  } catch (error) {
-    console.error(`Error with API request: ${error.message}`);
-    throw error;
   }
 };
 
-// Function to chunk text into manageable sizes
 const chunkText = (text, chunkSize) => {
   console.log("Chunking text...");
   const chunks = [];
@@ -40,7 +53,6 @@ const chunkText = (text, chunkSize) => {
   return chunks;
 };
 
-// Process all text chunks and combine responses
 const processChunks = async (chunks) => {
   console.log("Processing chunks...");
   let combinedResponse = "";
@@ -56,13 +68,13 @@ const processChunks = async (chunks) => {
       console.log(`Progress: ${percentageCompleted.toFixed(2)}% completed.`);
     } catch (error) {
       console.error(`Error processing chunk ${index + 1}: ${error.message}`);
+      // Continue processing remaining chunks even if one fails
     }
   }
   console.log("All chunks processed.");
   return combinedResponse.trim();
 };
 
-// Main function to process HTML content
 const processHtmlLLM = async (htmlContent) => {
   console.log("Starting HTML processing...");
 
