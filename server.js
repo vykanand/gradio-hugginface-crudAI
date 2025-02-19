@@ -18,35 +18,13 @@ app.use(express.json());
 app.use(cors());
 
 
-async function loadDatabaseConfig() {
-  const configPath = path.join(__dirname, "config", "database.json");
-  const configData = await fs.readFile(configPath, "utf8");
-  return JSON.parse(configData);
-}
-
-async function saveDatabaseConfig(config) {
-  const configPath = path.join(__dirname, "config", "database.json");
-  await fs.writeFile(configPath, JSON.stringify(config, null, 2));
-}
-
-// Ensure config API returns current values
-app.get('/api/config', async (req, res) => {
-    try {
-        const config = await loadDatabaseConfig();
-        // Remove sensitive data before sending to client
-        const safeConfig = {
-          host: config.host,
-          user: config.user,
-          password: config.password,
-          database: config.database,
-          // Exclude password from client response
-        };
-        res.json(safeConfig);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to load configuration' });
+// Add graceful shutdown handler
+process.on('SIGTERM', async () => {
+    if (pool) {
+        await pool.end();
     }
+    process.exit(0);
 });
-
 // Add database connection test endpoint
 app.get('/api/testConnection', async (req, res) => {
     try {
@@ -61,21 +39,76 @@ app.get('/api/testConnection', async (req, res) => {
     }
 });
 
+// Load all configurations
+async function loadConfigurations() {
+    const configPath = path.join(__dirname, 'config', 'database.json');
+    const configData = await fs.readFile(configPath, 'utf8');
+    return JSON.parse(configData);
+}
 
-app.post("/api/config", async (req, res) => {
-  try {
-    await saveDatabaseConfig(req.body);
-    res.json({ message: "Configuration saved, server restarting..." });
+// Save configurations
+async function saveConfigurations(configs) {
+    const configPath = path.join(__dirname, 'config', 'database.json');
+    await fs.writeFile(configPath, JSON.stringify(configs, null, 2));
+}
 
-    // Force clear the require cache for config
-    delete require.cache[require.resolve("./config/database.json")];
+// Get active configuration
+async function getActiveConfig() {
+    const configs = await loadConfigurations();
+    return configs.configurations[configs.activeConfig];
+}
 
-    // Gracefully close existing pool
-    if (pool) {
-      await pool.end();
+// Add database connection test endpoint
+app.get('/api/testConnection', async (req, res) => {
+    try {
+        // Test query to verify connection
+        await pool.query('SELECT 1');
+        res.json({ 
+            status: 'connected',
+            config: await getActiveConfig()
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            error: 'Database connection failed',
+            details: error.message,
+            config: await getActiveConfig()
+        });
     }
+});
 
-    // Restart the process with new environment
+// Routes for multiple configurations
+app.get('/api/configs', async (req, res) => {
+    try {
+        const configs = await loadConfigurations();
+        res.json(configs);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to load configurations' });
+    }
+});
+
+app.post('/api/configs', async (req, res) => {
+    try {
+        const { name, config } = req.body;
+        const configs = await loadConfigurations();
+        configs.configurations[name] = config;
+        await saveConfigurations(configs);
+        res.json({ message: 'Configuration saved successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to save configuration' });
+    }
+});
+
+app.post("/api/configs/activate", async (req, res) => {
+  try {
+    const { name } = req.body;
+    const configs = await loadConfigurations();
+    configs.activeConfig = name;
+    await saveConfigurations(configs);
+
+    // Send response before restart
+    res.json({ message: "Active configuration changed, server restarting..." });
+
+    // Wait for response to be sent, then restart
     setTimeout(() => {
       process.on("exit", () => {
         spawn(process.argv[0], process.argv.slice(1), {
@@ -86,29 +119,34 @@ app.post("/api/config", async (req, res) => {
       process.exit();
     }, 1000);
   } catch (error) {
-    res.status(500).json({ error: "Failed to save configuration" });
+    res.status(500).json({ error: "Failed to change active configuration" });
   }
 });
 
-// app.post('/api/config', async (req, res) => {
-//     try {
-//         await saveDatabaseConfig(req.body);
-//         res.json({ message: 'Configuration saved successfully' });
-//     } catch (error) {
-//         res.status(500).json({ error: 'Failed to save configuration' });
-//     }
-// });
 
-// Replace existing pool creation with this
-let pool;
+app.delete('/api/configs/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        const configs = await loadConfigurations();
+        
+        if (name === configs.activeConfig) {
+            return res.status(400).json({ error: 'Cannot delete active configuration' });
+        }
+        
+        delete configs.configurations[name];
+        await saveConfigurations(configs);
+        res.json({ message: 'Configuration deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete configuration' });
+    }
+});
 
+// Update database initialization
 async function initializeDatabase() {
-  // Force fresh config load
-  const config = await loadDatabaseConfig();
-  pool = mysql.createPool(config);
-  console.log("MySQL pool created with new configuration:", config.host);
+    const config = await getActiveConfig();
+    pool = mysql.createPool(config);
+    console.log("MySQL pool created with active configuration");
 }
-
 
 // Redis client setup
 // const redisClient = redis.createClient({

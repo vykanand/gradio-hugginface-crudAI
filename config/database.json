@@ -1,6 +1,23 @@
 {
-  "host": "localhost",
-  "user": "root",
-  "password": "niveus@123",
-  "database": "dynamic_app"
+  "configurations": {
+    "default": {
+      "host": "localhost",
+      "user": "root",
+      "password": "niveus@123",
+      "database": "dynamic_app",
+      "waitForConnections": true,
+      "connectionLimit": 10,
+      "queueLimit": 0
+    },
+    "production": {
+      "host": "prod.host",
+      "user": "prod_user",
+      "password": "prod_pass",
+      "database": "prod_db",
+      "waitForConnections": true,
+      "connectionLimit": 10,
+      "queueLimit": 0
+    }
+  },
+  "activeConfig": "default"
 }

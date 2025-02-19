@@ -1,20 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Database Configuration</title>
+    <title>Database Configurations</title>
     <style>
         body { max-width: 800px; margin: 0 auto; padding: 20px; font-family: Arial; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; }
-        input { width: 100%; padding: 8px; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
+        input, select { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; margin-right: 10px; }
+        .config-actions { margin-top: 20px; }
         .success { color: green; }
         .error { color: red; }
     </style>
 </head>
 <body>
-    <h1>Database Configuration</h1>
+    <h1>Database Configurations</h1>
+    
+    <div class="form-group">
+        <label for="configSelect">Select Configuration:</label>
+        <select id="configSelect"></select>
+    </div>
+
     <form id="configForm">
+        <div class="form-group">
+            <label for="configName">Configuration Name:</label>
+            <input type="text" id="configName" name="configName" required>
+        </div>
         <div class="form-group">
             <label for="host">Host:</label>
             <input type="text" id="host" name="host" required>
@@ -31,70 +42,154 @@
             <label for="database">Database:</label>
             <input type="text" id="database" name="database" required>
         </div>
-        <button type="submit">Save Configuration</button>
+        
+        <div class="config-actions">
+            <button type="submit">Save Configuration</button>
+            <button type="button" id="setActiveBtn">Set As Active</button>
+            <button type="button" id="deleteBtn">Delete Configuration</button>
+        </div>
     </form>
     <div id="message"></div>
 
     <script>
-
-       document.addEventListener('DOMContentLoaded', () => {
-    fetch('/api/config')
-        .then(res => res.json())
-        .then(config => {
-            console.log('Loaded config:', config); // Debug line
-            Object.keys(config).forEach(key => {
-                const input = document.getElementById(key);
-                if (input) {
-                    input.value = config[key];
+        let configs = {};
+        
+        async function loadConfigurations() {
+            const response = await fetch('/api/configs');
+            configs = await response.json();
+            
+            const select = document.getElementById('configSelect');
+            select.innerHTML = '';
+            
+            Object.keys(configs.configurations).forEach(configName => {
+                const option = document.createElement('option');
+                option.value = configName;
+                option.textContent = configName;
+                if (configName === configs.activeConfig) {
+                    option.textContent += ' (Active)';
                 }
+                select.appendChild(option);
             });
-        })
-        .catch(err => {
-            console.error('Error loading config:', err);
-            document.getElementById('message').innerHTML = 
-                '<p class="error">Failed to load current configuration</p>';
-        });
-});
+            
+            loadSelectedConfig();
+        }
 
-        // Update the form submit handler script section
-document.getElementById('configForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const config = Object.fromEntries(formData);
+        function loadSelectedConfig() {
+            const configName = document.getElementById('configSelect').value;
+            const config = configs.configurations[configName];
+            
+            document.getElementById('configName').value = configName;
+            document.getElementById('host').value = config.host;
+            document.getElementById('user').value = config.user;
+            document.getElementById('password').value = config.password;
+            document.getElementById('database').value = config.database;
+        }
+
+        document.getElementById('configSelect').onchange = loadSelectedConfig;
+
+        document.getElementById('configForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const configName = document.getElementById('configName').value;
+            const config = {
+                host: document.getElementById('host').value,
+                user: document.getElementById('user').value,
+                password: document.getElementById('password').value,
+                database: document.getElementById('database').value,
+                waitForConnections: true,
+                connectionLimit: 10,
+                queueLimit: 0
+            };
+
+            try {
+                await fetch('/api/configs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: configName, config })
+                });
+                
+                document.getElementById('message').innerHTML = 
+                    '<p class="success">Configuration saved successfully!</p>';
+                loadConfigurations();
+            } catch (error) {
+                document.getElementById('message').innerHTML = 
+                    `<p class="error">Error: ${error.message}</p>`;
+            }
+        };
+
+       document.getElementById('setActiveBtn').onclick = async () => {
+    const configName = document.getElementById('configName').value;
     const messageDiv = document.getElementById('message');
     
     try {
-        const response = await fetch('/api/config', {
+        await fetch('/api/configs/activate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(config)
+            body: JSON.stringify({ name: configName })
         });
+
+        messageDiv.innerHTML = '<p>Server stopping and restarting with new configuration...</p>';
         
-        if (response.ok) {
-            messageDiv.innerHTML = '<p class="success">Configuration saved! Server is restarting...</p>';
-            
-            // Check server and database connection
-            setTimeout(async function checkConnection() {
-                try {
-                    // Test database connection endpoint
-                    const dbCheck = await fetch('/api/testConnection');
-                    if (dbCheck.ok) {
-                        messageDiv.innerHTML += '<p class="success">✅ Server restarted and database connected successfully!</p>';
-                    } else {
-                        messageDiv.innerHTML += '<p class="error">❌ Database connection failed. Please verify your configuration and try again.</p>';
-                    }
-                } catch (error) {
-                    // Server still restarting, try again
-                    messageDiv.innerHTML = '<p>Waiting for server to restart...</p>';
-                    setTimeout(checkConnection, 1000);
-                }
-            }, 2000);
+        function checkRestart() {
+            fetch('/')
+                .then(() => {
+                    messageDiv.innerHTML = '<p class="success">✅ Server restarted and connection established!</p>';
+                    checkConnection();
+                })
+                .catch(() => setTimeout(checkRestart, 1000));
         }
+
+        function checkConnection() {
+            fetch('/api/testConnection')
+                .then(async response => {
+                    const data = await response.json();
+                    if (!response.ok || data.error) {
+                        messageDiv.innerHTML = `
+                            <p class="success">✅ Server restarted</p>
+                            <p class="error">❌ Database connection failed</p>
+                            <p class="error">Error: ${data.details || data.error}</p>
+                        `;
+                        return;
+                    }else{
+                        messageDiv.innerHTML = `
+                        <p class="success">✅ Server restarted</p>
+                        <p class="success">✅ Connected to database: ${data.config.database} at ${data.config.host}</p>
+                    `;
+                    }
+                    
+                    loadConfigurations();
+                })
+                .catch(() => setTimeout(checkConnection, 1000));
+        }
+
+        setTimeout(checkRestart, 2000);
     } catch (error) {
         messageDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     }
 };
 
+
+
+        document.getElementById('deleteBtn').onclick = async () => {
+            const configName = document.getElementById('configName').value;
+            if (configName === configs.activeConfig) {
+                document.getElementById('message').innerHTML = 
+                    '<p class="error">Cannot delete active configuration!</p>';
+                return;
+            }
+            
+            try {
+                await fetch(`/api/configs/${configName}`, { method: 'DELETE' });
+                document.getElementById('message').innerHTML = 
+                    '<p class="success">Configuration deleted successfully!</p>';
+                loadConfigurations();
+            } catch (error) {
+                document.getElementById('message').innerHTML = 
+                    `<p class="error">Error: ${error.message}</p>`;
+            }
+        };
+
+        loadConfigurations();
+        
     </script>
 </body>
 </html>
