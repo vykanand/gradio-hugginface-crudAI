@@ -1,7 +1,11 @@
+// show all product with stock more than 50 and join on order_items with product_id foreign key
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const fs = require("fs").promises;
 const mysql = require("mysql2/promise");
+const { spawn } = require("child_process");
+
 // const redis = require("redis");
 
 const processHtmlLLM = require("./generalAI.js");
@@ -12,6 +16,99 @@ const PORT = 3000;
 // Middleware setup
 app.use(express.json());
 app.use(cors());
+
+
+async function loadDatabaseConfig() {
+  const configPath = path.join(__dirname, "config", "database.json");
+  const configData = await fs.readFile(configPath, "utf8");
+  return JSON.parse(configData);
+}
+
+async function saveDatabaseConfig(config) {
+  const configPath = path.join(__dirname, "config", "database.json");
+  await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+}
+
+// Ensure config API returns current values
+app.get('/api/config', async (req, res) => {
+    try {
+        const config = await loadDatabaseConfig();
+        // Remove sensitive data before sending to client
+        const safeConfig = {
+          host: config.host,
+          user: config.user,
+          password: config.password,
+          database: config.database,
+          // Exclude password from client response
+        };
+        res.json(safeConfig);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to load configuration' });
+    }
+});
+
+// Add database connection test endpoint
+app.get('/api/testConnection', async (req, res) => {
+    try {
+        // Test query to verify connection
+        await pool.query('SELECT 1');
+        res.json({ status: 'connected' });
+    } catch (error) {
+        res.status(500).json({ 
+            error: 'Database connection failed',
+            details: error.message 
+        });
+    }
+});
+
+
+app.post("/api/config", async (req, res) => {
+  try {
+    await saveDatabaseConfig(req.body);
+    res.json({ message: "Configuration saved, server restarting..." });
+
+    // Force clear the require cache for config
+    delete require.cache[require.resolve("./config/database.json")];
+
+    // Gracefully close existing pool
+    if (pool) {
+      await pool.end();
+    }
+
+    // Restart the process with new environment
+    setTimeout(() => {
+      process.on("exit", () => {
+        spawn(process.argv[0], process.argv.slice(1), {
+          env: { ...process.env, RELOAD: "true" },
+          stdio: "inherit",
+        });
+      });
+      process.exit();
+    }, 1000);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to save configuration" });
+  }
+});
+
+// app.post('/api/config', async (req, res) => {
+//     try {
+//         await saveDatabaseConfig(req.body);
+//         res.json({ message: 'Configuration saved successfully' });
+//     } catch (error) {
+//         res.status(500).json({ error: 'Failed to save configuration' });
+//     }
+// });
+
+// Replace existing pool creation with this
+let pool;
+
+async function initializeDatabase() {
+  // Force fresh config load
+  const config = await loadDatabaseConfig();
+  pool = mysql.createPool(config);
+  console.log("MySQL pool created with new configuration:", config.host);
+}
+
 
 // Redis client setup
 // const redisClient = redis.createClient({
@@ -30,16 +127,17 @@ app.use(cors());
 //   connectionLimit: 10, // Set appropriate connection limit based on load
 //   queueLimit: 0,
 // });
-const pool = mysql.createPool({
-  host: "localhost",
-  user: "root",
-  password: "niveus@123",
-  database: "dynamic_app",
-  waitForConnections: true,
-  connectionLimit: 10, // Set appropriate connection limit based on load
-  queueLimit: 0,
-});
-console.log("MySQL pool created.");
+
+// const pool = mysql.createPool({
+//   host: "localhost",
+//   user: "root",
+//   password: "niveus@123",
+//   database: "dynamic_app",
+//   waitForConnections: true,
+//   connectionLimit: 10, // Set appropriate connection limit based on load
+//   queueLimit: 0,
+// });
+// console.log("MySQL pool created.");
 
 // Function to get table structure with Redis caching
 async function getTableStructure(entity) {
@@ -125,49 +223,85 @@ app.get("/database", async (req, res) => {
 });
 
 // Add XML parsing function for SQL commands
-  function extractSQLFromXML(aiResponse) {
-  // Case-insensitive regex that handles different tag formats and whitespace
-  const sqlRegex = /<\s*sqlcommand|SQL\s*>([\s\S]*?)<\/\s*(sqlcommand|SQL)\s*>/i;
-  const match = aiResponse.match(sqlRegex);
+//   function extractSQLFromXML(aiResponse) {
+//   // Case-insensitive regex that handles different tag formats and whitespace
+//     // const sqlRegex = /<\s*sqlcommand|SQL\s*>([\s\S]*?)<\/\s*(sqlcommand|SQL)\s*>/i;
+//     const sqlRegex = /<\s*sqlcommand|SQL\s*>([\s\S]*?)<\/\s*(sqlcommand|SQL)\s*>/i;
+
+//   const match = aiResponse.match(sqlRegex);
   
-  if (match && match[1]) {
-    return match[1].trim();
-  }
-  throw new Error(`No valid SQL block found in AI response. Received: ${aiResponse}`);
-}
+//   if (match && match[1]) {
+//     return match[1].trim();
+//   }
+//   throw new Error(`No valid SQL block found in AI response. Received: ${aiResponse}`);
+// }
 
 // Modified cleanAndSanitizeSQL to handle XML
-const cleanAndSanitizeSQL = (text) => {
-  try {
-    // First extract SQL from XML
-    const sqlCommand = extractSQLFromXML(text);
+// const cleanAndSanitizeSQL = (text) => {
+//   try {
+//     // First extract SQL from XML
+//     const sqlCommand = extractSQLFromXML(text);
 
-    // Then proceed with original sanitization
-    const entityNameRegex =
-      /(?<!\w)(?:`?)([a-zA-Z_][a-zA-Z0-9_]*)(?:`?)(?!\w)/g;
-    const sqlKeywordRegex = /\b(DATE\(\)|NOW\(\))\b/gi;
-    const dateFunctionRegex = /\b(DATE\(\)|CURRENT_TIMESTAMP)\b/gi;
-    const sqlQueryRegex =
-      /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|REPLACE|MERGE|BEGIN|COMMIT|ROLLBACK|SET|SHOW|USE|DESCRIBE|GRANT|REVOKE|LOCK|UNLOCK|TABLE|PROCEDURE|FUNCTION|INDEX|VIEW)\b[^\;]*\;/i;
+//     // Then proceed with original sanitization
+//     const entityNameRegex =
+//       /(?<!\w)(?:`?)([a-zA-Z_][a-zA-Z0-9_]*)(?:`?)(?!\w)/g;
+//     const sqlKeywordRegex = /\b(DATE\(\)|NOW\(\))\b/gi;
+//     const dateFunctionRegex = /\b(DATE\(\)|CURRENT_TIMESTAMP)\b/gi;
+//     const sqlQueryRegex =
+//       /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|REPLACE|MERGE|BEGIN|COMMIT|ROLLBACK|SET|SHOW|USE|DESCRIBE|GRANT|REVOKE|LOCK|UNLOCK|TABLE|PROCEDURE|FUNCTION|INDEX|VIEW)\b[^\;]*\;/i;
 
-    const match = sqlCommand.match(sqlQueryRegex);
+//     const match = sqlCommand.match(sqlQueryRegex);
 
-    if (match) {
-      const query = match[0]
-        .replace(entityNameRegex, (entityName) => entityName)
-        .replace(sqlKeywordRegex, (match) => match.toUpperCase())
-        .replace(/(?<=\s)DATE\(/g, "CURDATE(")
-        .replace(/(?<=\s)CURRENT_TIMESTAMP\b/g, "CURRENT_TIMESTAMP")
-        .trim();
+//     if (match) {
+//       const query = match[0]
+//         .replace(entityNameRegex, (entityName) => entityName)
+//         .replace(sqlKeywordRegex, (match) => match.toUpperCase())
+//         .replace(/(?<=\s)DATE\(/g, "CURDATE(")
+//         .replace(/(?<=\s)CURRENT_TIMESTAMP\b/g, "CURRENT_TIMESTAMP")
+//         .trim();
 
-      return query;
-    }
-    return null;
-  } catch (error) {
-    console.error("Error parsing SQL from XML:", error.message);
-    return null;
+//       return query;
+//     }
+//     return null;
+//   } catch (error) {
+//     console.error("Error parsing SQL from XML:", error.message);
+//     return null;
+//   }
+// };
+
+
+function extractSQL(text) {
+  // Simple regex to find SQL statements starting with common keywords
+  const sqlRegex =
+    /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE)\s+[^;]*;/gi;
+
+  // Find all matches in the text
+  const matches = text.match(sqlRegex);
+
+  if (matches && matches.length > 0) {
+    // Return the first valid SQL statement found
+    return matches[0].trim();
   }
-};
+
+  // If no matches found, try to extract anything that looks like SQL
+  const fallbackRegex =
+    /(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE)[\s\S]*?;/i;
+  const fallbackMatch = text.match(fallbackRegex);
+
+  return fallbackMatch ? fallbackMatch[0].trim() : null;
+}
+
+// Replace the existing cleanAndSanitizeSQL with this simpler version
+function cleanAndSanitizeSQL(text) {
+  const sql = extractSQL(text);
+  return sql ? sql.replace(/\s+/g, " ").trim() : null;
+}
+
+function getQueryType(query) {
+  const modificationKeywords =
+    /(ALTER|CREATE|DROP|TRUNCATE|UPDATE|INSERT|DELETE)/i;
+  return modificationKeywords.test(query);
+}
 
 // Route to handle dynamic SQL generation and execution
 app.post("/:entity", async (req, res) => {
@@ -183,17 +317,29 @@ app.post("/:entity", async (req, res) => {
     }
 
     // Updated prompt to specify XML format
-    const promptForLLM = `
-  Generate SQL wrapped in <SQL> tags:
-  Table: ${entity}
-  Structure: ${JSON.stringify(tableStructure)}
-  Request: ${prompt}
-  
-  Return ONLY:
-  <SQL>
-    -- Valid SQL query here --
-  </SQL>
+  const promptForLLM = `
+IMPORTANT: Generate ONLY a single SQL statement. No messages, no explanations.
+
+Context:
+- Table: ${entity}
+- Structure: ${JSON.stringify(tableStructure)}
+- Request: ${prompt}
+
+Requirements:
+1. Return exactly ONE SQL statement
+2. Must be executable SQL
+3. Must end with semicolon
+4. No comments or messages
+5. No error text or explanations
+
+Example good response:
+CREATE TABLE orders (id INT PRIMARY KEY AUTO_INCREMENT, product_id INT, order_date DATETIME);
+
+Example bad response:
+-- This creates a table
+SELECT 'Cannot create' as Error;
 `;
+
 
     const airesponse = await processHtmlLLM(promptForLLM);
     console.log("AI Response:", airesponse);
@@ -208,8 +354,16 @@ app.post("/:entity", async (req, res) => {
     console.log("Query executed row:-",rows);
 
     res.json({
-      data: rows.length === 0 ? { message: "No records found." } : rows,
-      query: sanitizedQuery, // Add the sanitized query to the response
+      data:
+        rows.length === 0
+          ? {
+              message: getQueryType(sanitizedQuery)
+                ? "Table modification completed successfully"
+                : "No records found",
+            }
+          : rows,
+      query: sanitizedQuery,
+      type: getQueryType(sanitizedQuery) ? "modification" : "query",
     });
 
   } catch (error) {
@@ -265,7 +419,18 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
+app.get("/config", (req, res) => {
+  res.sendFile(path.join(__dirname, "config.html"));
+});
+
 // Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+// app.listen(PORT, () => {
+//   console.log(`Server is running on http://localhost:${PORT}`);
+// });
+
+// Call this when starting the server
+initializeDatabase().then(() => {
+    app.listen(PORT, () => {
+        console.log(`Server is running on http://localhost:${PORT}`);
+    });
 });
