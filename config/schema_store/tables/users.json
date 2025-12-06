@@ -1,0 +1,224 @@
+{
+  "tableName": "users",
+  "schema": {
+    "tableName": "users",
+    "columns": [
+      {
+        "Field": "id",
+        "Type": "int unsigned",
+        "Null": "NO",
+        "Key": "PRI",
+        "Default": null,
+        "Extra": "auto_increment"
+      },
+      {
+        "Field": "email",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "UNI",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "access",
+        "Type": "json",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "phone",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "name",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "password",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "loginstatus",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "",
+        "Default": "False",
+        "Extra": ""
+      },
+      {
+        "Field": "apikey",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "provider",
+        "Type": "varchar(50)",
+        "Null": "YES",
+        "Key": "",
+        "Default": "local",
+        "Extra": ""
+      },
+      {
+        "Field": "provider_id",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "id_token",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "access_token",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "refresh_token",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "token_expiry",
+        "Type": "datetime",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "last_login",
+        "Type": "datetime",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "avatar",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "role",
+        "Type": "varchar(255)",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "address",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "created_at",
+        "Type": "timestamp",
+        "Null": "YES",
+        "Key": "",
+        "Default": "CURRENT_TIMESTAMP",
+        "Extra": "DEFAULT_GENERATED"
+      },
+      {
+        "Field": "user_groups",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "user_roles",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      }
+    ],
+    "rowCount": 3,
+    "foreignKeys": [],
+    "indexes": [
+      {
+        "Table": "users",
+        "Non_unique": 0,
+        "Key_name": "PRIMARY",
+        "Seq_in_index": 1,
+        "Column_name": "id",
+        "Collation": "A",
+        "Cardinality": 3,
+        "Sub_part": null,
+        "Packed": null,
+        "Null": "",
+        "Index_type": "BTREE",
+        "Comment": "",
+        "Index_comment": "",
+        "Visible": "YES",
+        "Expression": null
+      },
+      {
+        "Table": "users",
+        "Non_unique": 0,
+        "Key_name": "email",
+        "Seq_in_index": 1,
+        "Column_name": "email",
+        "Collation": "A",
+        "Cardinality": 3,
+        "Sub_part": null,
+        "Packed": null,
+        "Null": "YES",
+        "Index_type": "BTREE",
+        "Comment": "",
+        "Index_comment": "",
+        "Visible": "YES",
+        "Expression": null
+      }
+    ],
+    "stats": {
+      "TABLE_NAME": "users",
+      "ENGINE": "InnoDB",
+      "TABLE_ROWS": 3,
+      "AVG_ROW_LENGTH": 5461,
+      "DATA_LENGTH": 16384,
+      "INDEX_LENGTH": 16384,
+      "CREATE_TIME": "2025-09-15T16:11:34.000Z",
+      "UPDATE_TIME": "2025-12-03T14:19:41.000Z"
+    }
+  }
+}

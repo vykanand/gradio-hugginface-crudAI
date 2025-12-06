@@ -1,0 +1,20 @@
+{
+  "database": null,
+  "savedAt": "2025-12-06T17:05:15.667Z",
+  "tableCount": 13,
+  "tables": [
+    "appsthink_crm",
+    "authorization",
+    "delivery",
+    "extract_contact",
+    "navigation",
+    "news1",
+    "orders",
+    "products",
+    "realtime_news",
+    "users",
+    "vinay",
+    "weather1",
+    "yelp_1"
+  ]
+}

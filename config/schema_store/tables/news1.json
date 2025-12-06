@@ -1,0 +1,143 @@
+{
+  "tableName": "news1",
+  "schema": {
+    "tableName": "news1",
+    "columns": [
+      {
+        "Field": "id",
+        "Type": "int",
+        "Null": "NO",
+        "Key": "PRI",
+        "Default": null,
+        "Extra": "auto_increment"
+      },
+      {
+        "Field": "author",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "title",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "description",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "url",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "source",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "image",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "category",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "language",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "country",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "published_at",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "role",
+        "Type": "varchar(50)",
+        "Null": "YES",
+        "Key": "",
+        "Default": "admin",
+        "Extra": ""
+      },
+      {
+        "Field": "created_at",
+        "Type": "datetime",
+        "Null": "YES",
+        "Key": "",
+        "Default": "CURRENT_TIMESTAMP",
+        "Extra": "DEFAULT_GENERATED"
+      }
+    ],
+    "rowCount": 1,
+    "foreignKeys": [],
+    "indexes": [
+      {
+        "Table": "news1",
+        "Non_unique": 0,
+        "Key_name": "PRIMARY",
+        "Seq_in_index": 1,
+        "Column_name": "id",
+        "Collation": "A",
+        "Cardinality": 0,
+        "Sub_part": null,
+        "Packed": null,
+        "Null": "",
+        "Index_type": "BTREE",
+        "Comment": "",
+        "Index_comment": "",
+        "Visible": "YES",
+        "Expression": null
+      }
+    ],
+    "stats": {
+      "TABLE_NAME": "news1",
+      "ENGINE": "InnoDB",
+      "TABLE_ROWS": 0,
+      "AVG_ROW_LENGTH": 0,
+      "DATA_LENGTH": 16384,
+      "INDEX_LENGTH": 0,
+      "CREATE_TIME": "2025-10-22T13:53:29.000Z",
+      "UPDATE_TIME": "2025-11-24T15:30:25.000Z"
+    }
+  }
+}

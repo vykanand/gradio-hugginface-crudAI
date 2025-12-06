@@ -1,0 +1,111 @@
+{
+  "tableName": "navigation",
+  "schema": {
+    "tableName": "navigation",
+    "columns": [
+      {
+        "Field": "id",
+        "Type": "int",
+        "Null": "NO",
+        "Key": "PRI",
+        "Default": null,
+        "Extra": "auto_increment"
+      },
+      {
+        "Field": "nav",
+        "Type": "mediumtext",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "urn",
+        "Type": "mediumtext",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "plugin",
+        "Type": "longtext",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "field_types",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "field_required",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "field_options",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "parent",
+        "Type": "json",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "created_at",
+        "Type": "datetime",
+        "Null": "NO",
+        "Key": "",
+        "Default": "CURRENT_TIMESTAMP",
+        "Extra": "DEFAULT_GENERATED"
+      }
+    ],
+    "rowCount": 10,
+    "foreignKeys": [],
+    "indexes": [
+      {
+        "Table": "navigation",
+        "Non_unique": 0,
+        "Key_name": "PRIMARY",
+        "Seq_in_index": 1,
+        "Column_name": "id",
+        "Collation": "A",
+        "Cardinality": 9,
+        "Sub_part": null,
+        "Packed": null,
+        "Null": "",
+        "Index_type": "BTREE",
+        "Comment": "",
+        "Index_comment": "",
+        "Visible": "YES",
+        "Expression": null
+      }
+    ],
+    "stats": {
+      "TABLE_NAME": "navigation",
+      "ENGINE": "InnoDB",
+      "TABLE_ROWS": 10,
+      "AVG_ROW_LENGTH": 1638,
+      "DATA_LENGTH": 16384,
+      "INDEX_LENGTH": 0,
+      "CREATE_TIME": "2025-11-26T15:08:41.000Z",
+      "UPDATE_TIME": "2025-12-03T14:20:40.000Z"
+    }
+  }
+}

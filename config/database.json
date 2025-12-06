@@ -1,19 +1,21 @@
 {
   "configurations": {
     "default": {
-      "host": "localhost",
+      "host": "junction.proxy.rlwy.net",
       "user": "root",
-      "password": "niveus@123",
-      "database": "dynamic_app",
+      "password": "cyIgFzjjbzRiVbiHkemiUCKftdfPqBOn",
+      "database": "erpz",
+      "port": 14359,
       "waitForConnections": true,
       "connectionLimit": 10,
       "queueLimit": 0
     },
     "production": {
-      "host": "prod.host",
-      "user": "prod_user",
-      "password": "prod_pass",
-      "database": "prod_db",
+      "host": "junction.proxy.rlwy.net",
+      "user": "root",
+      "password": "cyIgFzjjbzRiVbiHkemiUCKftdfPqBOn",
+      "database": "erpz",
+      "port": 14359,
       "waitForConnections": true,
       "connectionLimit": 10,
       "queueLimit": 0

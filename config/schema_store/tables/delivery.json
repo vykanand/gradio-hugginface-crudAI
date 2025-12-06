@@ -1,0 +1,95 @@
+{
+  "tableName": "delivery",
+  "schema": {
+    "tableName": "delivery",
+    "columns": [
+      {
+        "Field": "id",
+        "Type": "int",
+        "Null": "NO",
+        "Key": "PRI",
+        "Default": null,
+        "Extra": "auto_increment"
+      },
+      {
+        "Field": "shipment",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "awb",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "partner",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "mode",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "role",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "created_at",
+        "Type": "datetime",
+        "Null": "YES",
+        "Key": "",
+        "Default": "CURRENT_TIMESTAMP",
+        "Extra": "DEFAULT_GENERATED"
+      }
+    ],
+    "rowCount": 16,
+    "foreignKeys": [],
+    "indexes": [
+      {
+        "Table": "delivery",
+        "Non_unique": 0,
+        "Key_name": "PRIMARY",
+        "Seq_in_index": 1,
+        "Column_name": "id",
+        "Collation": "A",
+        "Cardinality": 16,
+        "Sub_part": null,
+        "Packed": null,
+        "Null": "",
+        "Index_type": "BTREE",
+        "Comment": "",
+        "Index_comment": "",
+        "Visible": "YES",
+        "Expression": null
+      }
+    ],
+    "stats": {
+      "TABLE_NAME": "delivery",
+      "ENGINE": "InnoDB",
+      "TABLE_ROWS": 16,
+      "AVG_ROW_LENGTH": 1024,
+      "DATA_LENGTH": 16384,
+      "INDEX_LENGTH": 0,
+      "CREATE_TIME": "2025-02-09T17:52:36.000Z",
+      "UPDATE_TIME": "2025-11-24T15:30:23.000Z"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "tableName": "authorization",
+  "schema": {
+    "tableName": "authorization",
+    "columns": [
+      {
+        "Field": "groups",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "roles",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      }
+    ],
+    "rowCount": 2,
+    "foreignKeys": [],
+    "indexes": [],
+    "stats": {
+      "TABLE_NAME": "authorization",
+      "ENGINE": "InnoDB",
+      "TABLE_ROWS": 2,
+      "AVG_ROW_LENGTH": 8192,
+      "DATA_LENGTH": 16384,
+      "INDEX_LENGTH": 0,
+      "CREATE_TIME": "2025-09-15T15:27:01.000Z",
+      "UPDATE_TIME": "2025-11-24T15:30:22.000Z"
+    }
+  }
+}

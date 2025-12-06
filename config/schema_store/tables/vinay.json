@@ -1,0 +1,95 @@
+{
+  "tableName": "vinay",
+  "schema": {
+    "tableName": "vinay",
+    "columns": [
+      {
+        "Field": "id",
+        "Type": "int",
+        "Null": "NO",
+        "Key": "PRI",
+        "Default": null,
+        "Extra": "auto_increment"
+      },
+      {
+        "Field": "contact_number",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "email",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "company_name",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "designation",
+        "Type": "text",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
+      },
+      {
+        "Field": "role",
+        "Type": "varchar(50)",
+        "Null": "YES",
+        "Key": "",
+        "Default": "admin",
+        "Extra": ""
+      },
+      {
+        "Field": "created_at",
+        "Type": "datetime",
+        "Null": "YES",
+        "Key": "",
+        "Default": "CURRENT_TIMESTAMP",
+        "Extra": "DEFAULT_GENERATED"
+      }
+    ],
+    "rowCount": 1,
+    "foreignKeys": [],
+    "indexes": [
+      {
+        "Table": "vinay",
+        "Non_unique": 0,
+        "Key_name": "PRIMARY",
+        "Seq_in_index": 1,
+        "Column_name": "id",
+        "Collation": "A",
+        "Cardinality": 1,
+        "Sub_part": null,
+        "Packed": null,
+        "Null": "",
+        "Index_type": "BTREE",
+        "Comment": "",
+        "Index_comment": "",
+        "Visible": "YES",
+        "Expression": null
+      }
+    ],
+    "stats": {
+      "TABLE_NAME": "vinay",
+      "ENGINE": "InnoDB",
+      "TABLE_ROWS": 1,
+      "AVG_ROW_LENGTH": 16384,
+      "DATA_LENGTH": 16384,
+      "INDEX_LENGTH": 0,
+      "CREATE_TIME": "2025-12-03T14:20:40.000Z",
+      "UPDATE_TIME": "2025-12-03T14:21:47.000Z"
+    }
+  }
+}

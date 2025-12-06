@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Database Explorer & Schema Discovery</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Markdown renderer and sanitizer for rich AI responses -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: #f5f7fa;
+        padding: 20px;
+      }
+
+      /* Make query result tables horizontally scrollable when wide */
+      .table-scroll {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        background: white;
+        border-radius: 8px;
+        padding: 8px;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.02);
+      }
+      .query-result-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 600px; /* allow horizontal scroll on smaller viewports */
+      }
+
+      .main-container {
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+
+      .section-card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .section-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 20px;
+        color: #2c3e50;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 500;
+      }
+
+      .status-connected {
+        background: #d4edda;
+        color: #155724;
+      }
+
+      .status-disconnected {
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      .status-loading {
+        background: #fff3cd;
+        color: #856404;
+      }
+
+      .table-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .table-item {
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 16px;
+        cursor: pointer;
+        transition: all 0.3s;
+        position: relative;
+      }
+
+      .table-item:hover {
+        border-color: #4a90e2;
+        background: #f8f9fa;
+        transform: translateY(-2px);
+      }
+
+      .table-item.selected {
+        border-color: #4a90e2;
+        background: #e3f2fd;
+      }
+
+      /* Floating action button for starting AI analysis (pill with icon + label) */
+      #floating-start-analysis {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        min-width: 160px;
+        height: 48px;
+        padding: 8px 14px;
+        border-radius: 28px;
+        background: linear-gradient(135deg, #4a90e2 0%, #2b8fed 100%);
+        color: white;
+        border: none;
+        box-shadow: 0 6px 18px rgba(43, 143, 237, 0.25);
+        display: none;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        cursor: pointer;
+        z-index: 9999;
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      #floating-start-analysis svg {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 20px;
+      }
+
+      .table-item input[type="checkbox"] {
+        margin-right: 8px;
+      }
+
+      .table-name {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 4px;
+      }
+
+      .table-info {
+        font-size: 0.85rem;
+        color: #666;
+      }
+
+      .schema-view {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 16px;
+        max-height: 500px;
+        overflow-y: auto;
+      }
+
+      .column-list {
+        list-style: none;
+        padding: 0;
+        margin: 12px 0;
+      }
+
+      .column-item {
+        padding: 8px 12px;
+        background: white;
+        border-left: 3px solid #4a90e2;
+        margin-bottom: 8px;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+        font-size: 0.9rem;
+      }
+
+      .column-name {
+        font-weight: 600;
+        color: #2c3e50;
+      }
+
+      .column-type {
+        color: #e74c3c;
+        margin-left: 8px;
+      }
+
+      .column-constraint {
+        color: #f39c12;
+        margin-left: 8px;
+        font-size: 0.85rem;
+      }
+
+      .relationship-view {
+        background: #fff9e6;
+        border-left: 4px solid #f39c12;
+        padding: 12px;
+        margin: 8px 0;
+        border-radius: 4px;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      .stat-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+      }
+
+      .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+      }
+
+      .stat-label {
+        font-size: 0.9rem;
+        opacity: 0.9;
+        margin-top: 4px;
+      }
+
+      .chat-container {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        height: 500px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: 16px;
+      }
+
+      .message {
+        margin-bottom: 16px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        max-width: 80%;
+        word-wrap: break-word;
+      }
+
+      .message.user {
+        background: #4a90e2;
+        color: white;
+        margin-left: auto;
+        text-align: right;
+      }
+
+      .message.ai {
+        background: white;
+        border: 1px solid #e0e0e0;
+        margin-right: auto;
+      }
+
+      .chat-input-wrapper {
+        display: flex;
+        gap: 12px;
+      }
+
+      .chat-input-wrapper input {
+        flex: 1;
+        padding: 12px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 1rem;
+      }
+
+      .chat-input-wrapper button {
+        padding: 12px 24px;
+        background: #4a90e2;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .chat-input-wrapper button:hover {
+        background: #3a7bc8;
+      }
+
+      .chat-input-wrapper button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+
+      .query-result-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+        font-size: 0.9rem;
+      }
+
+      .query-result-table th {
+        background: #4a90e2;
+        color: white;
+        padding: 10px;
+        text-align: left;
+        font-weight: 600;
+      }
+
+      .query-result-table td {
+        padding: 10px;
+        border-bottom: 1px solid #e0e0e0;
+      }
+
+      .query-result-table tr:hover {
+        background: #f8f9fa;
+      }
+
+      .index-info {
+        background: #e8f5e9;
+        border-left: 4px solid #4caf50;
+        padding: 12px;
+        margin: 8px 0;
+        border-radius: 4px;
+        font-size: 0.9rem;
+      }
+
+      .spinner {
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #4a90e2;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #e0e0e0;
+      }
+
+      .tab {
+        padding: 12px 24px;
+        cursor: pointer;
+        border: none;
+        background: none;
+        font-weight: 600;
+        color: #666;
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s;
+      }
+
+      .tab.active {
+        color: #4a90e2;
+        border-bottom-color: #4a90e2;
+      }
+
+      .tab:hover {
+        color: #4a90e2;
+      }
+
+      .error-message {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 12px;
+        border-radius: 8px;
+        margin: 12px 0;
+        border-left: 4px solid #f5c6cb;
+      }
+
+      .success-message {
+        background: #d4edda;
+        color: #155724;
+        padding: 12px;
+        border-radius: 8px;
+        margin: 12px 0;
+        border-left: 4px solid #c3e6cb;
+      }
+
+      .lineage-view {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 16px;
+      }
+
+      .lineage-node {
+        display: inline-block;
+        padding: 8px 16px;
+        background: #e3f2fd;
+        border: 2px solid #4a90e2;
+        border-radius: 20px;
+        margin: 4px;
+        font-size: 0.9rem;
+      }
+
+      .lineage-arrow {
+        display: inline-block;
+        margin: 0 8px;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="main-container">
+      <h1 style="text-align: center; color: #2c3e50; margin-bottom: 30px">
+        🗄️ Database Explorer & Schema Discovery Tool
+      </h1>
+
+      <!-- Database Connection Section -->
+      <div class="section-card">
+        <div class="section-title">
+          🔌 Database Connection
+          <span id="connection-status" class="status-badge status-disconnected"
+            >Disconnected</span
+          >
+          <span
+            id="ai-status"
+            class="status-badge status-loading"
+            style="margin-left: 12px"
+            >AI: checking...</span
+          >
+          <div
+            id="ai-diagnostic"
+            style="
+              display: none;
+              margin-top: 10px;
+              padding: 10px;
+              background: #fff3cd;
+              border-radius: 6px;
+              font-size: 0.9rem;
+              color: #856404;
+            "
+          ></div>
+        </div>
+        <button id="connect-db" class="btn btn-primary">
+          Connect to Database
+        </button>
+        <button
+          id="refresh-schema"
+          class="btn btn-secondary"
+          style="margin-left: 12px"
+          disabled
+        >
+          Refresh Schema
+        </button>
+        <button
+          id="save-schema"
+          class="btn btn-outline-success"
+          style="margin-left: 12px"
+          disabled
+        >
+          Save Schema
+        </button>
+        <div id="connection-info" style="margin-top: 16px; display: none">
+          <div class="success-message" id="connection-success"></div>
+        </div>
+      </div>
+
+      <!-- Database Statistics -->
+      <div class="section-card" id="stats-section" style="display: none">
+        <div class="section-title">📊 Database Statistics</div>
+        <div class="stats-grid" id="stats-grid"></div>
+      </div>
+
+      <!-- Tables List Section -->
+      <div class="section-card" id="tables-section" style="display: none">
+        <div class="section-title">
+          📋 Tables in Database
+          <button
+            id="select-all-tables"
+            class="btn btn-sm btn-outline-primary"
+            style="margin-left: auto"
+          >
+            Select All
+          </button>
+          <button
+            id="deselect-all-tables"
+            class="btn btn-sm btn-outline-secondary"
+          >
+            Deselect All
+          </button>
+        </div>
+        <div id="tables-list" class="table-list"></div>
+      </div>
+
+      <!-- Schema Details Section -->
+      <div class="section-card" id="schema-section" style="display: none">
+        <div class="section-title">🔍 Schema Details</div>
+        <div class="tabs">
+          <button class="tab active" data-tab="columns">Columns</button>
+          <button class="tab" data-tab="relationships">Relationships</button>
+          <button class="tab" data-tab="indexes">Indexes</button>
+          <button class="tab" data-tab="lineage">Data Lineage</button>
+        </div>
+        <div id="schema-content">
+          <div class="tab-content" id="tab-columns"></div>
+          <div
+            class="tab-content"
+            id="tab-relationships"
+            style="display: none"
+          ></div>
+          <div class="tab-content" id="tab-indexes" style="display: none"></div>
+          <div class="tab-content" id="tab-lineage" style="display: none"></div>
+        </div>
+      </div>
+
+      <!-- AI Analysis Section -->
+      <div class="section-card" id="analysis-section" style="display: none">
+        <div class="section-title">🤖 AI-Powered Analysis</div>
+        <div style="margin-bottom: 16px">
+          <p>
+            <strong>Selected Tables:</strong>
+            <span id="selected-tables-info">None</span>
+          </p>
+          <button id="start-analysis" class="btn btn-success">
+            Start AI Analysis
+          </button>
+        </div>
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages"></div>
+          <div class="chat-input-wrapper">
+            <input
+              type="text"
+              id="chat-input"
+              placeholder="Ask questions about your database schema and data..."
+              disabled
+            />
+            <button id="send-message" disabled>Send</button>
+          </div>
+        </div>
+        <div id="query-results" style="margin-top: 20px"></div>
+      </div>
+    </div>
+
+    <script src="/client-config.js"></script>
+    <script>
+      // Runtime config helper
+      async function ensureRuntimeConfig() {
+        if (window.__RUNTIME_CONFIG__) {
+          window.RUNTIME_CONFIG = window.__RUNTIME_CONFIG__;
+          return window.RUNTIME_CONFIG;
+        }
+        try {
+          const res = await fetch("/runtime-config");
+          const cfg = await res.json();
+          window.RUNTIME_CONFIG = cfg;
+          return cfg;
+        } catch (e) {
+          console.warn("Could not load runtime config, using defaults", e);
+          window.RUNTIME_CONFIG = {
+            ai: { mode: "proxy", directUrl: "/large" },
+          };
+          return window.RUNTIME_CONFIG;
+        }
+      }
+      let dbConnected = false;
+      let allTables = [];
+      let selectedTables = new Set();
+      let tableSchemas = {};
+      let sessionId = "db-explorer-" + Date.now();
+
+      // Initialize
+      $(document).ready(async () => {
+        await ensureRuntimeConfig();
+        setupEventHandlers();
+        // On load, prefer stored schema if available. Manual reconnect is still available.
+        (async function tryLoadStoredSchema() {
+          try {
+            const idx = await $.get("/schema-store");
+            if (
+              idx &&
+              idx.index &&
+              idx.index.tables &&
+              idx.index.tables.length > 0
+            ) {
+              // load persisted per-table files
+              allTables = idx.index.tables || [];
+              tableSchemas = {};
+              for (const t of allTables) {
+                try {
+                  const tr = await $.get(`/schema-store/table/${t}`);
+                  tableSchemas[t] =
+                    tr.table && tr.table.schema ? tr.table.schema : {};
+                } catch (e) {
+                  console.warn("Could not load persisted table", t, e.message);
+                }
+              }
+
+              displayTables();
+              displayStatistics();
+              $("#stats-section").show();
+              $("#tables-section").show();
+              $("#save-schema").prop("disabled", false);
+              $("#connection-status")
+                .removeClass("status-disconnected status-loading")
+                .addClass("status-connected")
+                .text("Loaded (stored)");
+              $("#connection-success").text(
+                "Loaded schema from persisted store"
+              );
+              $("#connection-info").show();
+            }
+          } catch (e) {
+            // no stored schema: do nothing, user can Connect manually
+            console.log("No persisted schema available or failed to load");
+          }
+        })();
+
+        // Ping AI health on load and update badge
+        (async function checkAI() {
+          try {
+            const r = await fetch("/ai/health");
+            const j = await r.json();
+            if (j && j.ok) {
+              $("#ai-status")
+                .removeClass("status-loading status-disconnected")
+                .addClass("status-connected")
+                .text("AI: available");
+              $("#ai-diagnostic").hide();
+            } else {
+              $("#ai-status")
+                .removeClass("status-loading status-connected")
+                .addClass("status-disconnected")
+                .text("AI: unreachable");
+
+              // Display diagnostic message on UI
+              let diagMsg = j.error || "Unknown error";
+              if (j.statusCode) diagMsg += ` (HTTP ${j.statusCode})`;
+              if (j.diagnostics) {
+                console.warn(
+                  "AI diagnostics (full):",
+                  JSON.stringify(j.diagnostics, null, 2)
+                );
+                if (j.diagnostics.url)
+                  diagMsg += ` - Endpoint: ${j.diagnostics.url}`;
+              }
+              $("#ai-diagnostic").text(diagMsg).show();
+
+              console.warn("AI health failed:", j);
+            }
+          } catch (e) {
+            $("#ai-status")
+              .removeClass("status-loading status-connected")
+              .addClass("status-disconnected")
+              .text("AI: error");
+            $("#ai-diagnostic")
+              .text("Network error: " + (e.message || e))
+              .show();
+            console.error("AI health check error:", e.message || e);
+          }
+        })();
+      });
+
+      function setupEventHandlers() {
+        $("#connect-db").on("click", connectToDatabase);
+        $("#refresh-schema").on("click", loadDatabaseSchema);
+        $("#save-schema").on("click", () => saveSchemaToStore());
+        $("#select-all-tables").on("click", () => selectAllTables(true));
+        $("#deselect-all-tables").on("click", () => selectAllTables(false));
+        $("#start-analysis").on("click", startAnalysis);
+        $("#floating-start-analysis").on("click", async () => {
+          // Ensure analysis UI opens
+          await startAnalysis();
+          // Build and send initial schema analysis prompt
+          try {
+            let context = `Selected tables: ${Array.from(selectedTables).join(
+              ", "
+            )}\n\n`;
+            context += "Schema information:\n";
+            selectedTables.forEach((tableName) => {
+              const schema = tableSchemas[tableName];
+              context += `\nTable: ${tableName}\n`;
+              context += `Columns: ${(schema?.columns || [])
+                .map((c) => `${c.Field} (${c.Type})`)
+                .join(", ")}\n`;
+              context += `Row count: ${schema?.rowCount || 0}\n`;
+            });
+
+            const analysisPrompt = `${context}\n\nAnalyze this data representing DB schema and give in-depth explanation.`;
+            $("#chat-input").val(analysisPrompt);
+            await sendChatMessage();
+          } catch (e) {
+            console.error("floating startAnalysis send failed", e);
+            removeTypingIndicator();
+          }
+        });
+        $("#send-message").on("click", sendChatMessage);
+        $("#chat-input").on("keypress", (e) => {
+          if (e.which === 13) sendChatMessage();
+        });
+
+        // Tab switching
+        $(".tab").on("click", function () {
+          $(".tab").removeClass("active");
+          $(this).addClass("active");
+          const tab = $(this).data("tab");
+          $(".tab-content").hide();
+          $(`#tab-${tab}`).show();
+        });
+      }
+
+      // Persist discovered schema to server-side schema store
+      async function saveSchemaToStore(extra) {
+        try {
+          const payload = {
+            database: null,
+            tables: allTables,
+            tableSchemas: tableSchemas,
+            metadata: extra && extra.metadata ? extra.metadata : null,
+          };
+
+          const res = await $.ajax({
+            url: "/schema-store/save",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify(payload),
+            timeout: 20000,
+          });
+
+          if (res && res.ok) {
+            showSuccess("Schema saved to server store");
+          } else {
+            showError("Failed to save schema to server");
+          }
+        } catch (e) {
+          console.error("Error saving schema to store:", e);
+          showError("Error saving schema to server: " + e.message);
+        }
+      }
+
+      function poolDatabaseName() {
+        return null;
+      }
+
+      async function connectToDatabase() {
+        $("#connect-db").prop("disabled", true).text("Connecting...");
+        $("#connection-status")
+          .removeClass("status-disconnected")
+          .addClass("status-loading")
+          .text("Connecting...");
+
+        try {
+          const response = await $.get("/api/testConnection");
+
+          if (response.status === "connected") {
+            dbConnected = true;
+            $("#connection-status")
+              .removeClass("status-loading")
+              .addClass("status-connected")
+              .text("Connected");
+            $("#connection-success").text(
+              `✓ Successfully connected to database: ${
+                response.config?.database || "Unknown"
+              }`
+            );
+            $("#connection-info").show();
+            $("#refresh-schema").prop("disabled", false);
+            $("#connect-db").text("Reconnect");
+
+            // Load database schema
+            await loadDatabaseSchema();
+          }
+        } catch (error) {
+          console.error("Connection error:", error);
+          $("#connection-status")
+            .removeClass("status-loading")
+            .addClass("status-disconnected")
+            .text("Connection Failed");
+          showError(
+            "Failed to connect to database. Make sure the server is running."
+          );
+        } finally {
+          $("#connect-db").prop("disabled", false);
+        }
+      }
+
+      async function loadDatabaseSchema() {
+        showLoading("Loading database schema...");
+
+        try {
+          // Get all tables
+          const response = await $.get("/database");
+          allTables = response.tables || [];
+
+          // Get detailed schema for each table
+          for (const tableName of allTables) {
+            const schemaResponse = await $.get(`/api/schema/${tableName}`);
+            tableSchemas[tableName] = schemaResponse;
+          }
+
+          displayTables();
+          displayStatistics();
+
+          $("#stats-section").show();
+          $("#tables-section").show();
+
+          hideLoading();
+          showSuccess("Database schema loaded successfully!");
+          // enable save button
+          $("#save-schema").prop("disabled", false);
+
+          // Try to fetch higher-level metadata and persist the schema store automatically
+          try {
+            const metadata = await $.get("/api/metadata");
+            await saveSchemaToStore({ metadata });
+            console.log("Schema persisted to server schema store");
+          } catch (e) {
+            console.warn("Could not persist schema automatically:", e.message);
+          }
+        } catch (error) {
+          console.error("Schema loading error:", error);
+          hideLoading();
+          showError("Failed to load database schema: " + error.message);
+        }
+      }
+
+      function displayTables() {
+        const $tablesList = $("#tables-list");
+        $tablesList.empty();
+
+        allTables.forEach((tableName) => {
+          const schema = tableSchemas[tableName];
+          const rowCount = schema?.rowCount || 0;
+          const columnCount = schema?.columns?.length || 0;
+
+          const safeId = `table-${tableName.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+          const $tableItem = $(`
+              <div class="table-item" data-table="${tableName}" tabindex="0">
+                <input type="checkbox" class="table-checkbox" data-table-name="${tableName}" id="${safeId}">
+                <div class="table-name">${tableName}</div>
+                <div class="table-info">
+                  ${columnCount} columns • ${rowCount.toLocaleString()} rows
+                </div>
+              </div>
+            `);
+
+          // Toggle checkbox when the item (except the checkbox itself) is clicked
+          $tableItem.on("click", function (e) {
+            if (e.target.type !== "checkbox") {
+              const checkbox = $(this).find("input.table-checkbox");
+              checkbox
+                .prop("checked", !checkbox.prop("checked"))
+                .trigger("change");
+            }
+          });
+
+          // Keyboard support: space/enter toggles selection when focused
+          $tableItem.on("keydown", function (e) {
+            if (e.key === " " || e.key === "Enter") {
+              e.preventDefault();
+              $(this).trigger("click");
+            }
+          });
+
+          // Handle checkbox changes
+          $tableItem.find("input.table-checkbox").on("change", function (e) {
+            e.stopPropagation();
+            const table =
+              $(this).data("table-name") ||
+              $(this).closest(".table-item").data("table");
+
+            if ($(this).is(":checked")) {
+              selectedTables.add(table);
+              $(this).closest(".table-item").addClass("selected");
+              console.log("Selected table:", table);
+            } else {
+              selectedTables.delete(table);
+              $(this).closest(".table-item").removeClass("selected");
+              console.log("Deselected table:", table);
+            }
+
+            updateSelectedTablesInfo();
+            displaySchemaDetails();
+          });
+
+          $tablesList.append($tableItem);
+        });
+      }
+
+      function displayStatistics() {
+        const totalTables = allTables.length;
+        let totalColumns = 0;
+        let totalRows = 0;
+        let totalIndexes = 0;
+
+        allTables.forEach((tableName) => {
+          const schema = tableSchemas[tableName];
+          totalColumns += schema?.columns?.length || 0;
+          totalRows += schema?.rowCount || 0;
+          totalIndexes += schema?.indexes?.length || 0;
+        });
+
+        const stats = [
+          { label: "Total Tables", value: totalTables, color: "#667eea" },
+          { label: "Total Columns", value: totalColumns, color: "#764ba2" },
+          {
+            label: "Total Rows",
+            value: totalRows.toLocaleString(),
+            color: "#f093fb",
+          },
+          { label: "Total Indexes", value: totalIndexes, color: "#4facfe" },
+        ];
+
+        const $statsGrid = $("#stats-grid");
+        $statsGrid.empty();
+
+        stats.forEach((stat) => {
+          $statsGrid.append(`
+              <div class="stat-card" style="background: ${stat.color};">
+                  <div class="stat-value">${stat.value}</div>
+                  <div class="stat-label">${stat.label}</div>
+              </div>
+          `);
+        });
+      }
+
+      function selectAllTables(select) {
+        $('.table-item input[type="checkbox"]').prop("checked", select);
+
+        if (select) {
+          allTables.forEach((table) => selectedTables.add(table));
+          $(".table-item").addClass("selected");
+        } else {
+          selectedTables.clear();
+          $(".table-item").removeClass("selected");
+        }
+
+        updateSelectedTablesInfo();
+        displaySchemaDetails();
+      }
+
+      function updateSelectedTablesInfo() {
+        const count = selectedTables.size;
+        $("#selected-tables-info").text(
+          count === 0 ? "None" : Array.from(selectedTables).join(", ")
+        );
+
+        if (count > 0) {
+          $("#schema-section").show();
+        } else {
+          $("#schema-section").hide();
+        }
+        // Toggle floating start-analysis button
+        if (count > 0) {
+          $("#floating-start-analysis").show();
+        } else {
+          $("#floating-start-analysis").hide();
+        }
+      }
+
+      function displaySchemaDetails() {
+        if (selectedTables.size === 0) return;
+
+        // Columns Tab
+        let columnsHtml = '<div class="schema-view">';
+        selectedTables.forEach((tableName) => {
+          const schema = tableSchemas[tableName];
+          columnsHtml += `<h5 style="margin-top: 20px; color: #2c3e50;">${tableName}</h5>`;
+          columnsHtml += '<ul class="column-list">';
+
+          (schema?.columns || []).forEach((col) => {
+            let constraints = [];
+            if (col.Key === "PRI") constraints.push("PRIMARY KEY");
+            if (col.Key === "MUL") constraints.push("FOREIGN KEY");
+            if (col.Key === "UNI") constraints.push("UNIQUE");
+            if (col.Null === "NO") constraints.push("NOT NULL");
+            if (col.Extra) constraints.push(col.Extra.toUpperCase());
+
+            columnsHtml += `
+                  <li class="column-item">
+                      <span class="column-name">${col.Field}</span>
+                      <span class="column-type">${col.Type}</span>
+                      ${
+                        constraints.length > 0
+                          ? `<span class="column-constraint">${constraints.join(
+                              ", "
+                            )}</span>`
+                          : ""
+                      }
+                  </li>
+              `;
+          });
+
+          columnsHtml += "</ul>";
+        });
+        columnsHtml += "</div>";
+        $("#tab-columns").html(columnsHtml);
+
+        // Relationships Tab
+        let relationshipsHtml = '<div class="schema-view">';
+        let hasRelationships = false;
+
+        selectedTables.forEach((tableName) => {
+          const schema = tableSchemas[tableName];
+          const foreignKeys = schema?.foreignKeys || [];
+
+          if (foreignKeys.length > 0) {
+            hasRelationships = true;
+            relationshipsHtml += `<h5 style="margin-top: 20px; color: #2c3e50;">${tableName}</h5>`;
+
+            foreignKeys.forEach((fk) => {
+              relationshipsHtml += `
+                      <div class="relationship-view">
+                          <strong>${fk.COLUMN_NAME}</strong> references
+                          <strong>${fk.REFERENCED_TABLE_NAME}.${fk.REFERENCED_COLUMN_NAME}</strong>
+                          <br><small>Constraint: ${fk.CONSTRAINT_NAME}</small>
+                      </div>
+                  `;
+            });
+          }
+        });
+
+        if (!hasRelationships) {
+          relationshipsHtml +=
+            '<p style="color: #666; padding: 20px;">No foreign key relationships found.</p>';
+        }
+
+        relationshipsHtml += "</div>";
+        $("#tab-relationships").html(relationshipsHtml);
+
+        // Indexes Tab
+        let indexesHtml = '<div class="schema-view">';
+        let hasIndexes = false;
+
+        selectedTables.forEach((tableName) => {
+          const schema = tableSchemas[tableName];
+          const indexes = schema?.indexes || [];
+
+          if (indexes.length > 0) {
+            hasIndexes = true;
+            indexesHtml += `<h5 style="margin-top: 20px; color: #2c3e50;">${tableName}</h5>`;
+
+            indexes.forEach((idx) => {
+              const uniqueText = idx.Non_unique === "0" ? "UNIQUE" : "";
+              indexesHtml += `
+                      <div class="index-info">
+                          <strong>${idx.Key_name}</strong> ${uniqueText}
+                          <br>Column: ${idx.Column_name}
+                          ${idx.Index_type ? `<br>Type: ${idx.Index_type}` : ""}
+                      </div>
+                  `;
+            });
+          }
+        });
+
+        if (!hasIndexes) {
+          indexesHtml +=
+            '<p style="color: #666; padding: 20px;">No indexes found.</p>';
+        }
+
+        indexesHtml += "</div>";
+        $("#tab-indexes").html(indexesHtml);
+
+        // Data Lineage Tab
+        let lineageHtml = '<div class="schema-view"><div class="lineage-view">';
+        lineageHtml +=
+          '<h5 style="color: #2c3e50; margin-bottom: 20px;">Table Relationships & Data Flow</h5>';
+
+        selectedTables.forEach((tableName) => {
+          const schema = tableSchemas[tableName];
+          const foreignKeys = schema?.foreignKeys || [];
+
+          if (foreignKeys.length > 0) {
+            lineageHtml += `<div style="margin: 16px 0;">`;
+            lineageHtml += `<span class="lineage-node">${tableName}</span>`;
+            lineageHtml += `<span class="lineage-arrow">→</span>`;
+            foreignKeys.forEach((fk, idx) => {
+              if (idx > 0)
+                lineageHtml += `<span class="lineage-arrow">→</span>`;
+              lineageHtml += `<span class="lineage-node">${fk.REFERENCED_TABLE_NAME}</span>`;
+            });
+            lineageHtml += `</div>`;
+          }
+        });
+
+        lineageHtml += "</div></div>";
+        $("#tab-lineage").html(lineageHtml);
+      }
+
+      async function startAnalysis() {
+        if (selectedTables.size === 0) {
+          showError("Please select at least one table to analyze.");
+          return;
+        }
+
+        // Persist current schema first (best-effort)
+        try {
+          await saveSchemaToStore();
+        } catch (e) {
+          console.warn(
+            "Could not persist schema before starting analysis:",
+            e.message
+          );
+        }
+
+        $("#analysis-section").show();
+        $("#chat-input").prop("disabled", false);
+        $("#send-message").prop("disabled", false);
+
+        // Add welcome message
+        addChatMessage(
+          "ai",
+          `🎯 Analysis started for ${
+            selectedTables.size
+          } table(s): ${Array.from(selectedTables).join(
+            ", "
+          )}.\n\nYou can now ask questions about the data, run natural language queries, or request insights!`
+        );
+
+        // Scroll to analysis section
+        $("html, body").animate(
+          {
+            scrollTop: $("#analysis-section").offset().top - 20,
+          },
+          500
+        );
+      }
+
+      async function sendChatMessage() {
+        const message = $("#chat-input").val().trim();
+        if (!message) return;
+
+        $("#chat-input").val("").prop("disabled", true);
+        $("#send-message").prop("disabled", true);
+
+        addChatMessage("user", message);
+        addTypingIndicator();
+
+        try {
+          // Build context about selected tables
+          let context = `Selected tables: ${Array.from(selectedTables).join(
+            ", "
+          )}\n\n`;
+          context += "Schema information:\n";
+
+          selectedTables.forEach((tableName) => {
+            const schema = tableSchemas[tableName];
+            context += `\nTable: ${tableName}\n`;
+            context += `Columns: ${(schema?.columns || [])
+              .map((c) => `${c.Field} (${c.Type})`)
+              .join(", ")}\n`;
+            context += `Row count: ${schema?.rowCount || 0}\n`;
+          });
+
+          const prompt = `${context}\n\nUser question: ${message}\n\nProvide a helpful response. If the user wants to query data, generate a SQL query.`;
+
+          const aiTarget =
+            window.RUNTIME_CONFIG &&
+            window.RUNTIME_CONFIG.ai &&
+            window.RUNTIME_CONFIG.ai.mode === "direct"
+              ? window.RUNTIME_CONFIG.ai.directUrl
+              : "/ai/send";
+          const response = await $.ajax({
+            url: aiTarget,
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({
+              sessionId: sessionId,
+              aiquestion: prompt,
+            }),
+            timeout: 120000,
+          });
+
+          removeTypingIndicator();
+
+          // Normalize envelope responses from server
+          let aiMessage = "";
+          if (response && typeof response === "object") {
+            // Server returns envelope: { ok, statusCode, data, error, diagnostics }
+            if (response.hasOwnProperty("ok") && response.ok === false) {
+              // Show error/diagnostics prominently
+              const errText =
+                response.error ||
+                (response.diagnostics && response.diagnostics.message) ||
+                `AI request failed (HTTP ${response.statusCode})`;
+              addChatMessage("ai", `❌ ${errText}`);
+              if (response.diagnostics) {
+                // show full diagnostics as a collapsible JSON blob
+                addChatMessage(
+                  "ai",
+                  JSON.stringify(response.diagnostics, null, 2)
+                );
+              }
+              // If server included data, display it too
+              if (response.data) {
+                aiMessage = response.data.response || response.data;
+              } else {
+                aiMessage = "";
+              }
+            } else {
+              // Success envelope: prefer response.data then other fields
+              const payload = response.data || response;
+              if (typeof payload === "string") {
+                try {
+                  aiMessage = JSON.parse(payload).response || payload;
+                } catch (e) {
+                  aiMessage = payload;
+                }
+              } else if (typeof payload === "object") {
+                aiMessage = payload.response || payload;
+              } else {
+                aiMessage = String(payload);
+              }
+            }
+          } else if (typeof response === "string") {
+            try {
+              const parsed = JSON.parse(response);
+              aiMessage = parsed.response || parsed.data || response;
+            } catch (e) {
+              aiMessage = response;
+            }
+          }
+
+          if (aiMessage) addChatMessage("ai", aiMessage);
+
+          // Check if response contains SQL query
+          const sqlMatch =
+            aiMessage.match(/```sql\n([\s\S]*?)\n```/i) ||
+            aiMessage.match(/SELECT[\s\S]*?;/i);
+
+          if (sqlMatch) {
+            const sqlQuery = sqlMatch[1] || sqlMatch[0];
+            await executeQuery(sqlQuery.trim());
+          }
+        } catch (error) {
+          // jQuery AJAX failures pass the jqXHR object; normalize messages for clarity
+          console.error("Chat error:", error);
+          removeTypingIndicator();
+
+          let errMsg = "Unknown error";
+          try {
+            if (error && error.status) {
+              errMsg = `HTTP ${error.status} ${error.statusText || ""}`.trim();
+              // Try to extract server responseText for more details
+              if (error.responseText) {
+                // Truncate long responses
+                const text = String(error.responseText).slice(0, 2000);
+                errMsg += ` - ${text}`;
+              }
+            } else if (error && error.message) {
+              errMsg = error.message;
+            } else {
+              errMsg = String(error);
+            }
+          } catch (e) {
+            errMsg = String(error);
+          }
+
+          addChatMessage("ai", `❌ Sorry, I encountered an error: ${errMsg}`);
+        } finally {
+          $("#chat-input").prop("disabled", false);
+          $("#send-message").prop("disabled", false);
+          $("#chat-input").focus();
+        }
+      }
+
+      async function executeQuery(query) {
+        try {
+          showQueryLoading();
+
+          // Use the first selected table as the entity
+          const table = Array.from(selectedTables)[0];
+          const response = await $.ajax({
+            url: `/${table}`,
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({ prompt: query }),
+            timeout: 30000,
+          });
+
+          displayQueryResults(response.data, response.query);
+        } catch (error) {
+          console.error("Query execution error:", error);
+          $("#query-results").html(`
+              <div class="error-message">
+                  <strong>Query Execution Failed</strong><br>
+                  ${error.responseJSON?.details || error.message}
+              </div>
+          `);
+        }
+      }
+
+      function displayQueryResults(data, query) {
+        if (!Array.isArray(data) || data.length === 0) {
+          $("#query-results").html(`
+              <div class="success-message">
+                  <strong>Query executed successfully:</strong><br>
+                  <code>${query}</code><br><br>
+                  No rows returned.
+              </div>
+          `);
+          return;
+        }
+
+        const columns = Object.keys(data[0]);
+        let html = `
+          <div class="success-message">
+              <strong>Query executed successfully:</strong><br>
+              <code>${query}</code>
+          </div>
+          <div class="table-scroll">
+            <table class="query-result-table">
+              <thead>
+                <tr>${columns.map((col) => `<th>${col}</th>`).join("")}</tr>
+              </thead>
+              <tbody>
+      `;
+
+        data.slice(0, 100).forEach((row) => {
+          html += "<tr>";
+          columns.forEach((col) => {
+            html += `<td>${
+              row[col] !== null ? row[col] : "<em>NULL</em>"
+            }</td>`;
+          });
+          html += "</tr>";
+        });
+
+        html += "</tbody></table></div>";
+
+        if (data.length > 100) {
+          html += `<p style="margin-top: 12px; color: #666;">Showing first 100 rows of ${data.length} total rows.</p>`;
+        }
+
+        $("#query-results").html(html);
+      }
+
+      function addChatMessage(type, message) {
+        // message may be plain text or a JSON/object string from the AI service.
+        let text = message;
+        try {
+          // If message is a JSON blob with a 'response' field, prefer that
+          if (typeof message === "object" && message !== null) {
+            if (message.hasOwnProperty("response")) {
+              if (typeof message.response === "object") {
+                text = JSON.stringify(message.response, null, 2);
+              } else {
+                text = String(message.response);
+              }
+            } else {
+              text = JSON.stringify(message, null, 2);
+            }
+          } else if (typeof message === "string") {
+            try {
+              const parsed = JSON.parse(message);
+              if (parsed && typeof parsed === "object") {
+                if (parsed.hasOwnProperty("response")) {
+                  text =
+                    typeof parsed.response === "object"
+                      ? JSON.stringify(parsed.response, null, 2)
+                      : String(parsed.response);
+                } else if (parsed.hasOwnProperty("data")) {
+                  text =
+                    typeof parsed.data === "object"
+                      ? JSON.stringify(parsed.data, null, 2)
+                      : String(parsed.data);
+                } else {
+                  text = JSON.stringify(parsed, null, 2);
+                }
+              } else {
+                text = String(parsed);
+              }
+            } catch (e) {
+              // not JSON, leave as-is
+            }
+          }
+        } catch (e) {
+          text = String(message);
+        }
+
+        // If this is a user message, render as escaped plain text preserving newlines
+        if (type === "user") {
+          // Ensure text is a string
+          const safeText = String(text || "");
+          // Escape HTML special chars to avoid injection
+          const escaped = safeText
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+          const html = escaped.replace(/\n/g, "<br>");
+          const $message = $(`<div class="message ${type}"></div>`).html(html);
+          $("#chat-messages").append($message);
+          $("#chat-messages").scrollTop($("#chat-messages")[0].scrollHeight);
+          return;
+        }
+
+        // Render markdown to HTML and sanitize it before injecting into DOM for AI messages
+        let html = "";
+        try {
+          html = marked.parse(String(text || ""));
+        } catch (e) {
+          html = String(text).replace(/\n/g, "<br>");
+        }
+
+        // Sanitize HTML to prevent XSS
+        const clean = DOMPurify.sanitize(html, { SAFE_FOR_TEMPLATES: true });
+
+        const $message = $(`<div class="message ${type}"></div>`).html(clean);
+        $("#chat-messages").append($message);
+        $("#chat-messages").scrollTop($("#chat-messages")[0].scrollHeight);
+      }
+
+      function addTypingIndicator() {
+        $("#chat-messages").append(
+          '<div class="message ai typing-indicator">AI is thinking...</div>'
+        );
+        $("#chat-messages").scrollTop($("#chat-messages")[0].scrollHeight);
+      }
+
+      function removeTypingIndicator() {
+        $(".typing-indicator").remove();
+      }
+
+      function showLoading(message) {
+        $("body").append(`
+          <div id="loading-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+              <div style="background: white; padding: 30px; border-radius: 12px; text-align: center;">
+                  <div class="spinner"></div>
+                  <p style="margin-top: 16px; font-weight: 600;">${message}</p>
+              </div>
+          </div>
+      `);
+      }
+
+      function hideLoading() {
+        $("#loading-overlay").remove();
+      }
+
+      function showQueryLoading() {
+        $("#query-results").html(
+          '<div class="spinner"></div><p style="text-align: center;">Executing query...</p>'
+        );
+      }
+
+      function showError(message) {
+        const $error = $(`<div class="error-message">${message}</div>`);
+        $("#connection-info").html($error).show();
+        setTimeout(() => $("#connection-info").fadeOut(), 5000);
+      }
+
+      function showSuccess(message) {
+        const $success = $(`<div class="success-message">${message}</div>`);
+        $("#connection-info").html($success).show();
+        setTimeout(() => $("#connection-info").fadeOut(), 3000);
+      }
+    </script>
+  </body>
+  <!-- Floating Start Analysis Button -->
+  <button
+    id="floating-start-analysis"
+    title="Start AI Analysis"
+    aria-label="Start AI Analysis"
+  >
+    <!-- Sparkle icon (generic, styled) -->
+    <svg
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <g
+        fill="none"
+        stroke="white"
+        stroke-width="1.2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path
+          d="M12 2l1.6 3.6L17 7l-3.4 1.4L12 12l-1.6-3.6L7 7l3.4-1.4L12 2z"
+          fill="rgba(255,255,255,0.95)"
+        />
+        <path
+          d="M4 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z"
+          fill="rgba(255,255,255,0.85)"
+        />
+      </g>
+    </svg>
+    <span style="margin-left: 4px">AI Analysis</span>
+  </button>
+</html>

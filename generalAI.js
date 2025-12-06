@@ -6,7 +6,7 @@ const askQuestion = async (question) => {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await fetch(
-        "https://gitops-production.up.railway.app/aiserver",
+        "https://gradio-hugginface-aiserver-production.up.railway.app/large",
         {
           method: "POST",
           headers: {
@@ -21,7 +21,24 @@ const askQuestion = async (question) => {
 
       if (response.ok) {
         const data = await response.json();
-        return data.response || data;
+        
+        // Extract the response text from the JSON structure
+        let aiMessage = '';
+        
+        if (typeof data === 'string') {
+          try {
+            const parsedData = JSON.parse(data);
+            aiMessage = parsedData.response || data;
+          } catch (e) {
+            aiMessage = data;
+          }
+        } else if (data && typeof data === 'object') {
+          aiMessage = data.response || JSON.stringify(data);
+        } else {
+          aiMessage = 'Received an unexpected response format';
+        }
+        
+        return String(aiMessage || '').trim();
       }
 
       if (attempt < maxRetries - 1) {

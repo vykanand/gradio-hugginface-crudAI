@@ -12,7 +12,7 @@ const askQuestion = async (question, session) => {
   }
   try {
     const response = await fetch(
-      "https://gitops-production.up.railway.app/aiserver",
+      "/ai/send",
       {
         method: "POST",
         headers: {
@@ -28,7 +28,24 @@ const askQuestion = async (question, session) => {
 
     const data = await response.json();
     console.log(data);
-    return data.response || data;
+    
+    // Extract the response text from the JSON structure
+    let aiMessage = '';
+    
+    if (typeof data === 'string') {
+      try {
+        const parsedData = JSON.parse(data);
+        aiMessage = parsedData.response || data;
+      } catch (e) {
+        aiMessage = data;
+      }
+    } else if (data && typeof data === 'object') {
+      aiMessage = data.response || JSON.stringify(data);
+    } else {
+      aiMessage = 'Received an unexpected response format';
+    }
+    
+    return String(aiMessage || '').trim();
   } catch (error) {
     console.error(`Error with API request: ${error.message}`);
     throw error;
