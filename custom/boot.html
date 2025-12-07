@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html ng-app="MTapp">
+
+<head>
+    <title>dyn</title>
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" name="viewport">
+    <link rel="stylesheet" type="text/css" href="../assets/css/notie.min.css">
+    <style>
+        /* override styles here */
+        .notie-container {
+            box-shadow: none;
+        }
+    </style>
+    <style>
+        /* Box header blue theme to match table header palette */
+        .box-header {
+            background: linear-gradient(90deg, #0D104D 0%, #25407f 100%);
+            padding: 12px 16px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        /* Ensure header title is white and nicely spaced */
+        #hinfo {
+            margin: 0;
+            padding: 0;
+            color: #ffffff !important;
+            font-family: 'Open Sans', Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .box-header .module-console {
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.9);
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 8px;
+            box-shadow: none;
+        }
+
+        .box-header img {
+            border-radius: 6px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+            width: 56px;
+            height: 56px;
+            object-fit: cover;
+        }
+        .module-logo { margin-right: 12px; border-radius: 8px; }
+    </style>
+    <script src="../assets/js/jquery.min.js"></script>
+    <link rel="stylesheet" href="../assets/resource/datepicker3.css">
+    <!-- daterange picker removed -->
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"
+        integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <script src="../assets/resource/bootstrap.min.js"></script>
+    <script src="../assets/js/angular.min.js"></script>
+    <script src="app/app.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css" async>
+    <link rel="stylesheet" href="loader.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular-ui-bootstrap/2.5.0/ui-bootstrap-tpls.min.js"></script>
+    <style type="text/css">
+        [ng\:cloak],
+        [ng-cloak],
+        [data-ng-cloak],
+        [x-ng-cloak],
+        .ng-cloak,
+        .x-ng-cloak {
+            display: none !important;
+        }
+    </style>
+    <style>
+        /* Validation highlight for dynamic form fields */
+        .field-invalid {
+            border: 1px solid #e74c3c !important;
+            box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.12) !important;
+            background-color: #fff7f7 !important;
+        }
+
+        /* Higher specificity validation highlight */
+        .validation-error-highlight {
+            border: 2px solid #e74c3c !important;
+            box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.3) !important;
+            background-color: #fff7f7 !important;
+        }
+    </style>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400&family=Roboto:wght@300;400&display=swap');
+
+        body {
+            font-family: 'Open Sans', sans-serif;
+        }
+    </style>
+    <style type="text/css">
+        .plugin-modal .modal-dialog {
+            width: 95%;
+            height: 95%;
+            margin: 10px auto;
+        }
+
+        .plugin-modal .modal-content {
+            height: 100%;
+            margin-top: 0;
+        }
+
+        .pure-material-button-contained {
+            position: relative;
+            display: inline-block;
+            box-sizing: border-box;
+            border: none;
+            border-radius: 4px;
+            padding: 0 16px;
+            min-width: 64px;
+            height: 36px;
+            vertical-align: middle;
+            text-align: center;
+            text-overflow: ellipsis;
+            text-transform: uppercase;
+            color: rgb(var(--pure-material-onprimary-rgb, 255, 255, 255));
+            background-color: rgb(var(--pure-material-primary-rgb, 33, 150, 243));
+            box-shadow: 0 3px 1px -2px rgba(0, 0, 0, 0.2), 0 2px 2px 0 rgba(0, 0, 0, 0.14), 0 1px 5px 0 rgba(0, 0, 0, 0.12);
+            font-family: var(--pure-material-font, "Roboto", "Segoe UI", BlinkMacSystemFont, system-ui, -apple-system);
+            font-size: 14px;
+            font-weight: 500;
+            line-height: 36px;
+            overflow: hidden;
+            outline: none;
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+        }
+
+        .pure-material-button-contained::-moz-focus-inner {
+            border: none;
+        }
+
+        /* Overlay */
+
+        .pure-material-button-contained::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgb(var(--pure-material-onprimary-rgb, 255, 255, 255));
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        /* Ripple */
+
+        .pure-material-button-contained::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            border-radius: 50%;
+            padding: 50%;
+            width: 32px;
+            /* Safari */
+            height: 32px;
+            /* Safari */
+            background-color: rgb(var(--pure-material-onprimary-rgb, 255, 255, 255));
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(1);
+            transition: opacity 1s, transform 0.5s;
+        }
+
+        /* Hover, Focus */
+
+        .pure-material-button-contained:hover,
+        .pure-material-button-contained:focus {
+            box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.2), 0 4px 5px 0 rgba(0, 0, 0, 0.14), 0 1px 10px 0 rgba(0, 0, 0, 0.12);
+        }
+
+        .pure-material-button-contained:hover::before {
+            opacity: 0.08;
+        }
+
+        .pure-material-button-contained:focus::before {
+            opacity: 0.24;
+        }
+
+        .pure-material-button-contained:hover:focus::before {
+            opacity: 0.3;
+        }
+
+        /* Active */
+
+        .pure-material-button-contained:active {
+            box-shadow: 0 5px 5px -3px rgba(0, 0, 0, 0.2), 0 8px 10px 1px rgba(0, 0, 0, 0.14), 0 3px 14px 2px rgba(0, 0, 0, 0.12);
+        }
+
+        .pure-material-button-contained:active::after {
+            opacity: 0.32;
+            transform: translate(-50%, -50%) scale(0);
+            transition: transform 0s;
+        }
+
+        /* Disabled */
+
+        .pure-material-button-contained:disabled {
+            color: rgba(var(--pure-material-onsurface-rgb, 0, 0, 0), 0.38);
+            background-color: rgba(var(--pure-material-onsurface-rgb, 0, 0, 0), 0.12);
+            box-shadow: none;
+            cursor: initial;
+        }
+
+        .pure-material-button-contained:disabled::before {
+            opacity: 0;
+        }
+
+        .pure-material-button-contained:disabled::after {
+            opacity: 0;
+        }
+
+        /* On screens that are 720px or more */
+
+        @media screen and (min-width: 720px) {
+            .content {
+                padding: 0vh 12vh 0vh 12vh;
+                margin-top: 5vh;
+            }
+        }
+    </style>
+    <style>
+
+        /* Liquid Glass iOS-style button with blue background visible on white */
+        .add-entry-button {
+            position: relative;
+            overflow: hidden;
+            height: 3.8rem;
+            padding: 0.5rem 1.25rem;
+            font-size: 1rem;
+            min-width: 150px;
+            line-height: 1.1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: #ffffff;
+            border-radius: 5px;
+            /* match box header palette */
+            background: linear-gradient(90deg, #0D104D 0%, #25407f 100%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            backdrop-filter: blur(20px) saturate(180%);
+            border: 0.5px solid rgba(255, 255, 255, 0.28);
+            box-shadow: 
+                0 1px 1px rgba(255, 255, 255, 0.18) inset,
+                0 10px 34px rgba(13, 16, 77, 0.28),
+                0 3px 10px rgba(37, 64, 127, 0.18);
+            transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            text-decoration: none;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Top edge highlight for liquid glass depth */
+        .add-entry-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(180deg, 
+                rgba(255, 255, 255, 0.35) 0%, 
+                rgba(255, 255, 255, 0.08) 50%,
+                rgba(255, 255, 255, 0) 100%);
+            border-radius: 5px 5px 0 0;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+
+        /* Subtle animated shimmer for liquid effect */
+        .add-entry-button::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -60%;
+            width: 50%;
+            height: 200%;
+            background: linear-gradient(110deg, 
+                rgba(255, 255, 255, 0) 0%, 
+                rgba(255, 255, 255, 0.4) 45%, 
+                rgba(255, 255, 255, 0.6) 50%,
+                rgba(255, 255, 255, 0.4) 55%,
+                rgba(255, 255, 255, 0) 100%);
+            transform: translateX(-100%) rotate(-8deg);
+            transition: transform 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+            pointer-events: none;
+            opacity: 0;
+            z-index: 1;
+        }
+
+        .add-entry-button:hover::after {
+            transform: translateX(250%) rotate(-8deg);
+            /* reduce sheen opacity so text remains visible */
+            opacity: 0.55;
+        }
+
+        .add-entry-button:hover {
+            transform: translateY(-2px) scale(1.01);
+            box-shadow: 
+                0 1px 1px rgba(255, 255, 255, 0.45) inset,
+                0 12px 42px rgba(47, 108, 230, 0.38),
+                0 4px 12px rgba(47, 108, 230, 0.25);
+            background: linear-gradient(90deg, #25407f 0%, #2f52a0 100%);
+            cursor: pointer;
+        }
+
+        .add-entry-button:hover::before {
+            opacity: 0.85;
+        }
+
+        .add-entry-button:active {
+            transform: translateY(0px) scale(0.99);
+            box-shadow: 
+                0 1px 1px rgba(255, 255, 255, 0.18) inset,
+                0 14px 46px rgba(13, 16, 77, 0.34),
+                0 6px 16px rgba(37, 64, 127, 0.22);
+            background: linear-gradient(90deg, #223a78 0%, #1a356b 100%);
+        }
+
+        .add-entry-button:focus {
+            outline: none;
+            box-shadow: 
+                0 1px 1px rgba(255, 255, 255, 0.4) inset,
+                0 12px 42px rgba(47, 108, 230, 0.38),
+                0 0 0 4px rgba(93, 156, 255, 0.25);
+        }
+
+        /* ensure the visible label is above pseudo elements */
+        .add-entry-button .btn-label {
+            position: relative;
+            z-index: 2;
+            color: #ffffff;
+            display: inline-block;
+            line-height: 1;
+        }
+
+        @media (max-width: 575px) {
+            .add-entry-button { width: 100%; min-width: auto; box-sizing: border-box; }
+            .text-right { text-align: left !important; }
+        }
+        /* align action buttons to match box-header inner edges */
+        .align-to-box-header {
+            width: calc(100% - 32px);
+            margin: 0 16px;
+            display: flex;
+            justify-content: flex-end;
+        }
+    </style>
+</head>
+
+<body ng-controller="mtctrl" ng-init="admin()" style="background: #EBEBF2;" ng-cloak>
+    <div id="mainsection">
+        <section class="content"
+            style="background: #fff;margin: 1% 2% 0px 2%;padding-top:1%;border-radius: 5px;box-shadow: 0px 0px 10px -25px rgba(140,142,173,1);">
+            <div class="box">
+                <div class="box-body">
+                    <div>
+                        <div class="box-header">
+                            <script type="text/javascript">
+                                setTimeout(function () {
+                                    var raw = localStorage.getItem('headinfo') || '';
+                                    var cleaned = raw;
+                                    var arrows = ['->', '-->', '→', '\u2192', '\u279C', '\u25B6', '\u25B7', '»', '›', '&rarr;', '▶', '▷'];
+                                    arrows.forEach(function (a) { cleaned = cleaned.split(a).join(' '); });
+                                    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+                                    var modulelogo = '<img src="header.png" class="module-logo" alt="logo">';
+                                    if (cleaned) {
+                                        document.getElementById('hinfo').innerHTML = modulelogo + '<span class="module-title"><span class="module-name">' + cleaned + '</span> <span class="module-console">Console</span></span>';
+                                    } else {
+                                        document.getElementById('hinfo').innerHTML = modulelogo + '<span class="module-title"><span class="module-name">Console</span></span>';
+                                    }
+                                }, 800);
+                            </script>
+                            <h3 class="less no-margin" style="margin-left: 1vh;color: #ffffff" id="hinfo"> Console</h3>
+                        </div>
+                        <div class="row">
+                            <div class="col-sm-12">
+                                <div class="col-md-2"> <span style="color: #9fa1a5;">PageSize:</span>
+                                    <select ng-model="entryLimit" ng-init="entryLimit = 5" class="form-control"
+                                        style="height: 5rem;padding-top: .75rem;padding-bottom: .75rem;vertical-align: middle;">
+                                        <option value="5">5</option>
+                                        <option value="10">10</option>
+                                        <option value="20">20</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+
+                                    </select>
+                                </div>
+                                <div class="col-md-3"> <span style="color: #9fa1a5;">Search:</span>
+                                    <input type="text" ng-model="expression" placeholder="Search" class="form-control"
+                                        style="height: 5rem;padding-top: .75rem;padding-bottom: .75rem;vertical-align: middle;" />
+                                </div>
+                                <br>
+                                <div class="col-md-5">
+                                    <h5 style="padding-top: 1rem;">Filtered {{ filtered.length }} of {{ list.length }}
+                                        total records</h5>
+                                </div>
+                            </div>
+                            <div class="row" style="margin-top: 1rem;">
+                                <div class="col-sm-12">
+                                    <div class="text-right align-to-box-header">
+                                        <a class="pure-material-button-contained add-entry-button btna" ng-click="addproduct()" role="button"><span class="btn-label">+ Add Entry</span></a>
+                                    </div>
+                                </div>
+                            </div>
+                            <br>
+                            <!-- Date range and CSV download removed per request; kept search and page size only -->
+                        </div>
+                    </div>
+                    <br />
+        </section>
+        <div ng-if="list == null" style="margin-top:50vh;">
+            <div class="loadmodal">
+                <div class="loading" style="z-index: 999">
+                    <div class="loading-bar"></div>
+                    <div class="loading-bar"></div>
+                    <div class="loading-bar"></div>
+                    <div class="loading-bar"></div>
+                </div>
+            </div>
+        </div>
+        <section class="content" style="background: #fff;margin: 1% 2% 0px 2%;padding-top:1%;border-radius: 5px;">
+            <div ng-show="filtered.length > 0" style="overflow-x:auto;">
+                <table style="overflow-y: scroll;padding:2%" class="table">
+                    <tr style="color: #fff;background: #0D104D">
+                        <th style="padding: 9px;" ng-repeat="(key, val) in showdat">{{ val }} </th>
+                        <th style="padding: 9px;">Actions</th>
+                    </tr>
+                    <tr ng-repeat="data in filtered = (list | filter:expression) | startFrom:(currentPage-1)*entryLimit | limitTo:entryLimit"
+                        style="color: #2D3F56;">
+
+                        <td ng-repeat="(key, column) in data">
+                            <!-- Display checkboxes for checkbox type fields or array values -->
+                            <div ng-if="isCheckboxField(key, column) && column" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                <label ng-repeat="option in parseCheckboxValue(column)" style="display: inline-flex; align-items: center; margin: 0; padding: 4px 8px; background: #f0f0f0; border-radius: 4px;">
+                                    <input type="checkbox" checked disabled style="margin-right: 6px; pointer-events: none; opacity: 0.7;">
+                                    <span>{{ option }}</span>
+                                </label>
+                            </div>
+                            <!-- Display dates with formatting -->
+                            <span ng-if="!isCheckboxField(key, column) && isDateString(column)">{{ column | dateDisplay }}</span>
+                            <!-- Display regular text -->
+                            <span ng-if="!isCheckboxField(key, column) && !isDateString(column)">{{ column }}</span>
+                        </td>
+                        <td style="display: flex;">
+                            <a href="javascript:void(0);" style="cursor: pointer;text-decoration: none;"
+                                ng-click="editproduct(data)"> <img src="edit.png" style="width: 25px;height: 25px;">
+                            </a>
+                            <a href="javascript:void(0);" style="cursor: pointer;text-decoration: none;" id="btdel"
+                                ng-click="deleteproduct(data.id)"> <img src="delete.png"
+                                    style="width: 25px;height: 25px;"> </a>
+                        </td>
+
+                    </tr>
+                </table>
+            </div>
+            <div ng-show="filteredItems == 0">
+                <div class="col-md-12">
+                    <h4>No Pages found</h4>
+                </div>
+            </div>
+            <div ng-show="filtered.length > 0">
+                <div class="col-md-4"></div>
+                <div class="col-md-4 text-center">
+                    <ul uib-pagination total-items="filtered.length" ng-model="currentPage" items-per-page="entryLimit"
+                        class="pagination-sm" boundary-link-numbers="true" max-size="5" rotate="false">
+                    </ul>
+                </div>
+                <div class="col-md-4"></div>
+            </div>
+        </section>
+        <style type="text/css">
+            .modal-backdrop {
+                background-color: rgba(45, 62, 80, 0.79);
+            }
+
+            .blurcontent {
+                filter: blur(3px);
+            }
+
+            .modal-content {
+                margin-top: 30vh;
+            }
+        </style>
+        <script type="text/ng-template" id="blocks/modal/create.html">
+
+            <div class="close-button" style="border-radius: 50%;background-color: #CC1A1A;color: #fff;font-size: 20px;position: absolute;top: -10px;right: -10px;width: 30px;height: 30px;z-index: 10;box-shadow: 0 4px 4px rgba(0,0,0,0.1);opacity: 1;text-align: center;cursor: pointer;line-height: 30px;" ng-click="cancelbt()">x</div>
+            <div class="modal-header">
+                <h3 class="modal-title">Add Entry</h3> </div>
+            <form class="form">
+            <div class="modal-body" id="adtfrm">
+                    <div ng-repeat="(key, value) in addingNew">
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label" for="textinput">{{key | vla}}</label>
+                            <div class="col-sm-9">
+                                <div style="display: flex; align-items: flex-start;">
+                                <!-- Textarea -->
+                                <textarea ng-if="fieldTypeMap[key] === 'textarea'" name="{{key}}" placeholder="" class="form-control" onfocus="this.placeholder=''; $(this).removeClass('field-invalid')" ng-model="addingNew[key]" ng-required="fieldRequiredMap[key]" id="input-{{key}}" rows="4" ng-disabled="fieldPluginMap[key]" ng-attr-placeholder="{{fieldPluginMap[key] ? 'Use plugin to fill this field' : ''}}"></textarea>
+                                
+                                <!-- Select dropdown -->
+                                <select ng-if="fieldTypeMap[key] === 'select'" name="{{key}}" class="form-control" ng-model="addingNew[key]" ng-required="fieldRequiredMap[key]" id="input-{{key}}" ng-change="$event.target.classList.remove('field-invalid')" ng-disabled="fieldPluginMap[key]">
+                                    <option value="" ng-if="!fieldPluginMap[key]">-- Please select from dropdown --</option>
+                                    <option value="" ng-if="fieldPluginMap[key]">-- Use plugin to select --</option>
+                                    <option ng-repeat="option in getFieldOptions(key)" value="{{option}}">{{option}}</option>
+                                </select>
+                                
+                                <!-- Radio buttons -->
+                                <div ng-if="fieldTypeMap[key] === 'radio'" style="flex: 1;" onclick="$(this).removeClass('radio-group-invalid')">
+                                    <label ng-repeat="option in getFieldOptions(key)" style="display: block; margin-bottom: 8px;">
+                                        <input type="radio" name="{{key}}" ng-model="addingNew[key]" value="{{option}}" ng-required="fieldRequiredMap[key]" style="margin-right: 8px;" ng-disabled="fieldPluginMap[key]">
+                                        {{option}}
+                                    </label>
+                                </div>
+                                
+                                <!-- Checkboxes (multi-select) -->
+                                <div ng-if="fieldTypeMap[key] === 'checkbox'" style="flex: 1;" onclick="$(this).removeClass('checkbox-group-invalid')">
+                                    <label ng-repeat="option in getFieldOptions(key)" style="display: block; margin-bottom: 8px;">
+                                        <input type="checkbox" ng-checked="addingNew[key] && addingNew[key].indexOf(option) !== -1" ng-click="toggleCheckboxAdd(key, option)" style="margin-right: 8px;" ng-disabled="fieldPluginMap[key]">
+                                        {{option}}
+                                    </label>
+                                </div>
+                                
+                                <!-- Regular input types -->
+                                <input ng-if="fieldTypeMap[key] !== 'textarea' && fieldTypeMap[key] !== 'select' && fieldTypeMap[key] !== 'radio' && fieldTypeMap[key] !== 'checkbox'" type="{{fieldTypeMap[key] || 'text'}}" name="{{key}}" placeholder="" class="form-control" onfocus="this.placeholder=''; $(this).removeClass('field-invalid')" ng-model="addingNew[key]" ng-required="fieldRequiredMap[key]" id="input-{{key}}" ng-disabled="fieldPluginMap[key]" ng-attr-placeholder="{{fieldPluginMap[key] ? 'Use plugin to fill this field' : ''}}">
+                                
+                                <img src="plugin.png" ng-if="fieldPluginMap[key]" ng-click="allowplugin(key,'addModal', $event)" style="width: 25px;height: 25px;margin-left:10px;cursor:pointer;flex-shrink:0;" title="Open {{fieldPluginMap[key]}}">
+                                </div>
+                                <br>
+                            </div>
+                        </div>
+                    </div>
+            </div>
+            <div class="modal-footer" style="border:0">
+                <button class="btn btn-primary" type="button" ng-click="crtpag('setcontent')">Add</button>
+                <button class="btn btn-danger" type="button" ng-click="no()">Cancel</button>
+            </div>
+            </form>
+        </script>
+    </div>
+
+    <script type="text/ng-template" id="blocks/modal/edit.html">
+            <div class="close-button" style="border-radius: 50%;background-color: #CC1A1A;color: #fff;font-size: 20px;position: absolute;top: -10px;right: -10px;width: 30px;height: 30px;z-index: 10;box-shadow: 0 4px 4px rgba(0,0,0,0.1);opacity: 1;text-align: center;cursor: pointer;line-height: 30px;" ng-click="cancelbt()">x</div>
+            <div class="modal-header">
+                <h3 class="modal-title">Edit Page</h3> </div>
+            <form class="form">
+            <div class="modal-body" id="edtfrm">
+                                <div ng-repeat="(key, value) in edls" ng-if="$index > 0">
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label" for="textinput">{{key}}</label>
+                            <div style="display: flex; align-items: flex-start;">
+                            <!-- Textarea -->
+                            <textarea ng-if="fieldTypeMap[key] === 'textarea'" name="{{key}}" ng-model="edls[key]" class="form-control" ng-required="fieldRequiredMap[key]" id="input-{{key}}" rows="4" onfocus="$(this).removeClass('field-invalid')" ng-disabled="fieldPluginMap[key]" ng-attr-placeholder="{{fieldPluginMap[key] ? 'Use plugin to fill this field' : ''}}"></textarea>
+                            
+                            <!-- Select dropdown -->
+                            <select ng-if="fieldTypeMap[key] === 'select'" name="{{key}}" class="form-control" ng-model="edls[key]" ng-required="fieldRequiredMap[key]" id="input-{{key}}" ng-change="$event.target.classList.remove('field-invalid')" ng-disabled="fieldPluginMap[key]">
+                                <option value="" ng-if="!fieldPluginMap[key]">-- Please select from dropdown --</option>
+                                <option value="" ng-if="fieldPluginMap[key]">-- Use plugin to select --</option>
+                                <option ng-repeat="option in getFieldOptions(key)" value="{{option}}">{{option}}</option>
+                            </select>
+                            
+                            <!-- Radio buttons -->
+                            <div ng-if="fieldTypeMap[key] === 'radio'" style="flex: 1;" onclick="$(this).removeClass('radio-group-invalid')">
+                                <label ng-repeat="option in getFieldOptions(key)" style="display: block; margin-bottom: 8px;">
+                                    <input type="radio" name="{{key}}" ng-model="edls[key]" value="{{option}}" ng-required="fieldRequiredMap[key]" style="margin-right: 8px;" ng-disabled="fieldPluginMap[key]">
+                                    {{option}}
+                                </label>
+                            </div>
+                            
+                            <!-- Checkboxes (multi-select) -->
+                            <div ng-if="fieldTypeMap[key] === 'checkbox'" style="flex: 1;" onclick="$(this).removeClass('checkbox-group-invalid')">
+                                <label ng-repeat="option in getFieldOptions(key)" style="display: block; margin-bottom: 8px;">
+                                    <input type="checkbox" ng-checked="edls[key] && edls[key].indexOf(option) !== -1" ng-click="toggleCheckbox(key, option)" style="margin-right: 8px;" ng-disabled="fieldPluginMap[key]">
+                                    {{option}}
+                                </label>
+                            </div>
+                            
+                            <!-- Regular input types -->
+                            <input ng-if="fieldTypeMap[key] !== 'textarea' && fieldTypeMap[key] !== 'select' && fieldTypeMap[key] !== 'radio' && fieldTypeMap[key] !== 'checkbox'" type="{{fieldTypeMap[key] || 'text'}}" name="{{key}}" ng-model="edls[key]" class="form-control" ng-required="fieldRequiredMap[key]" id="input-{{key}}" onfocus="$(this).removeClass('field-invalid')" ng-disabled="fieldPluginMap[key]" ng-attr-placeholder="{{fieldPluginMap[key] ? 'Use plugin to fill this field' : ''}}">
+                            
+                            <img src="plugin.png" ng-if="fieldPluginMap[key]" ng-click="allowplugin(key,'editModal', $event)" style="width: 25px;height: 25px;margin-left:10px;cursor:pointer;flex-shrink:0;" title="Open {{fieldPluginMap[key]}}">
+                            </div>
+                            <small ng-if="fieldPluginMap[key]" class="text-muted">This field can only be filled using the plugin.</small>
+                            <br>
+                        </div>
+                        </div>
+                    </div>
+            </div>
+            <div class="modal-footer" style="border:0">
+                <button class="btn btn-primary" type="button" ng-click="edityes('edcontent',edls.id)">Update</button>
+                <button class="btn btn-danger" type="button" ng-click="no()">Cancel</button>
+            </div>
+            </form>
+        </script>
+
+    <script type="text/ng-template" id="blocks/modal/plugin.html">
+            <div class="modal-header">
+                <h3 class="modal-title">Plugin Input</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <input type="text" ng-model="pluginValue" class="form-control" placeholder="Enter value">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" type="button" ng-click="submitPlugin()">Submit</button>
+                <button class="btn btn-danger" type="button" ng-click="no()">Cancel</button>
+            </div>
+        </script>
+
+    <script type="text/ng-template" id="blocks/modal/ddialog.html">
+            <div class="modal-header">
+                <h3 class="modal-title">Delete Confirmation</h3> </div>
+            <div class="modal-body"> Do You Want To Delete This Entry? (Cannot Be Undone!) </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" type="button" ng-click="delyes(delid,'delcontentsa')">Yes</button>
+                <button class="btn btn-warning" type="button" ng-click="no()">No</button>
+            </div>
+        </script>
+</body>
+<!-- daterange picker initialization removed -->
+<!-- date-picker -->
+<script src="../assets/resource/bootstrap-datepicker.js"></script>
+<script type="text/javascript" src="../assets/js/notie.min.js"></script>
+
+</html>

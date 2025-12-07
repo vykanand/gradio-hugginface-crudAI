@@ -697,7 +697,7 @@
               context += `Row count: ${schema?.rowCount || 0}\n`;
             });
 
-            const analysisPrompt = `${context}\n\nAnalyze this data representing DB schema and give in-depth explanation.`;
+            const analysisPrompt = `${context}\n\n Analyze all schema and give combined query and most probable combination of overall data.`;
             $("#chat-input").val(analysisPrompt);
             await sendChatMessage();
           } catch (e) {
