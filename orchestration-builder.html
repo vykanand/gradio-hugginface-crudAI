@@ -165,6 +165,9 @@
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
         transition: all 0.2s;
         z-index: 4;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
       }
 
       .workflow-node:hover {
@@ -216,6 +219,16 @@
         position: absolute;
         cursor: pointer;
         transition: all 0.2s;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+
+      .connection-point.snap {
+        box-shadow: 0 0 0 8px rgba(102, 126, 234, 0.15);
+        background: #667eea;
+        transform: scale(1.4) translateY(-50%);
+        transition: box-shadow 0.12s, transform 0.12s, background 0.12s;
       }
 
       .connection-point.input {
@@ -443,6 +456,25 @@
         z-index: 1; /* keep SVG behind node elements so nodes remain visible */
       }
 
+      .conn-pulse {
+        animation: pulse 700ms ease-in-out;
+      }
+
+      @keyframes pulse {
+        0% {
+          stroke-width: 6;
+          opacity: 1;
+        }
+        50% {
+          stroke-width: 10;
+          opacity: 0.65;
+        }
+        100% {
+          stroke-width: 6;
+          opacity: 1;
+        }
+      }
+
       .workflow-nodes-container {
         position: absolute;
         top: 0;
@@ -602,6 +634,14 @@
           🔄 Refresh
         </button>
       </div>
+      <div
+        style="padding: 1rem; border-top: 1px solid #eef2f7; background: #fff"
+      >
+        <small style="color: #657786"
+          >Tip: Click an item to edit. Use the + buttons to add new taxonomy
+          entries.</small
+        >
+      </div>
       <div class="main">
         <div class="content-area">
           <h2 style="margin-bottom: 2rem">
@@ -731,32 +771,57 @@
         // Render concepts
         const conceptsList = document.getElementById("concepts-list");
         conceptsList.innerHTML = Object.values(taxonomy.concepts || {})
-          .map(
-            (concept) => `
-                <div class="list-item">
+          .map((concept) => {
+            const props = (concept.properties || [])
+              .map((p) => `<span class="badge">${p}</span>`)
+              .join(" ");
+            return `
+              <div class="list-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div>
                     <div class="list-item-title">${concept.name}</div>
                     <div class="list-item-desc">${
                       concept.description || ""
                     }</div>
-                    ${(concept.properties || [])
-                      .map((p) => `<span class="badge">${p}</span>`)
-                      .join(" ")}
+                    ${props}
+                  </div>
+                  <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" onclick="editConcept('${
+                      concept.id
+                    }')">Edit</button>
+                    <button class="btn btn-danger" onclick="deleteConcept('${
+                      concept.id
+                    }')">Delete</button>
+                  </div>
                 </div>
-            `
-          )
+              </div>
+            `;
+          })
           .join("");
 
         // Render events
         const eventsList = document.getElementById("events-list");
         eventsList.innerHTML = Object.values(taxonomy.events || {})
           .map(
-            (event) => `
-                <div class="list-item">
-                    <div class="list-item-title">${event.name}</div>
+            (ev) => `
+              <div class="list-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div>
+                    <div class="list-item-title">${ev.name}</div>
                     <div class="list-item-desc">${
-                      event.description || ""
-                    } <span class="badge">${event.concept}</span></div>
+                      ev.description || ""
+                    } <span class="badge">${ev.concept || ""}</span></div>
+                  </div>
+                  <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" onclick="editEvent('${
+                      ev.id
+                    }')">Edit</button>
+                    <button class="btn btn-danger" onclick="deleteEvent('${
+                      ev.id
+                    }')">Delete</button>
+                  </div>
                 </div>
+              </div>
             `
           )
           .join("");
@@ -765,13 +830,25 @@
         const actionsList = document.getElementById("actions-list");
         actionsList.innerHTML = Object.values(taxonomy.actions || {})
           .map(
-            (action) => `
-                <div class="list-item">
-                    <div class="list-item-title">${action.name}</div>
+            (act) => `
+              <div class="list-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div>
+                    <div class="list-item-title">${act.name}</div>
                     <div class="list-item-desc">${
-                      action.description || ""
-                    } <span class="badge">${action.concept}</span></div>
+                      act.description || ""
+                    } <span class="badge">${act.concept || ""}</span></div>
+                  </div>
+                  <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" onclick="editAction('${
+                      act.id
+                    }')">Edit</button>
+                    <button class="btn btn-danger" onclick="deleteAction('${
+                      act.id
+                    }')">Delete</button>
+                  </div>
                 </div>
+              </div>
             `
           )
           .join("");
@@ -990,6 +1067,7 @@
           if (out) {
             out.dataset.nodeId = node.id;
             out.addEventListener("mousedown", (e) => {
+              e.preventDefault();
               e.stopPropagation();
               console.debug(
                 "connection mousedown on output",
@@ -1196,15 +1274,33 @@
         const svg = document.getElementById("svg-connections");
         const canvas = document.getElementById("workflow-canvas");
         // robust sizing with fallbacks
-        const w =
+        const baseW =
           canvas.clientWidth || canvas.offsetWidth || canvas.scrollWidth || 800;
-        const h =
+        const baseH =
           canvas.clientHeight ||
           canvas.offsetHeight ||
           canvas.scrollHeight ||
           600;
+
+        // Expand SVG to cover the extents of all nodes so connections remain
+        // visible even when nodes sit outside the immediate viewport.
+        const canvasRect = canvas.getBoundingClientRect();
+        let maxRight = 0;
+        let maxBottom = 0;
+        document.querySelectorAll(".workflow-node").forEach((el) => {
+          const r = el.getBoundingClientRect();
+          const right = r.right - canvasRect.left; // local x extent
+          const bottom = r.bottom - canvasRect.top; // local y extent
+          if (right > maxRight) maxRight = right;
+          if (bottom > maxBottom) maxBottom = bottom;
+        });
+
+        const w = Math.max(baseW, Math.ceil(maxRight + 80));
+        const h = Math.max(baseH, Math.ceil(maxBottom + 80));
         svg.setAttribute("width", w);
         svg.setAttribute("height", h);
+        svg.style.width = w + "px";
+        svg.style.height = h + "px";
 
         // prepare defs for arrow marker
         svg.innerHTML = `
@@ -1252,6 +1348,8 @@
               path.setAttribute("stroke-linecap", "round");
               path.setAttribute("fill", "none");
               path.setAttribute("data-conn-id", c.id);
+              path.setAttribute("data-from", c.from);
+              path.setAttribute("data-to", c.to);
               path.setAttribute("marker-end", "url(#arrow)");
               path.style.cursor = "pointer";
               path.style.pointerEvents = "auto";
@@ -1308,81 +1406,8 @@
         connectionState.tempLine = tempPath;
         svg.appendChild(tempPath);
 
-        function renderConnections() {
-          const svg = document.getElementById("svg-connections");
-          // Ensure svg has correct size
-          const canvas = document.getElementById("workflow-canvas");
-          svg.setAttribute("width", canvas.clientWidth || canvas.offsetWidth);
-          svg.setAttribute(
-            "height",
-            canvas.clientHeight || canvas.offsetHeight
-          );
-          // prepare defs for arrow marker
-          svg.innerHTML = `
-            <defs>
-              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#667eea" />
-              </marker>
-            </defs>`;
-
-          // draw after layout completes to ensure getBoundingClientRect returns correct coordinates
-          requestAnimationFrame(() => {
-            try {
-              const svgRect = svg.getBoundingClientRect();
-              // draw persistent connections
-              connections.forEach((c) => {
-                const fromEl = document.querySelector(
-                  `#wfnode-${c.from} .connection-point.output`
-                );
-                const toEl = document.querySelector(
-                  `#wfnode-${c.to} .connection-point.input`
-                );
-                if (!fromEl || !toEl) return;
-                const fromRect = fromEl.getBoundingClientRect();
-                const toRect = toEl.getBoundingClientRect();
-                const x1 = fromRect.left + fromRect.width / 2 - svgRect.left;
-                const y1 = fromRect.top + fromRect.height / 2 - svgRect.top;
-                const x2 = toRect.left + toRect.width / 2 - svgRect.left;
-                const y2 = toRect.top + toRect.height / 2 - svgRect.top;
-
-                const path = document.createElementNS(
-                  "http://www.w3.org/2000/svg",
-                  "path"
-                );
-                const dx = Math.max(40, Math.abs(x2 - x1) * 0.4);
-                const d = `M ${x1} ${y1} C ${x1 + dx} ${y1} ${
-                  x2 - dx
-                } ${y2} ${x2} ${y2}`;
-                path.setAttribute("d", d);
-                path.setAttribute("stroke", "#667eea");
-                path.setAttribute("stroke-width", "4");
-                path.setAttribute("stroke-linecap", "round");
-                path.setAttribute("fill", "none");
-                path.setAttribute("data-conn-id", c.id);
-                path.setAttribute("marker-end", "url(#arrow)");
-                path.style.cursor = "pointer";
-                path.addEventListener("click", (ev) => {
-                  if (confirm("Delete connection?")) {
-                    connections = connections.filter((cc) => cc.id !== c.id);
-                    renderConnections();
-                  }
-                  ev.stopPropagation();
-                });
-                svg.appendChild(path);
-              });
-
-              // If currently connecting, ensure tempLine is present
-              if (connectionState.connecting && connectionState.tempLine) {
-                svg.appendChild(connectionState.tempLine);
-              }
-            } catch (e) {
-              console.warn(
-                "renderConnections failed",
-                e && e.message ? e.message : e
-              );
-            }
-          });
-        }
+        // Note: rendering is handled by the shared `renderConnections()` helper
+        // defined at module level. No local duplicate renderer is required here.
 
         // mouse handlers for the temporary connection line
         function onMove(e) {
@@ -1405,43 +1430,95 @@
           connectionState.tempLine.setAttribute("d", d);
         }
 
+        // helper to clear any snap highlights
+        function clearSnapHighlights() {
+          document
+            .querySelectorAll(".connection-point.snap")
+            .forEach((el) => el.classList.remove("snap"));
+        }
+
         function onUp(e) {
           if (!connectionState.connecting) return;
-          const svg = document.getElementById("svg-connections");
-          // determine if we released over an input connection point
-          const el = document.elementFromPoint(e.clientX, e.clientY);
-          let target = el;
-          while (target && !target.classList?.contains("connection-point")) {
-            target = target.parentElement;
-          }
-          console.debug(
-            "onUp target=",
-            target && target.className ? target.className : target,
-            "dataset=",
-            target && target.dataset ? target.dataset : null
+          // clear any live snap highlight immediately
+          clearSnapHighlights();
+          // Robust completion: always do a proximity search for the nearest
+          // input connection-point and pick it if it's within threshold. This
+          // avoids relying solely on elementFromPoint which can be flaky with
+          // small targets, nested elements, or during scrolling.
+          const mx = e.clientX;
+          const my = e.clientY;
+          const inputs = Array.from(
+            document.querySelectorAll(".connection-point.input")
           );
-          if (
-            target &&
-            target.classList.contains("connection-point") &&
-            (target.dataset.type === "input" ||
-              target.getAttribute("data-type") === "input")
-          ) {
+          let closest = null;
+          let minDist = Infinity;
+          for (const inp of inputs) {
+            const r = inp.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const cy = r.top + r.height / 2;
+            const dx = cx - mx;
+            const dy = cy - my;
+            const dist = Math.hypot(dx, dy);
+            if (dist < minDist) {
+              minDist = dist;
+              closest = inp;
+            }
+          }
+
+          const RADIUS_PX = 40; // chosen to be forgiving but conservative
+          if (closest && minDist <= RADIUS_PX) {
             const toNodeId =
-              target.dataset.nodeId || target.getAttribute("data-node-id");
-            console.debug("onUp over input nodeId=", toNodeId);
+              closest.dataset.nodeId || closest.getAttribute("data-node-id");
+            console.debug(
+              "onUp: snapped to input nodeId=",
+              toNodeId,
+              "dist=",
+              Math.round(minDist)
+            );
             if (
               toNodeId &&
               connectionState.fromId &&
-              toNodeId !== String(connectionState.fromId)
+              String(toNodeId) !== String(connectionState.fromId)
             ) {
               const newConn = {
                 from: String(connectionState.fromId),
                 to: String(toNodeId),
                 id: "c_" + Date.now() + "_" + Math.floor(Math.random() * 10000),
               };
-              connections.push(newConn);
-              console.debug("created connection", newConn);
+              // dedupe: don't add if identical connection exists
+              const exists = connections.some(
+                (c) =>
+                  String(c.from) === newConn.from && String(c.to) === newConn.to
+              );
+              if (!exists) {
+                connections.push(newConn);
+                console.debug("created connection", newConn);
+              } else {
+                console.debug("skipping duplicate connection", newConn);
+                // visual feedback: pulse the existing connection path
+                try {
+                  const svg = document.getElementById("svg-connections");
+                  const existing = svg.querySelector(
+                    `path[data-from="${newConn.from}"][data-to="${newConn.to}"]`
+                  );
+                  if (existing) {
+                    existing.classList.add("conn-pulse");
+                    setTimeout(
+                      () => existing.classList.remove("conn-pulse"),
+                      700
+                    );
+                  }
+                } catch (e) {
+                  /* ignore */
+                }
+              }
             }
+          } else {
+            console.debug(
+              "onUp: no nearby input found (minDist=",
+              Math.round(minDist),
+              ") - aborting connection"
+            );
           }
           // cleanup
           if (connectionState.tempLine && connectionState.tempLine.parentNode) {
@@ -1453,12 +1530,60 @@
           connectionState.connecting = false;
           connectionState.fromId = null;
           renderConnections();
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
+          // remove the exact handlers we registered
+          if (connectionState.moveHandler) {
+            document.removeEventListener(
+              "mousemove",
+              connectionState.moveHandler
+            );
+          }
+          document.removeEventListener(
+            "mouseup",
+            connectionState.upHandler || onUp
+          );
+          connectionState.moveHandler = null;
+          connectionState.upHandler = null;
         }
 
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
+        // Enhanced mousemove: update temp line and highlight nearest input
+        function onMoveWithSnap(e) {
+          onMove(e);
+          // find closest input and toggle snap class
+          const inputs = Array.from(
+            document.querySelectorAll(".connection-point.input")
+          );
+          if (!inputs.length) return;
+          let closest = null;
+          let minDist = Infinity;
+          const mx = e.clientX;
+          const my = e.clientY;
+          for (const inp of inputs) {
+            const r = inp.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const cy = r.top + r.height / 2;
+            const dx = cx - mx;
+            const dy = cy - my;
+            const dist = Math.hypot(dx, dy);
+            if (dist < minDist) {
+              minDist = dist;
+              closest = inp;
+            }
+          }
+          const HIGHLIGHT_PX = 56;
+          // clear previous highlights first for predictability
+          document
+            .querySelectorAll(".connection-point.snap")
+            .forEach((el) => el.classList.remove("snap"));
+          if (closest && minDist <= HIGHLIGHT_PX) {
+            closest.classList.add("snap");
+          }
+        }
+
+        // register handlers and keep references so we can reliably remove them
+        connectionState.moveHandler = onMoveWithSnap;
+        connectionState.upHandler = onUp;
+        document.addEventListener("mousemove", connectionState.moveHandler);
+        document.addEventListener("mouseup", connectionState.upHandler);
       }
 
       // Rules Functions
@@ -1566,12 +1691,194 @@
         }
       }
 
+      async function editConcept(id) {
+        try {
+          const c = taxonomy.concepts && taxonomy.concepts[id];
+          if (!c) return alert("Concept not found");
+          const name = prompt("Concept name:", c.name);
+          if (!name) return;
+          const description = prompt("Description:", c.description || "");
+          const props = prompt(
+            "Properties (comma separated):",
+            (c.properties || []).join(",")
+          );
+          const body = {
+            id,
+            name,
+            description,
+            properties: props
+              ? props
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : [],
+          };
+          const res = await fetch(
+            `/api/taxonomy/concepts/${encodeURIComponent(id)}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }
+          );
+          const data = await res.json();
+          if (data.ok) {
+            await loadTaxonomy();
+          } else {
+            alert("Failed to update concept: " + data.error);
+          }
+        } catch (e) {
+          alert("Error updating concept: " + e.message);
+        }
+      }
+
+      async function deleteConcept(id) {
+        if (
+          !confirm(
+            "Delete this concept? This will remove it from related events/actions."
+          )
+        )
+          return;
+        try {
+          const res = await fetch(
+            `/api/taxonomy/concepts/${encodeURIComponent(id)}`,
+            { method: "DELETE" }
+          );
+          const data = await res.json();
+          if (data.ok) {
+            await loadTaxonomy();
+          } else {
+            alert("Failed to delete concept: " + data.error);
+          }
+        } catch (e) {
+          alert("Error deleting concept: " + e.message);
+        }
+      }
+
       function showAddEventDialog() {
-        alert("Event dialog - simplified for demo");
+        const name = prompt("Event name:");
+        if (!name) return;
+        const description = prompt("Description:") || "";
+        const concept = prompt("Concept (optional):") || "";
+        addEvent({ id: name.replace(/\s+/g, ""), name, description, concept });
+      }
+
+      async function addEvent(ev) {
+        try {
+          const res = await fetch("/api/taxonomy/events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(ev),
+          });
+          const data = await res.json();
+          if (data.ok) await loadTaxonomy();
+          else alert("Failed to add event: " + data.error);
+        } catch (e) {
+          alert("Error adding event: " + e.message);
+        }
+      }
+
+      async function editEvent(id) {
+        try {
+          const ev = taxonomy.events && taxonomy.events[id];
+          if (!ev) return alert("Event not found");
+          const name = prompt("Event name:", ev.name);
+          if (!name) return;
+          const description = prompt("Description:", ev.description || "");
+          const concept = prompt("Concept (optional):", ev.concept || "");
+          const body = { id, name, description, concept };
+          const res = await fetch(
+            `/api/taxonomy/events/${encodeURIComponent(id)}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }
+          );
+          const data = await res.json();
+          if (data.ok) await loadTaxonomy();
+          else alert("Failed to update event: " + data.error);
+        } catch (e) {
+          alert("Error updating event: " + e.message);
+        }
+      }
+
+      async function deleteEvent(id) {
+        if (!confirm("Delete this event?")) return;
+        try {
+          const res = await fetch(
+            `/api/taxonomy/events/${encodeURIComponent(id)}`,
+            { method: "DELETE" }
+          );
+          const data = await res.json();
+          if (data.ok) await loadTaxonomy();
+          else alert("Failed to delete event: " + data.error);
+        } catch (e) {
+          alert("Error deleting event: " + e.message);
+        }
       }
 
       function showAddActionDialog() {
-        alert("Action dialog - simplified for demo");
+        const name = prompt("Action name:");
+        if (!name) return;
+        const description = prompt("Description:") || "";
+        const concept = prompt("Concept (optional):") || "";
+        addAction({ id: name.replace(/\s+/g, ""), name, description, concept });
+      }
+
+      async function addAction(act) {
+        try {
+          const res = await fetch("/api/taxonomy/actions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(act),
+          });
+          const data = await res.json();
+          if (data.ok) await loadTaxonomy();
+          else alert("Failed to add action: " + data.error);
+        } catch (e) {
+          alert("Error adding action: " + e.message);
+        }
+      }
+
+      async function editAction(id) {
+        try {
+          const act = taxonomy.actions && taxonomy.actions[id];
+          if (!act) return alert("Action not found");
+          const name = prompt("Action name:", act.name);
+          if (!name) return;
+          const description = prompt("Description:", act.description || "");
+          const concept = prompt("Concept (optional):", act.concept || "");
+          const body = { id, name, description, concept };
+          const res = await fetch(
+            `/api/taxonomy/actions/${encodeURIComponent(id)}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }
+          );
+          const data = await res.json();
+          if (data.ok) await loadTaxonomy();
+          else alert("Failed to update action: " + data.error);
+        } catch (e) {
+          alert("Error updating action: " + e.message);
+        }
+      }
+
+      async function deleteAction(id) {
+        if (!confirm("Delete this action?")) return;
+        try {
+          const res = await fetch(
+            `/api/taxonomy/actions/${encodeURIComponent(id)}`,
+            { method: "DELETE" }
+          );
+          const data = await res.json();
+          if (data.ok) await loadTaxonomy();
+          else alert("Failed to delete action: " + data.error);
+        } catch (e) {
+          alert("Error deleting action: " + e.message);
+        }
       }
 
       function showAddRuleSetDialog() {

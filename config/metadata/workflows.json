@@ -77,25 +77,33 @@
           "type": "action",
           "name": "Post to Accounting",
           "action": "PostAccountingEntry",
-          "next": null,
+          "next": "reject-invoice",
           "x": 1157,
           "y": 99,
-          "outgoing": []
+          "outgoing": [
+            "reject-invoice"
+          ]
         },
         {
           "id": "reject-invoice",
           "type": "action",
           "name": "Reject Invoice",
           "action": "RejectInvoice",
-          "next": null,
-          "outgoing": []
+          "next": "close-workflow",
+          "outgoing": [
+            "close-workflow"
+          ],
+          "x": 1422,
+          "y": 94
         },
         {
           "id": "close-workflow",
           "type": "end",
           "name": "Complete",
           "outgoing": [],
-          "next": null
+          "next": null,
+          "x": 1687,
+          "y": 103
         }
       ],
       "connections": [
@@ -123,6 +131,16 @@
           "from": "check-approval-result",
           "to": "post-accounting",
           "id": "c_1765660768099_6546"
+        },
+        {
+          "from": "post-accounting",
+          "to": "reject-invoice",
+          "id": "c_1765661474813_5045"
+        },
+        {
+          "from": "reject-invoice",
+          "to": "close-workflow",
+          "id": "c_1765661481618_8515"
         }
       ]
     },
