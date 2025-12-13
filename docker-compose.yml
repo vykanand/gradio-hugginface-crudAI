@@ -1,21 +1,68 @@
 version: '3.8'
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      - redis
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-    volumes:
-      - .:/usr/src/app
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - '2181:2181'
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    ports:
+      - '9092:9092'
+    depends_on:
+      - zookeeper
 
   redis:
     image: redis:6.2
     ports:
-      - "6379:6379"
-    command: redis-server
+      - '6379:6379'
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gradio-hf-crudai-app
+    environment:
+      - PORT=5050
+      - KAFKA_BROKERS=kafka:9092
+      - DISABLE_KAFKA=false
+      - ADMIN_API_KEY=changeme
+      - NODE_ENV=development
+    volumes:
+      - ./:/usr/src/app:delegated
+      - /usr/src/app/node_modules
+    ports:
+      - '5050:5050'
+    depends_on:
+      - kafka
+      - zookeeper
+    init: true
+    command: ["/bin/bash","-c","/usr/src/app/scripts/wait-for-kafka.sh kafka 9092 60 && npm install --no-audit --no-fund && exec node server.js"]
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    command: ["/bin/bash","-c","/usr/src/app/scripts/wait-for-kafka.sh kafka 9092 60 && npm install --no-audit --no-fund && exec npm run worker"]
+    depends_on:
+      - kafka
+      - zookeeper
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - NODE_ENV=development
+    volumes:
+      - ./:/usr/src/app:delegated
+      - /usr/src/app/node_modules
+    restart: unless-stopped

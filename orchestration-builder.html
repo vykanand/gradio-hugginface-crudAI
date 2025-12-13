@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orchestration Builder - Business Operating System</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: #f5f7fa;
+        color: #2c3e50;
+        overflow: hidden;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1rem 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .header h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+
+      .header-subtitle {
+        font-size: 0.85rem;
+        opacity: 0.9;
+        margin-top: 0.25rem;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .tab {
+        padding: 0.5rem 1rem;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        border-radius: 6px;
+        color: white;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+      }
+
+      .tab:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+
+      .tab.active {
+        background: white;
+        color: #667eea;
+        font-weight: 600;
+      }
+
+      .main {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0; /* allows children to scroll inside flex */
+      }
+
+      .sidebar {
+        width: 280px;
+        background: white;
+        border-right: 1px solid #e1e8ed;
+        overflow-y: auto;
+        padding: 1.5rem;
+      }
+
+      .sidebar h3 {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: #8899a6;
+        margin-bottom: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      .node-type {
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        background: #f7f9fc;
+        border: 1px solid #e1e8ed;
+        border-radius: 6px;
+        cursor: grab;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        transition: all 0.2s;
+      }
+
+      .node-type:hover {
+        background: #eef2f7;
+        border-color: #667eea;
+        transform: translateX(4px);
+      }
+
+      .node-type:active {
+        cursor: grabbing;
+      }
+
+      .node-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+      }
+
+      .node-info {
+        flex: 1;
+      }
+
+      .node-name {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: #2c3e50;
+      }
+
+      .node-desc {
+        font-size: 0.75rem;
+        color: #8899a6;
+        margin-top: 0.15rem;
+      }
+
+      .canvas-container {
+        flex: 1 1 auto;
+        position: relative;
+        overflow: auto;
+        background: #fafbfc;
+        min-height: 0;
+      }
+
+      .canvas {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        cursor: default;
+      }
+
+      .workflow-node {
+        position: absolute;
+        background: white;
+        border: 2px solid #e1e8ed;
+        border-radius: 8px;
+        padding: 1rem;
+        min-width: 180px;
+        cursor: move;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        transition: all 0.2s;
+        z-index: 4;
+      }
+
+      .workflow-node:hover {
+        border-color: #667eea;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+      }
+
+      .workflow-node.selected {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+      }
+
+      .workflow-node-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .workflow-node-title {
+        font-weight: 600;
+        font-size: 0.9rem;
+        flex: 1;
+      }
+
+      .workflow-node-type {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.5rem;
+        background: #f0f3f7;
+        border-radius: 4px;
+        color: #657786;
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      .workflow-node-content {
+        font-size: 0.85rem;
+        color: #657786;
+        line-height: 1.5;
+      }
+
+      .connection-point {
+        width: 12px;
+        height: 12px;
+        background: white;
+        border: 2px solid #667eea;
+        border-radius: 50%;
+        position: absolute;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .connection-point.input {
+        top: 50%;
+        left: -6px;
+        transform: translateY(-50%);
+      }
+
+      .connection-point.output {
+        top: 50%;
+        right: -6px;
+        transform: translateY(-50%);
+      }
+
+      .connection-point:hover {
+        background: #667eea;
+        transform: scale(1.3) translateY(-50%);
+      }
+
+      .properties-panel {
+        width: 320px;
+        background: white;
+        border-left: 1px solid #e1e8ed;
+        overflow-y: auto;
+        padding: 1.5rem;
+        min-height: 0;
+      }
+
+      .properties-panel h3 {
+        font-size: 1rem;
+        margin-bottom: 1.5rem;
+        color: #2c3e50;
+      }
+
+      .form-group {
+        margin-bottom: 1.25rem;
+      }
+
+      .form-label {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 0.5rem;
+      }
+
+      .form-input,
+      .form-select,
+      .form-textarea {
+        width: 100%;
+        padding: 0.625rem;
+        border: 1px solid #e1e8ed;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-family: inherit;
+        transition: all 0.2s;
+      }
+
+      .form-input:focus,
+      .form-select:focus,
+      .form-textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .form-textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+
+      .btn {
+        padding: 0.625rem 1.25rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .btn-primary {
+        background: #667eea;
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background: #5568d3;
+      }
+
+      .btn-secondary {
+        background: #e1e8ed;
+        color: #2c3e50;
+      }
+
+      .btn-secondary:hover {
+        background: #d1d8dd;
+      }
+
+      .btn-danger {
+        background: #e74c3c;
+        color: white;
+      }
+
+      .btn-danger:hover {
+        background: #c0392b;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background: white;
+        border-bottom: 1px solid #e1e8ed;
+        flex-wrap: wrap;
+        position: sticky;
+        top: 0;
+        z-index: 6;
+      }
+
+      /* Utility to push an item to the far right of the toolbar */
+      .toolbar-right {
+        margin-left: auto;
+      }
+
+      /* Small responsive tweak: allow selects/buttons to shrink on small screens */
+      .toolbar .form-select,
+      .toolbar .btn {
+        flex: 0 0 auto;
+      }
+
+      .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #8899a6;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .empty-state-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+      }
+
+      .empty-state-text {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+
+      .empty-state-hint {
+        font-size: 0.9rem;
+      }
+
+      /* Tab panels */
+      .tab-panel {
+        display: none;
+        height: 100%;
+        /* ensure panels are column flex containers so toolbar sits above content */
+        flex-direction: column;
+      }
+
+      .tab-panel.active {
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* List styles for taxonomy and rules */
+      .list-item {
+        padding: 1rem;
+        background: #f7f9fc;
+        border: 1px solid #e1e8ed;
+        border-radius: 6px;
+        margin-bottom: 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .list-item:hover {
+        background: #eef2f7;
+        border-color: #667eea;
+      }
+
+      .list-item-title {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #2c3e50;
+        margin-bottom: 0.25rem;
+      }
+
+      .list-item-desc {
+        font-size: 0.85rem;
+        color: #8899a6;
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        background: #e1e8ed;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #657786;
+      }
+
+      .content-area {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 2rem;
+        min-height: 0;
+      }
+
+      .svg-connections {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: auto; /* enable clicking on connection paths */
+        z-index: 1; /* keep SVG behind node elements so nodes remain visible */
+      }
+
+      .workflow-nodes-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div>
+        <h1>🧠 Business Orchestration Builder</h1>
+        <div class="header-subtitle">
+          Metadata-driven, no-code workflow designer for enterprise operations
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('workflows')">
+          Workflows
+        </button>
+        <button class="tab" onclick="switchTab('taxonomy')">Taxonomy</button>
+        <button class="tab" onclick="switchTab('rules')">Rules</button>
+        <button class="tab" onclick="switchTab('executions')">
+          Executions
+        </button>
+      </div>
+    </div>
+
+    <!-- Workflows Tab -->
+    <div id="workflows-panel" class="tab-panel active">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="newWorkflow()">
+          ➕ New Workflow
+        </button>
+        <button class="btn btn-secondary" onclick="loadWorkflows()">
+          🔄 Refresh
+        </button>
+        <button class="btn btn-secondary" onclick="saveCurrentWorkflow()">
+          💾 Save
+        </button>
+        <label
+          style="
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 8px;
+            font-size: 0.9rem;
+          "
+        >
+          <input
+            id="auto-connect-toggle"
+            type="checkbox"
+            style="width: 16px; height: 16px"
+          />
+          <span style="font-weight: 600; color: #657786">Auto-connect</span>
+        </label>
+        <select
+          id="workflow-selector"
+          class="form-select toolbar-right"
+          style="width: 200px"
+          onchange="loadWorkflowById(this.value)"
+        >
+          <option value="">Select Workflow...</option>
+        </select>
+      </div>
+      <div class="main">
+        <div class="sidebar">
+          <h3>Workflow Nodes</h3>
+          <div class="node-type" draggable="true" data-node-type="action">
+            <div class="node-icon" style="background: #e3f2fd; color: #1976d2">
+              ⚡
+            </div>
+            <div class="node-info">
+              <div class="node-name">Action</div>
+              <div class="node-desc">Execute a business action</div>
+            </div>
+          </div>
+          <div class="node-type" draggable="true" data-node-type="decision">
+            <div class="node-icon" style="background: #fff3e0; color: #f57c00">
+              🔀
+            </div>
+            <div class="node-info">
+              <div class="node-name">Decision</div>
+              <div class="node-desc">Conditional branch using rules</div>
+            </div>
+          </div>
+          <div class="node-type" draggable="true" data-node-type="human-task">
+            <div class="node-icon" style="background: #fce4ec; color: #c2185b">
+              👤
+            </div>
+            <div class="node-info">
+              <div class="node-name">Human Task</div>
+              <div class="node-desc">Approval or manual action</div>
+            </div>
+          </div>
+          <div class="node-type" draggable="true" data-node-type="parallel">
+            <div class="node-icon" style="background: #f3e5f5; color: #7b1fa2">
+              ⫿
+            </div>
+            <div class="node-info">
+              <div class="node-name">Parallel</div>
+              <div class="node-desc">Execute multiple branches</div>
+            </div>
+          </div>
+          <div class="node-type" draggable="true" data-node-type="loop">
+            <div class="node-icon" style="background: #e8f5e9; color: #388e3c">
+              🔄
+            </div>
+            <div class="node-info">
+              <div class="node-name">Loop</div>
+              <div class="node-desc">Repeat steps</div>
+            </div>
+          </div>
+          <div class="node-type" draggable="true" data-node-type="end">
+            <div class="node-icon" style="background: #ffebee; color: #d32f2f">
+              🏁
+            </div>
+            <div class="node-info">
+              <div class="node-name">End</div>
+              <div class="node-desc">Complete workflow</div>
+            </div>
+          </div>
+        </div>
+        <div class="canvas-container">
+          <div class="canvas" id="workflow-canvas">
+            <svg class="svg-connections" id="svg-connections"></svg>
+            <div class="workflow-nodes-container" id="workflow-nodes"></div>
+          </div>
+        </div>
+        <div class="properties-panel" id="properties-panel">
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <div class="empty-state-text">No node selected</div>
+            <div class="empty-state-hint">
+              Click a node to edit its properties
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Taxonomy Tab -->
+    <div id="taxonomy-panel" class="tab-panel">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showAddConceptDialog()">
+          ➕ Add Concept
+        </button>
+        <button class="btn btn-primary" onclick="showAddEventDialog()">
+          ➕ Add Event
+        </button>
+        <button class="btn btn-primary" onclick="showAddActionDialog()">
+          ➕ Add Action
+        </button>
+        <button class="btn btn-secondary" onclick="loadTaxonomy()">
+          🔄 Refresh
+        </button>
+      </div>
+      <div class="main">
+        <div class="content-area">
+          <h2 style="margin-bottom: 2rem">
+            Business Taxonomy - The Language Layer
+          </h2>
+
+          <h3 style="margin-bottom: 1rem; color: #667eea">Business Concepts</h3>
+          <div id="concepts-list" style="margin-bottom: 2rem"></div>
+
+          <h3 style="margin-bottom: 1rem; color: #667eea">Business Events</h3>
+          <div id="events-list" style="margin-bottom: 2rem"></div>
+
+          <h3 style="margin-bottom: 1rem; color: #667eea">Business Actions</h3>
+          <div id="actions-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rules Tab -->
+    <div id="rules-panel" class="tab-panel">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showAddRuleSetDialog()">
+          ➕ Add Rule Set
+        </button>
+        <button class="btn btn-secondary" onclick="loadRules()">
+          🔄 Refresh
+        </button>
+      </div>
+      <div class="main">
+        <div class="content-area">
+          <h2 style="margin-bottom: 2rem">
+            Business Rules - The Decision Layer
+          </h2>
+          <div id="rules-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Executions Tab -->
+    <div id="executions-panel" class="tab-panel">
+      <div class="toolbar">
+        <button class="btn btn-secondary" onclick="loadExecutions()">
+          🔄 Refresh
+        </button>
+        <select
+          class="form-select toolbar-right"
+          style="width: 150px"
+          id="status-filter"
+          onchange="loadExecutions()"
+        >
+          <option value="">All Statuses</option>
+          <option value="running">Running</option>
+          <option value="waiting">Waiting</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+        </select>
+      </div>
+      <div class="main">
+        <div class="content-area">
+          <h2 style="margin-bottom: 2rem">Workflow Executions</h2>
+          <div id="executions-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Global state
+      let currentWorkflow = null;
+      let selectedNode = null;
+      let taxonomy = null;
+      let workflows = [];
+      let nodes = [];
+      let connections = [];
+      let nextNodeId = 1;
+
+      // Initialize
+      document.addEventListener("DOMContentLoaded", () => {
+        loadTaxonomy();
+        loadWorkflows();
+        setupDragAndDrop();
+      });
+
+      function switchTab(tabName) {
+        // Update tab buttons
+        document
+          .querySelectorAll(".tab")
+          .forEach((t) => t.classList.remove("active"));
+        event.target.classList.add("active");
+
+        // Update panels
+        document
+          .querySelectorAll(".tab-panel")
+          .forEach((p) => p.classList.remove("active"));
+        document.getElementById(tabName + "-panel").classList.add("active");
+
+        // Load data for the tab
+        switch (tabName) {
+          case "taxonomy":
+            loadTaxonomy();
+            break;
+          case "rules":
+            loadRules();
+            break;
+          case "executions":
+            loadExecutions();
+            break;
+        }
+      }
+
+      // Taxonomy Functions
+      async function loadTaxonomy() {
+        try {
+          const res = await fetch("/api/taxonomy");
+          const data = await res.json();
+          if (data.ok) {
+            taxonomy = data.taxonomy;
+            renderTaxonomy();
+          }
+        } catch (e) {
+          console.error("Failed to load taxonomy:", e);
+        }
+      }
+
+      function renderTaxonomy() {
+        if (!taxonomy) return;
+
+        // Render concepts
+        const conceptsList = document.getElementById("concepts-list");
+        conceptsList.innerHTML = Object.values(taxonomy.concepts || {})
+          .map(
+            (concept) => `
+                <div class="list-item">
+                    <div class="list-item-title">${concept.name}</div>
+                    <div class="list-item-desc">${
+                      concept.description || ""
+                    }</div>
+                    ${(concept.properties || [])
+                      .map((p) => `<span class="badge">${p}</span>`)
+                      .join(" ")}
+                </div>
+            `
+          )
+          .join("");
+
+        // Render events
+        const eventsList = document.getElementById("events-list");
+        eventsList.innerHTML = Object.values(taxonomy.events || {})
+          .map(
+            (event) => `
+                <div class="list-item">
+                    <div class="list-item-title">${event.name}</div>
+                    <div class="list-item-desc">${
+                      event.description || ""
+                    } <span class="badge">${event.concept}</span></div>
+                </div>
+            `
+          )
+          .join("");
+
+        // Render actions
+        const actionsList = document.getElementById("actions-list");
+        actionsList.innerHTML = Object.values(taxonomy.actions || {})
+          .map(
+            (action) => `
+                <div class="list-item">
+                    <div class="list-item-title">${action.name}</div>
+                    <div class="list-item-desc">${
+                      action.description || ""
+                    } <span class="badge">${action.concept}</span></div>
+                </div>
+            `
+          )
+          .join("");
+      }
+
+      // Workflow Functions
+      async function loadWorkflows() {
+        try {
+          const res = await fetch("/api/workflows");
+          const data = await res.json();
+          if (data.ok) {
+            workflows = data.workflows;
+            const selector = document.getElementById("workflow-selector");
+            selector.innerHTML =
+              '<option value="">Select Workflow...</option>' +
+              workflows
+                .map((w) => `<option value="${w.id}">${w.name}</option>`)
+                .join("");
+          }
+        } catch (e) {
+          console.error("Failed to load workflows:", e);
+        }
+      }
+
+      function newWorkflow() {
+        currentWorkflow = {
+          id: "wf_" + Date.now(),
+          name: "New Workflow",
+          description: "",
+          steps: [],
+          concept: "",
+          triggerEvent: "",
+        };
+        nodes = [];
+        connections = [];
+        nextNodeId = 1;
+        renderCanvas();
+      }
+
+      function loadWorkflowById(workflowId) {
+        if (!workflowId) return;
+        const workflow = workflows.find((w) => w.id === workflowId);
+        if (workflow) {
+          currentWorkflow = workflow;
+          // Convert steps to nodes for visual editor
+          nodes = (workflow.steps || []).map((step, idx) => ({
+            id: step.id,
+            type: step.type,
+            name: step.name,
+            data: step,
+            x: typeof step.x === "number" ? step.x : 100 + idx * 250,
+            y: typeof step.y === "number" ? step.y : 100,
+          }));
+          // load saved connections if present
+          connections = Array.isArray(workflow.connections)
+            ? workflow.connections.slice()
+            : [];
+          renderCanvas();
+        }
+      }
+
+      async function saveCurrentWorkflow() {
+        if (!currentWorkflow) {
+          alert("No workflow to save");
+          return;
+        }
+
+        // Convert nodes back to steps
+        // attach outgoing lists and next pointer (next kept for compatibility)
+        for (const n of nodes) {
+          const outs = connections
+            .filter((c) => c.from === n.id)
+            .map((c) => c.to);
+          n.data.outgoing = outs; // preserve full branching for editor/runtime round-trip
+          n.data.next = outs.length ? outs[0] : null; // backward-compatible single next
+        }
+        currentWorkflow.steps = nodes.map((node) => node.data);
+        // persist connections for richer editor roundtrip
+        currentWorkflow.connections = connections;
+
+        try {
+          const method = workflows.find((w) => w.id === currentWorkflow.id)
+            ? "PUT"
+            : "POST";
+          const url =
+            method === "PUT"
+              ? `/api/workflows/${currentWorkflow.id}`
+              : "/api/workflows";
+          const res = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(currentWorkflow),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            alert("Workflow saved successfully");
+            await loadWorkflows();
+          } else {
+            alert("Failed to save workflow: " + data.error);
+          }
+        } catch (e) {
+          alert("Error saving workflow: " + e.message);
+        }
+      }
+
+      // Drag and Drop
+      function setupDragAndDrop() {
+        const canvas = document.getElementById("workflow-nodes");
+
+        // Handle drag start from sidebar
+        document.querySelectorAll(".node-type").forEach((nodeType) => {
+          nodeType.addEventListener("dragstart", (e) => {
+            e.dataTransfer.setData(
+              "nodeType",
+              e.currentTarget.dataset.nodeType
+            );
+          });
+        });
+
+        // Handle drop on canvas
+        canvas.addEventListener("dragover", (e) => {
+          e.preventDefault();
+        });
+
+        canvas.addEventListener("drop", (e) => {
+          e.preventDefault();
+          const nodeType = e.dataTransfer.getData("nodeType");
+          if (nodeType) {
+            addNode(nodeType, e.offsetX, e.offsetY);
+          }
+        });
+      }
+
+      function addNode(type, x, y) {
+        const nodeId = "node_" + nextNodeId++;
+        const node = {
+          id: nodeId,
+          type,
+          name: type.charAt(0).toUpperCase() + type.slice(1) + " " + nextNodeId,
+          data: {
+            id: nodeId,
+            type,
+            name:
+              type.charAt(0).toUpperCase() + type.slice(1) + " " + nextNodeId,
+            next: null,
+          },
+          x,
+          y,
+        };
+        // optionally auto-connect to last node
+        const autoConnect = document.getElementById(
+          "auto-connect-toggle"
+        )?.checked;
+        const prevNode = nodes.length ? nodes[nodes.length - 1] : null;
+        nodes.push(node);
+        console.debug(
+          "addNode:",
+          node.id,
+          "type=",
+          type,
+          "pos=",
+          node.x,
+          node.y,
+          "nodesCount=",
+          nodes.length
+        );
+        if (autoConnect && prevNode) {
+          connections.push({
+            from: prevNode.id,
+            to: node.id,
+            id: "c_" + Date.now() + "_" + Math.floor(Math.random() * 10000),
+          });
+        }
+        renderCanvas();
+      }
+
+      function renderCanvas() {
+        const container = document.getElementById("workflow-nodes");
+        container.innerHTML = "";
+        console.debug(
+          "renderCanvas: nodes=",
+          nodes.length,
+          "connections=",
+          connections.length
+        );
+
+        nodes.forEach((node) => {
+          const el = document.createElement("div");
+          el.className = "workflow-node";
+          el.id = "wfnode-" + node.id;
+          el.style.left = node.x + "px";
+          el.style.top = node.y + "px";
+          el.innerHTML = `
+                    <div class="workflow-node-header">
+                        <div class="workflow-node-title">${node.name}</div>
+                        <div class="workflow-node-type">${node.type}</div>
+                    </div>
+                    <div class="workflow-node-content">
+                        ${
+                          node.data.action ||
+                          node.data.ruleSet ||
+                          "Configure node..."
+                        }
+                    </div>
+                    <div class="connection-point input" data-node-id="${
+                      node.id
+                    }" data-type="input"></div>
+                    <div class="connection-point output" data-node-id="${
+                      node.id
+                    }" data-type="output"></div>
+                `;
+          el.addEventListener("click", () => selectNode(node));
+          // wire connection point handlers
+          const out = el.querySelector(".connection-point.output");
+          const inp = el.querySelector(".connection-point.input");
+          if (out) {
+            out.dataset.nodeId = node.id;
+            out.addEventListener("mousedown", (e) => {
+              e.stopPropagation();
+              console.debug(
+                "connection mousedown on output",
+                node.id,
+                "target=",
+                e.target.className
+              );
+              startConnection(node.id);
+            });
+          }
+          if (inp) {
+            inp.dataset.nodeId = node.id;
+          }
+          makeDraggable(el, node);
+          container.appendChild(el);
+        });
+
+        renderConnections();
+        // attempt a safe auto-connect between the last two nodes if the toolbar toggle is set
+        attemptAutoConnect();
+      }
+
+      function attemptAutoConnect() {
+        try {
+          const auto = document.getElementById("auto-connect-toggle")?.checked;
+          if (!auto) return;
+          if (nodes.length < 2) return;
+          const a = nodes[nodes.length - 2];
+          const b = nodes[nodes.length - 1];
+          if (!a || !b) return;
+          const exists = connections.some(
+            (c) => c.from === a.id && c.to === b.id
+          );
+          if (!exists) {
+            connections.push({
+              from: a.id,
+              to: b.id,
+              id: "c_" + Date.now() + "_" + Math.floor(Math.random() * 10000),
+            });
+            renderConnections();
+          }
+        } catch (e) {
+          console.warn(
+            "attemptAutoConnect error",
+            e && e.message ? e.message : e
+          );
+        }
+      }
+
+      function makeDraggable(el, node) {
+        let isDragging = false;
+        let startX, startY;
+
+        el.addEventListener("mousedown", (e) => {
+          if (e.target.classList.contains("connection-point")) return;
+          isDragging = true;
+          startX = e.clientX - node.x;
+          startY = e.clientY - node.y;
+          el.style.cursor = "grabbing";
+        });
+
+        document.addEventListener("mousemove", (e) => {
+          if (!isDragging) return;
+          node.x = e.clientX - startX;
+          node.y = e.clientY - startY;
+          // persist visual coords on node data for save/load
+          node.data.x = node.x;
+          node.data.y = node.y;
+          el.style.left = node.x + "px";
+          el.style.top = node.y + "px";
+          renderConnections();
+        });
+
+        document.addEventListener("mouseup", () => {
+          if (isDragging) {
+            // persist final coords
+            node.data.x = node.x;
+            node.data.y = node.y;
+          }
+          isDragging = false;
+          el.style.cursor = "move";
+        });
+      }
+
+      function selectNode(node) {
+        selectedNode = node;
+        document
+          .querySelectorAll(".workflow-node")
+          .forEach((n) => n.classList.remove("selected"));
+        document.getElementById("wfnode-" + node.id)?.classList.add("selected");
+        showNodeProperties(node);
+      }
+
+      function showNodeProperties(node) {
+        const panel = document.getElementById("properties-panel");
+        panel.innerHTML = `
+                <h3>Node Properties</h3>
+                <div class="form-group">
+                    <label class="form-label">Node Name</label>
+                    <input type="text" class="form-input" value="${
+                      node.name
+                    }" onchange="updateNodeProperty('name', this.value)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type</label>
+                    <input type="text" class="form-input" value="${
+                      node.type
+                    }" disabled>
+                </div>
+                ${
+                  node.type === "action"
+                    ? `
+                    <div class="form-group">
+                        <label class="form-label">Action</label>
+                        <select class="form-select" onchange="updateNodeData('action', this.value)">
+                            <option value="">Select action...</option>
+                            ${Object.keys(taxonomy?.actions || {})
+                              .map(
+                                (key) => `
+                                <option value="${key}" ${
+                                  node.data.action === key ? "selected" : ""
+                                }>${taxonomy.actions[key].name}</option>
+                            `
+                              )
+                              .join("")}
+                        </select>
+                    </div>
+                `
+                    : ""
+                }
+                ${
+                  node.type === "decision"
+                    ? `
+                    <div class="form-group">
+                        <label class="form-label">Rule Set</label>
+                        <select class="form-select" onchange="updateNodeData('ruleSet', this.value)">
+                            <option value="">Select rule set...</option>
+                        </select>
+                    </div>
+                `
+                    : ""
+                }
+                ${
+                  node.type === "human-task"
+                    ? `
+                    <div class="form-group">
+                        <label class="form-label">Task Type</label>
+                        <select class="form-select" onchange="updateNodeData('taskType', this.value)">
+                            <option value="approval" ${
+                              node.data.taskType === "approval"
+                                ? "selected"
+                                : ""
+                            }>Approval</option>
+                            <option value="review" ${
+                              node.data.taskType === "review" ? "selected" : ""
+                            }>Review</option>
+                            <option value="data-entry" ${
+                              node.data.taskType === "data-entry"
+                                ? "selected"
+                                : ""
+                            }>Data Entry</option>
+                        </select>
+                    </div>
+                `
+                    : ""
+                }
+                <button class="btn btn-danger" onclick="deleteSelectedNode()">Delete Node</button>
+            `;
+      }
+
+      function updateNodeProperty(prop, value) {
+        if (selectedNode) {
+          selectedNode[prop] = value;
+          selectedNode.data[prop] = value;
+          renderCanvas();
+        }
+      }
+
+      function updateNodeData(prop, value) {
+        if (selectedNode) {
+          selectedNode.data[prop] = value;
+          renderCanvas();
+        }
+      }
+
+      function deleteSelectedNode() {
+        if (selectedNode) {
+          nodes = nodes.filter((n) => n.id !== selectedNode.id);
+          selectedNode = null;
+          renderCanvas();
+          document.getElementById("properties-panel").innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📋</div>
+                        <div class="empty-state-text">No node selected</div>
+                        <div class="empty-state-hint">Click a node to edit its properties</div>
+                    </div>
+                `;
+        }
+      }
+
+      let connectionState = { connecting: false, fromId: null, tempLine: null };
+
+      function renderConnections() {
+        const svg = document.getElementById("svg-connections");
+        const canvas = document.getElementById("workflow-canvas");
+        // robust sizing with fallbacks
+        const w =
+          canvas.clientWidth || canvas.offsetWidth || canvas.scrollWidth || 800;
+        const h =
+          canvas.clientHeight ||
+          canvas.offsetHeight ||
+          canvas.scrollHeight ||
+          600;
+        svg.setAttribute("width", w);
+        svg.setAttribute("height", h);
+
+        // prepare defs for arrow marker
+        svg.innerHTML = `
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#667eea" />
+            </marker>
+          </defs>`;
+
+        // draw after layout completes
+        requestAnimationFrame(() => {
+          try {
+            console.debug(
+              "renderConnections: drawing",
+              connections.length,
+              "connections"
+            );
+            const svgRect = svg.getBoundingClientRect();
+            connections.forEach((c) => {
+              const fromEl = document.querySelector(
+                `#wfnode-${c.from} .connection-point.output`
+              );
+              const toEl = document.querySelector(
+                `#wfnode-${c.to} .connection-point.input`
+              );
+              if (!fromEl || !toEl) return;
+              const fromRect = fromEl.getBoundingClientRect();
+              const toRect = toEl.getBoundingClientRect();
+              const x1 = fromRect.left + fromRect.width / 2 - svgRect.left;
+              const y1 = fromRect.top + fromRect.height / 2 - svgRect.top;
+              const x2 = toRect.left + toRect.width / 2 - svgRect.left;
+              const y2 = toRect.top + toRect.height / 2 - svgRect.top;
+
+              const path = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "path"
+              );
+              const dx = Math.max(40, Math.abs(x2 - x1) * 0.4);
+              const d = `M ${x1} ${y1} C ${x1 + dx} ${y1} ${
+                x2 - dx
+              } ${y2} ${x2} ${y2}`;
+              path.setAttribute("d", d);
+              path.setAttribute("stroke", "#667eea");
+              path.setAttribute("stroke-width", "4");
+              path.setAttribute("stroke-linecap", "round");
+              path.setAttribute("fill", "none");
+              path.setAttribute("data-conn-id", c.id);
+              path.setAttribute("marker-end", "url(#arrow)");
+              path.style.cursor = "pointer";
+              path.style.pointerEvents = "auto";
+              path.addEventListener("click", (ev) => {
+                if (confirm("Delete connection?")) {
+                  connections = connections.filter((cc) => cc.id !== c.id);
+                  renderConnections();
+                }
+                ev.stopPropagation();
+              });
+              svg.appendChild(path);
+            });
+
+            // re-attach tempLine if connecting
+            if (connectionState.connecting) {
+              if (!connectionState.tempLine) {
+                const t = document.createElementNS(
+                  "http://www.w3.org/2000/svg",
+                  "path"
+                );
+                t.setAttribute("stroke", "#999");
+                t.setAttribute("stroke-width", "2");
+                t.setAttribute("fill", "none");
+                t.setAttribute("stroke-dasharray", "6 4");
+                connectionState.tempLine = t;
+              }
+              // append tempLine last so it's on top of persistent paths
+              svg.appendChild(connectionState.tempLine);
+              console.debug("renderConnections: tempLine attached");
+            }
+          } catch (e) {
+            console.warn(
+              "renderConnections failed",
+              e && e.message ? e.message : e
+            );
+          }
+        });
+      }
+
+      function startConnection(fromNodeId) {
+        console.debug("startConnection from", fromNodeId);
+        connectionState.connecting = true;
+        connectionState.fromId = fromNodeId;
+        // create temp line
+        const svg = document.getElementById("svg-connections");
+        const tempPath = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path"
+        );
+        tempPath.setAttribute("stroke", "#999");
+        tempPath.setAttribute("stroke-width", "2");
+        tempPath.setAttribute("fill", "none");
+        tempPath.setAttribute("stroke-dasharray", "6 4");
+        connectionState.tempLine = tempPath;
+        svg.appendChild(tempPath);
+
+        function renderConnections() {
+          const svg = document.getElementById("svg-connections");
+          // Ensure svg has correct size
+          const canvas = document.getElementById("workflow-canvas");
+          svg.setAttribute("width", canvas.clientWidth || canvas.offsetWidth);
+          svg.setAttribute(
+            "height",
+            canvas.clientHeight || canvas.offsetHeight
+          );
+          // prepare defs for arrow marker
+          svg.innerHTML = `
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#667eea" />
+              </marker>
+            </defs>`;
+
+          // draw after layout completes to ensure getBoundingClientRect returns correct coordinates
+          requestAnimationFrame(() => {
+            try {
+              const svgRect = svg.getBoundingClientRect();
+              // draw persistent connections
+              connections.forEach((c) => {
+                const fromEl = document.querySelector(
+                  `#wfnode-${c.from} .connection-point.output`
+                );
+                const toEl = document.querySelector(
+                  `#wfnode-${c.to} .connection-point.input`
+                );
+                if (!fromEl || !toEl) return;
+                const fromRect = fromEl.getBoundingClientRect();
+                const toRect = toEl.getBoundingClientRect();
+                const x1 = fromRect.left + fromRect.width / 2 - svgRect.left;
+                const y1 = fromRect.top + fromRect.height / 2 - svgRect.top;
+                const x2 = toRect.left + toRect.width / 2 - svgRect.left;
+                const y2 = toRect.top + toRect.height / 2 - svgRect.top;
+
+                const path = document.createElementNS(
+                  "http://www.w3.org/2000/svg",
+                  "path"
+                );
+                const dx = Math.max(40, Math.abs(x2 - x1) * 0.4);
+                const d = `M ${x1} ${y1} C ${x1 + dx} ${y1} ${
+                  x2 - dx
+                } ${y2} ${x2} ${y2}`;
+                path.setAttribute("d", d);
+                path.setAttribute("stroke", "#667eea");
+                path.setAttribute("stroke-width", "4");
+                path.setAttribute("stroke-linecap", "round");
+                path.setAttribute("fill", "none");
+                path.setAttribute("data-conn-id", c.id);
+                path.setAttribute("marker-end", "url(#arrow)");
+                path.style.cursor = "pointer";
+                path.addEventListener("click", (ev) => {
+                  if (confirm("Delete connection?")) {
+                    connections = connections.filter((cc) => cc.id !== c.id);
+                    renderConnections();
+                  }
+                  ev.stopPropagation();
+                });
+                svg.appendChild(path);
+              });
+
+              // If currently connecting, ensure tempLine is present
+              if (connectionState.connecting && connectionState.tempLine) {
+                svg.appendChild(connectionState.tempLine);
+              }
+            } catch (e) {
+              console.warn(
+                "renderConnections failed",
+                e && e.message ? e.message : e
+              );
+            }
+          });
+        }
+
+        // mouse handlers for the temporary connection line
+        function onMove(e) {
+          if (!connectionState.connecting || !connectionState.tempLine) return;
+          const fromEl = document.querySelector(
+            `#wfnode-${connectionState.fromId} .connection-point.output`
+          );
+          const svg = document.getElementById("svg-connections");
+          if (!fromEl || !svg) return;
+          const svgRect = svg.getBoundingClientRect();
+          const fromRect = fromEl.getBoundingClientRect();
+          const x1 = fromRect.left + fromRect.width / 2 - svgRect.left;
+          const y1 = fromRect.top + fromRect.height / 2 - svgRect.top;
+          const x2 = e.clientX - svgRect.left;
+          const y2 = e.clientY - svgRect.top;
+          const dx = Math.max(40, Math.abs(x2 - x1) * 0.4);
+          const d = `M ${x1} ${y1} C ${x1 + dx} ${y1} ${
+            x2 - dx
+          } ${y2} ${x2} ${y2}`;
+          connectionState.tempLine.setAttribute("d", d);
+        }
+
+        function onUp(e) {
+          if (!connectionState.connecting) return;
+          const svg = document.getElementById("svg-connections");
+          // determine if we released over an input connection point
+          const el = document.elementFromPoint(e.clientX, e.clientY);
+          let target = el;
+          while (target && !target.classList?.contains("connection-point")) {
+            target = target.parentElement;
+          }
+          console.debug(
+            "onUp target=",
+            target && target.className ? target.className : target,
+            "dataset=",
+            target && target.dataset ? target.dataset : null
+          );
+          if (
+            target &&
+            target.classList.contains("connection-point") &&
+            (target.dataset.type === "input" ||
+              target.getAttribute("data-type") === "input")
+          ) {
+            const toNodeId =
+              target.dataset.nodeId || target.getAttribute("data-node-id");
+            console.debug("onUp over input nodeId=", toNodeId);
+            if (
+              toNodeId &&
+              connectionState.fromId &&
+              toNodeId !== String(connectionState.fromId)
+            ) {
+              const newConn = {
+                from: String(connectionState.fromId),
+                to: String(toNodeId),
+                id: "c_" + Date.now() + "_" + Math.floor(Math.random() * 10000),
+              };
+              connections.push(newConn);
+              console.debug("created connection", newConn);
+            }
+          }
+          // cleanup
+          if (connectionState.tempLine && connectionState.tempLine.parentNode) {
+            connectionState.tempLine.parentNode.removeChild(
+              connectionState.tempLine
+            );
+          }
+          connectionState.tempLine = null;
+          connectionState.connecting = false;
+          connectionState.fromId = null;
+          renderConnections();
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+        }
+
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+      }
+
+      // Rules Functions
+      async function loadRules() {
+        try {
+          const res = await fetch("/api/rules");
+          const data = await res.json();
+          if (data.ok) {
+            const rulesList = document.getElementById("rules-list");
+            rulesList.innerHTML = data.ruleSets
+              .map(
+                (rs) => `
+                        <div class="list-item">
+                            <div class="list-item-title">${rs.name}</div>
+                            <div class="list-item-desc">${
+                              rs.description || ""
+                            } <span class="badge">${rs.concept}</span></div>
+                            <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #657786;">
+                                ${(rs.rules || []).length} rules
+                            </div>
+                        </div>
+                    `
+              )
+              .join("");
+          }
+        } catch (e) {
+          console.error("Failed to load rules:", e);
+        }
+      }
+
+      // Executions Functions
+      async function loadExecutions() {
+        try {
+          const status = document.getElementById("status-filter")?.value || "";
+          const query = status ? `?status=${status}` : "";
+          const res = await fetch("/api/executions" + query);
+          const data = await res.json();
+          if (data.ok) {
+            const execList = document.getElementById("executions-list");
+            execList.innerHTML = data.executions
+              .map(
+                (exec) => `
+                        <div class="list-item">
+                            <div class="list-item-title">${
+                              exec.workflowName
+                            } <span class="badge" style="background: ${
+                  exec.status === "completed"
+                    ? "#d4edda"
+                    : exec.status === "failed"
+                    ? "#f8d7da"
+                    : "#fff3cd"
+                }; color: ${
+                  exec.status === "completed"
+                    ? "#155724"
+                    : exec.status === "failed"
+                    ? "#721c24"
+                    : "#856404"
+                };">${exec.status}</span></div>
+                            <div class="list-item-desc">
+                                Started: ${new Date(
+                                  exec.startedAt
+                                ).toLocaleString()}<br>
+                                Current Step: ${exec.currentStep || "N/A"}
+                            </div>
+                        </div>
+                    `
+              )
+              .join("");
+          }
+        } catch (e) {
+          console.error("Failed to load executions:", e);
+        }
+      }
+
+      // Dialog functions (simplified - would need full modal implementation)
+      function showAddConceptDialog() {
+        const name = prompt("Concept Name:");
+        if (!name) return;
+        const description = prompt("Description:");
+        addConcept({
+          id: name.replace(/\s+/g, ""),
+          name,
+          description,
+          properties: [],
+          relatedEvents: [],
+          relatedActions: [],
+        });
+      }
+
+      async function addConcept(concept) {
+        try {
+          const res = await fetch("/api/taxonomy/concepts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(concept),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            await loadTaxonomy();
+          } else {
+            alert("Failed to add concept: " + data.error);
+          }
+        } catch (e) {
+          alert("Error adding concept: " + e.message);
+        }
+      }
+
+      function showAddEventDialog() {
+        alert("Event dialog - simplified for demo");
+      }
+
+      function showAddActionDialog() {
+        alert("Action dialog - simplified for demo");
+      }
+
+      function showAddRuleSetDialog() {
+        alert("Rule set dialog - simplified for demo");
+      }
+    </script>
+  </body>
+</html>

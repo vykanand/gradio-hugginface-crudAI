@@ -1,19 +1,17 @@
 {
   "database": null,
-  "savedAt": "2025-12-07T09:13:22.350Z",
-  "tableCount": 13,
+  "savedAt": "2025-12-13T20:41:18.956Z",
+  "tableCount": 11,
   "tables": [
     "appsthink_crm",
     "authorization",
+    "crimping_process",
     "delivery",
     "extract_contact",
     "navigation",
     "news1",
-    "orders",
-    "products",
     "realtime_news",
     "users",
-    "vinay",
     "weather1",
     "yelp_1"
   ]

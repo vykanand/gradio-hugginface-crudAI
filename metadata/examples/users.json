@@ -1,0 +1,14 @@
+{
+  "tableName": "users",
+  "columns": [
+    {"name":"id","type":"integer","primary":true},
+    {"name":"email","type":"string"},
+    {"name":"name","type":"string"},
+    {"name":"balance","type":"number"},
+    {"name":"created_at","type":"string","format":"datetime"}
+  ],
+  "rows": [
+    {"id":1,"email":"alice@example.com","name":"Alice","balance":100.5,"created_at":"2024-01-01T10:00:00Z"},
+    {"id":2,"email":"bob@example.com","name":"Bob","balance":250.0,"created_at":"2024-02-15T12:30:00Z"}
+  ]
+}

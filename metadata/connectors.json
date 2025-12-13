@@ -1,0 +1,5 @@
+{
+  "connectors": [
+    {"id":"json","name":"JSON File Adapter","description":"file-backed metadata/examples adapter","adapter":"lib/dbAdapters/jsonAdapter.js"}
+  ]
+}

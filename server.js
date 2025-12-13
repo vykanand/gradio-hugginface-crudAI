@@ -9,6 +9,13 @@ const { spawn } = require("child_process");
 // const redis = require("redis");
 
 const processHtmlLLM = require("./generalAI.js");
+const queue = require('./services/queue');
+const taxonomyService = require('./services/taxonomyService');
+const rulesEngine = require('./services/rulesEngine');
+const workflowEngine = require('./services/workflowEngine');
+const executionOrchestrator = require('./services/executionOrchestrator');
+const { v4: uuidv4 } = require('uuid');
+const TransactionManager = require('./services/transactionManager');
 
 const app = express();
 const PORT = process.env.PORT || 5050;
@@ -53,6 +60,25 @@ let pool;
 app.use(express.json());
 app.use(cors());
 
+// Provide a lightweight bindings read endpoint early so embedded clients
+// can discover bindings even if later route definitions are reordered.
+app.get('/orchestration/bindings', async (req, res) => {
+  try {
+    const localBindingsPath = path.join(__dirname, 'config', 'orchestration_bindings.json');
+    try { await fs.mkdir(path.join(__dirname, 'config'), { recursive: true }); } catch (e) {}
+    try {
+      const raw = await fs.readFile(localBindingsPath, 'utf8');
+      return res.json({ ok: true, bindings: JSON.parse(raw || '{}') });
+    } catch (e) {
+      // If file not present, return empty bindings map
+      return res.json({ ok: true, bindings: {} });
+    }
+  } catch (e) {
+    console.error('early bindings read error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 
 // Add graceful shutdown handler
 process.on('SIGTERM', async () => {
@@ -63,16 +89,22 @@ process.on('SIGTERM', async () => {
 });
 // Add database connection test endpoint
 app.get('/api/testConnection', async (req, res) => {
-    try {
-        // Test query to verify connection
-        await pool.query('SELECT 1');
-        res.json({ status: 'connected' });
-    } catch (error) {
-        res.status(500).json({ 
-            error: 'Database connection failed',
-            details: error.message 
-        });
-    }
+  try {
+    // Test query to verify connection
+    await pool.query('SELECT 1');
+    // include active config so clients can show database details
+    let cfg = null;
+    try { cfg = await getActiveConfig(); } catch (e) { cfg = null; }
+    res.json({ status: 'connected', config: cfg });
+  } catch (error) {
+    let cfg = null;
+    try { cfg = await getActiveConfig(); } catch (e) { cfg = null; }
+    res.status(500).json({ 
+      error: 'Database connection failed',
+      details: error.message,
+      config: cfg
+    });
+  }
 });
 
 // Load all configurations
@@ -281,8 +313,17 @@ app.get("/database", async (req, res) => {
 
     res.json({ tables });
   } catch (error) {
-    console.error("Error fetching database schema:", error.message);
-    res.status(500).json({ error: "Failed to fetch database schema." });
+    console.error("Error fetching database schema:", error && error.stack ? error.stack : error);
+    // fallback: return schema_store index if available so UI can still show persisted schemas
+    try {
+      const indexPath = path.join(__dirname, 'config', 'schema_store', 'index.json');
+      const raw = await fs.readFile(indexPath, 'utf8');
+      const index = JSON.parse(raw);
+      return res.json({ fallback: true, source: 'schema_store', index });
+    } catch (e2) {
+      console.warn('schema_store fallback not available:', e2 && e2.message ? e2.message : e2);
+      res.status(500).json({ error: 'Failed to fetch database schema.', details: error && error.message ? error.message : String(error) });
+    }
   }
 });
 
@@ -344,8 +385,16 @@ app.get("/api/schema/:tableName", async (req, res) => {
       connection.release();
     }
   } catch (error) {
-    console.error("Error fetching table schema:", error.message);
-    res.status(500).json({ error: "Failed to fetch table schema.", details: error.message });
+    console.error("Error fetching table schema:", error && error.stack ? error.stack : error);
+    // fallback: try to read persisted table schema from config/schema_store/tables
+    try {
+      const filePath = path.join(__dirname, 'config', 'schema_store', 'tables', `${req.params.tableName}.json`);
+      const data = await fs.readFile(filePath, 'utf8');
+      return res.json({ fallback: true, source: 'schema_store', table: JSON.parse(data) });
+    } catch (e2) {
+      console.warn('Failed to load persisted table schema fallback:', e2 && e2.message ? e2.message : e2);
+      res.status(500).json({ error: 'Failed to fetch table schema.', details: error && error.message ? error.message : String(error) });
+    }
   }
 });
 
@@ -678,17 +727,447 @@ app.get("/explorer", (req, res) => {
   res.sendFile(path.join(__dirname, "db-explorer.html"));
 });
 
+// Alias route to support older links or explicit module path
+app.get('/db-explorer', (req, res) => {
+  res.sendFile(path.join(__dirname, 'db-explorer.html'));
+});
+
+// Orchestration Builder UI
+app.get('/builder', (req, res) => {
+  res.sendFile(path.join(__dirname, 'builder.html'));
+});
+
+// Also serve legacy/explicit orchestration-builder filename
+app.get('/orchestration-builder.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'orchestration-builder.html'));
+});
+
+// Orchestration Monitor UI
+app.get('/orchestration-monitor.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'orchestration-monitor.html'));
+});
+
+// Orchestration Manager UI (full end-to-end)
+app.get('/orchestration-manager.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'orchestration-manager.html'));
+});
+
+// Lightweight live monitor UI (non-destructive)
+app.get('/monitor.html', (req, res) => {
+  // legacy route remapped from nats-monitor to generic monitor
+  res.sendFile(path.join(__dirname, 'monitor.html'));
+});
+
+// In-memory ring buffer for recent messages seen by the monitor
+const MONITOR_BUFFER_LIMIT = 500;
+const monitorBuffer = [];
+const sseClients = new Set();
+let monitorNc = null;
+// Kafka monitor setup
+const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
+const DISABLE_KAFKA = (process.env.DISABLE_KAFKA === 'true');
+let kafka = null;
+let kafkaProducer = null;
+const MONITOR_TOPICS = ['ORCHESTRATIONS_JOBS', 'ORCHESTRATIONS_EVENTS'];
+if (!DISABLE_KAFKA) {
+  try {
+    const { Kafka } = require('kafkajs');
+    kafka = new Kafka({ brokers: KAFKA_BROKERS });
+  } catch (e) {
+    console.warn('kafkajs not available or failed to init, running in fallback mode', e && e.message ? e.message : e);
+    kafka = null;
+  }
+} else {
+  console.log('DISABLE_KAFKA=true -> running without Kafka (demo/fallback mode)');
+}
+
+// Fallback dispatcher for environments without Kafka: directly trigger workflows
+async function fallbackDispatchEvent(subject, payload) {
+  const auditLog = require('./services/auditLog');
+  try {
+    // payload expected to be object
+    const evt = (typeof payload === 'string') ? JSON.parse(payload) : payload || {};
+    const workflows = await workflowEngine.getWorkflows();
+    for (const wf of workflows || []) {
+      const trigger = (wf.triggerEvent || '').toString();
+      const matches = [evt.eventType, evt.action, `${evt.eventType}:${evt.action}`, evt.module].map(v => v && v.toString());
+      if (!trigger) continue;
+      if (matches.includes(trigger) || matches.includes(trigger)) {
+        try {
+          await workflowEngine.startExecution(wf.id, { event: evt }, 'fallback_dispatch');
+          try { await auditLog.write({ action: 'fallback_dispatch', workflow: wf.id, subject, traceId: evt && evt.traceId }); } catch (e) {}
+        } catch (e) {
+          console.warn('[fallback] failed to start workflow', wf.id, e && e.message ? e.message : e);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[fallback] dispatch error', e && e.message ? e.message : e);
+  }
+}
+
+async function ensureKafkaProducer() {
+  if (!kafka) throw new Error('Kafka disabled or not initialized');
+  if (kafkaProducer) return kafkaProducer;
+  kafkaProducer = kafka.producer();
+  await kafkaProducer.connect();
+  return kafkaProducer;
+}
+
+async function startKafkaMonitor() {
+  try {
+    const consumer = kafka.consumer({ groupId: 'monitor_group' });
+    await consumer.connect();
+    for (const t of MONITOR_TOPICS) await consumer.subscribe({ topic: t, fromBeginning: false });
+    await consumer.run({
+      eachMessage: async ({ topic, partition, message }) => {
+        try {
+          const raw = message.value ? message.value.toString() : '';
+          let parsed = raw;
+          try { parsed = JSON.parse(raw); } catch (e) { /* keep raw */ }
+          // attempt to use parsed.subject if present (we embed subject in events)
+          const subj = (parsed && parsed.subject) ? parsed.subject : topic;
+          const item = { subject: subj, data: parsed, raw, ts: new Date().toISOString() };
+          monitorBuffer.push(item);
+          if (monitorBuffer.length > MONITOR_BUFFER_LIMIT) monitorBuffer.shift();
+          const payload = JSON.stringify(item);
+          for (const res of sseClients) {
+            try { res.write('data: ' + payload + '\n\n'); } catch (e) { /* ignore */ }
+          }
+        } catch (e) {
+          console.warn('[monitor:kafka] error processing message', e && e.message ? e.message : e);
+        }
+      }
+    });
+    console.log('[monitor:kafka] started, subscribed to', MONITOR_TOPICS);
+  } catch (e) {
+    console.warn('[monitor:kafka] start failed', e && e.message ? e.message : e);
+  }
+}
+
+// SSE endpoint for live monitor stream
+app.get('/monitor/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders && res.flushHeaders();
+  // send existing buffer initially
+  try {
+    monitorBuffer.forEach(item => res.write('data: ' + JSON.stringify(item) + '\n\n'));
+  } catch (e) {}
+  sseClients.add(res);
+  req.on('close', () => { sseClients.delete(res); });
+});
+
+// Recent messages endpoint
+app.get('/monitor/recent', (req, res) => {
+  res.json({ ok: true, recent: monitorBuffer.slice(-MONITOR_BUFFER_LIMIT) });
+});
+
+// List monitor subscriptions (subjects the server listens to)
+app.get('/monitor/subscriptions', (req, res) => {
+  try {
+    return res.json({ ok: true, topics: MONITOR_TOPICS });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Publish an arbitrary message to a subject (best-effort). Body: { subject, payload }
+app.post('/monitor/publish', async (req, res) => {
+  try {
+    const { subject, payload } = req.body || {};
+    if (!subject) return res.status(400).json({ ok: false, error: 'subject required' });
+    // expect `subject` to be a topic name in Kafka
+    try {
+      await ensureKafkaProducer();
+      const data = typeof payload === 'string' ? payload : JSON.stringify(payload || {});
+      await kafkaProducer.send({ topic: subject, messages: [{ key: null, value: data }] });
+      return res.json({ ok: true, subject, payload, via: 'kafka' });
+    } catch (e) {
+      // Kafka not available: fallback to direct dispatch so demos work out-of-box
+      console.warn('/monitor/publish kafka unavailable, dispatching locally', e && e.message ? e.message : e);
+      try { await fallbackDispatchEvent(subject, payload); } catch (er) { console.warn('fallback dispatch failed', er && er.message ? er.message : er); }
+      return res.json({ ok: true, subject, payload, via: 'fallback' });
+    }
+  } catch (e) {
+    console.error('/monitor/publish error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// -------------------------
+// Orchestration Manager API
+// -------------------------
+
+// Health endpoint: aggregate workflow engine + kafka connectivity
+app.get('/api/health', async (req, res) => {
+  try {
+    const wf = await workflowEngine.getHealthStatus();
+    // quick kafka admin check
+    let kafkaOk = false;
+    try {
+      const admin = kafka.admin();
+      await admin.connect();
+      await admin.disconnect();
+      kafkaOk = true;
+    } catch (e) {
+      kafkaOk = false;
+    }
+    return res.json({ ok: true, workflow: wf, kafka: { reachable: kafkaOk } });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// protect admin endpoints
+app.use('/api/executions', requireAdmin);
+app.use('/api/kafka', requireAdmin);
+
+// Kafka metrics (best-effort)
+app.get('/api/kafka/metrics', async (req, res) => {
+  try {
+    await ensureKafkaProducer();
+    let metrics = null;
+    try { metrics = kafkaProducer.metrics ? kafkaProducer.metrics() : null; } catch (e) { metrics = null; }
+    return res.json({ ok: true, metrics });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// List executions (both orchestrator and workflow engine)
+app.get('/api/executions', async (req, res) => {
+  try {
+    const source = req.query.source || 'both';
+    const results = { orchestrator: [], workflow: [] };
+    if (source === 'orchestrator' || source === 'both') {
+      try { results.orchestrator = await executionOrchestrator.listExecutions(); } catch (e) { results.orchestrator = []; }
+    }
+    if (source === 'workflow' || source === 'both') {
+      try { results.workflow = await workflowEngine.getExecutions({}); } catch (e) { results.workflow = []; }
+    }
+    return res.json({ ok: true, results });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// Get single execution by id (search both stores)
+app.get('/api/executions/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    let exec = await workflowEngine.getExecution(id).catch(()=>null);
+    if (!exec) exec = await executionOrchestrator.getExecution(id).catch(()=>null);
+    if (!exec) return res.status(404).json({ ok: false, error: 'Execution not found' });
+    return res.json({ ok: true, execution: exec });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// Retry an execution (workflow executions are restarted; orchestrator executions re-run using stored metadata/inputs)
+app.post('/api/executions/:id/retry', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const wfExec = await workflowEngine.getExecution(id).catch(()=>null);
+    if (wfExec) {
+      // start a new execution with same workflowId and inputs
+      const newExec = await workflowEngine.startExecution(wfExec.workflowId, wfExec.inputs, 'retry', uuidv4());
+      await auditLog.write({ action: 'retry', type: 'workflow', id, triggeredBy: req.ip || req.headers['x-forwarded-for'] || 'api' });
+      return res.json({ ok: true, message: 'workflow retry started', execution: newExec });
+    }
+    const orchExec = await executionOrchestrator.getExecution(id).catch(()=>null);
+    if (orchExec) {
+      // attempt to re-run with same metadata (best-effort)
+      // try to load metadata by id (if metadata stored in config/metadata)
+      let metadata = null;
+      try {
+        const metaPath = path.join(__dirname, 'config', 'metadata', orchExec.metadataId + '.json');
+        const raw = await fs.readFile(metaPath, 'utf8');
+        metadata = JSON.parse(raw);
+      } catch (e) { metadata = null; }
+      if (!metadata) return res.status(400).json({ ok: false, error: 'Original metadata not found for orchestrator execution' });
+      const replay = await executionOrchestrator.execute(metadata, orchExec.inputs, { idempotencyKey: uuidv4() });
+      await auditLog.write({ action: 'retry', type: 'orchestrator', id, triggeredBy: req.ip || req.headers['x-forwarded-for'] || 'api' });
+      return res.json({ ok: true, message: 'orchestrator retry started', result: replay });
+    }
+    return res.status(404).json({ ok: false, error: 'Execution not found' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// Compensate an execution (manual compensation trigger)
+app.post('/api/executions/:id/compensate', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const wfExec = await workflowEngine.getExecution(id).catch(()=>null);
+    if (wfExec) {
+      await workflowEngine.compensateExecution(wfExec, new Error('manual_compensate'));
+      await auditLog.write({ action: 'compensate', type: 'workflow', id, triggeredBy: req.ip || req.headers['x-forwarded-for'] || 'api' });
+      return res.json({ ok: true, message: 'compensation started' });
+    }
+    // orchestrator-level compensation not implemented generically
+    return res.status(400).json({ ok: false, error: 'Compensation supported only for workflow executions' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// Replay stored execution events to the events topic (best-effort)
+app.post('/api/executions/:id/replay', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const orchExec = await executionOrchestrator.getExecution(id).catch(()=>null);
+    const wfExec = !orchExec ? await workflowEngine.getExecution(id).catch(()=>null) : null;
+    const record = orchExec || wfExec;
+    if (!record) return res.status(404).json({ ok: false, error: 'Execution not found' });
+    // create synthetic events from record
+    const execId = record.executionId || record.id;
+    await queue.publishEvent(execId, { type: 'execution.replay.started', timestamp: new Date().toISOString(), sourceId: id });
+    if (record.steps && Array.isArray(record.steps)) {
+      for (const s of record.steps) {
+        await queue.publishEvent(execId, { type: s.status === 'success' ? 'step.succeeded' : 'step.failed', stepId: s.stepId || s.stepId, timestamp: new Date().toISOString(), output: s.output || s });
+      }
+    }
+    await queue.publishEvent(execId, { type: record.success ? 'execution.succeeded' : 'execution.failed', timestamp: new Date().toISOString() });
+    await auditLog.write({ action: 'replay', id, triggeredBy: req.ip || req.headers['x-forwarded-for'] || 'api' });
+    return res.json({ ok: true, message: 'replayed events' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// Recover stuck executions (trigger recovery worker immediately)
+app.post('/api/executions/recover-stuck', async (req, res) => {
+  try {
+    await workflowEngine.recoverFailedExecutions();
+    await auditLog.write({ action: 'recover-stuck', triggeredBy: req.ip || req.headers['x-forwarded-for'] || 'api' });
+    return res.json({ ok: true, message: 'recovery scan triggered' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// DLQ purge (dangerous) - requires query param confirm=true
+app.post('/api/kafka/dlq/purge', async (req, res) => {
+  try {
+    const confirm = req.query.confirm === 'true' || (req.body && req.body.confirm === true);
+    if (!confirm) return res.status(400).json({ ok: false, error: 'confirm=true required to purge DLQ' });
+    const admin = kafka.admin();
+    await admin.connect();
+    // delete topic then recreate it empty
+    // safer behavior: archive messages first by triggering DLQ consumer to archive folder
+    await auditLog.write({ action: 'dlq.purge.request', triggeredBy: req.ip || req.headers['x-forwarded-for'] || 'api' });
+    // delete and recreate topic
+    await admin.deleteTopics({ topics: ['ORCHESTRATIONS_DLQ'] });
+    await admin.createTopics({ topics: [{ topic: 'ORCHESTRATIONS_DLQ' }] });
+    await admin.disconnect();
+    await auditLog.write({ action: 'dlq.purge.completed', triggeredBy: req.ip || req.headers['x-forwarded-for'] || 'api' });
+    return res.json({ ok: true, message: 'DLQ purged (topic recreated)' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// Non-destructive retrieval of stored messages from a JetStream stream (best-effort).
+// Example: /monitor/streamMessages?stream=ORCHESTRATIONS_JOBS&last=50
+app.get('/monitor/streamMessages', async (req, res) => {
+  const stream = req.query.stream;
+  const lastN = parseInt(req.query.last || '50', 10) || 50;
+  if (!stream) return res.status(400).json({ ok: false, error: 'stream query param required' });
+  try {
+    // Use a temporary Kafka consumer to read recent messages from the topic
+    const kafkaConsumer = kafka.consumer({ groupId: 'monitor-reader-' + Date.now() + '-' + Math.floor(Math.random()*10000) });
+    await kafkaConsumer.connect();
+    await kafkaConsumer.subscribe({ topic: stream, fromBeginning: true });
+    const results = [];
+    let finished = false;
+    // collect messages for up to 3000ms
+    const timeoutMs = 3000;
+    const startTime = Date.now();
+    await kafkaConsumer.run({
+      eachMessage: async ({ topic, partition, message }) => {
+        try {
+          const raw = message.value ? message.value.toString() : '';
+          let parsed = raw;
+          try { parsed = JSON.parse(raw); } catch (e) { /* keep raw */ }
+          results.push({ topic, partition, offset: message.offset, data: parsed });
+          // trim while collecting to keep memory bounded
+          if (results.length > lastN * 5) results.splice(0, results.length - lastN * 5);
+        } catch (e) {
+          // ignore parse errors
+        }
+        if (Date.now() - startTime > timeoutMs) {
+          finished = true;
+          try { await kafkaConsumer.disconnect(); } catch (e) {}
+        }
+      }
+    });
+    // Wait small time for collector to gather messages (timeout will disconnect)
+    await new Promise(r => setTimeout(r, Math.min(3000, Math.max(300, lastN * 20))));
+    try { await kafkaConsumer.disconnect(); } catch (e) {}
+    const tail = results.slice(-lastN).map((m, idx) => ({ idx, topic: m.topic, partition: m.partition, offset: m.offset, data: m.data }));
+    return res.json({ ok: true, stream, messages: tail });
+  } catch (e) {
+    console.warn('[monitor] streamMessages error', e && e.message ? e.message : e);
+    return res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
 // Start the server
 // app.listen(PORT, () => {
 //   console.log(`Server is running on http://localhost:${PORT}`);
 // });
 
-// Call this when starting the server
-initializeDatabase().then(() => {
-    app.listen(PORT, () => {
-        console.log(`Server is running on http://localhost:${PORT}`);
-    });
-});
+// Call this when starting the server. If DB init fails, start server in degraded mode
+async function startServer() {
+  try {
+    await initializeDatabase();
+    console.log('Database initialized successfully');
+    // initialize global transaction manager for DB transactions
+    try {
+      global.transactionManager = new TransactionManager(pool);
+      console.log('[tx] TransactionManager initialized');
+    } catch (e) {
+      console.warn('[tx] TransactionManager init failed', e && e.message ? e.message : e);
+    }
+    // start workflow recovery worker
+    try { workflowEngine.startRecoveryWorker(60000); } catch (e) { console.warn('[workflow] recovery worker failed to start', e && e.message ? e.message : e); }
+  } catch (e) {
+    console.error('Database initialization failed, starting server in degraded mode:', e && e.message ? e.message : e);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
+// Start the Kafka monitor so the monitor UI can receive live events
+if (kafka) {
+  startKafkaMonitor().then(() => console.log('[monitor] started')).catch(e => console.warn('[monitor] start failed', e && e.message ? e.message : e));
+} else {
+  console.log('[monitor] Kafka disabled: skipping Kafka monitor startup');
+}
+
+// simple admin API key middleware
+const adminApiKey = process.env.ADMIN_API_KEY || 'changeme';
+function requireAdmin(req, res, next) {
+  const key = req.headers['x-api-key'] || req.query.apiKey || req.body && req.body.apiKey;
+  if (!key || key !== adminApiKey) return res.status(403).json({ ok: false, error: 'admin API key required' });
+  next();
+}
+
+// attach audit logging where admin operations occur
+const auditLog = require('./services/auditLog');
+const dlqWorker = require('./workers/dlqRecoveryWorker');
+
+// start optional DLQ recovery consumer in background if ENABLE_DLQ_RECOVERY=true
+if (process.env.ENABLE_DLQ_RECOVERY === 'true') {
+  dlqWorker.startConsumer().then(() => console.log('[dlq] recovery consumer started')).catch(e => console.warn('[dlq] start failed', e && e.message ? e.message : e));
+}
 
 // --- Schema store helpers and endpoints (persisted, AI-agnostic) ---
 const SCHEMA_STORE_DIR = path.join(__dirname, 'config', 'schema_store');
@@ -782,6 +1261,324 @@ app.get('/schema-store/table/:tableName', async (req, res) => {
 // Simplified AI helper endpoints using centralized single-source AI endpoint
 const aiService = require('./aiService');
 
+// Orchestrator service (metadata-driven workflows)
+const orchestrator = require('./services/executionOrchestrator');
+const dataModeller = require('./services/dataModeller');
+
+// Save orchestration metadata to root metadata folder
+app.post('/orchestrate/save', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    if (!payload.id) return res.status(400).json({ ok: false, error: 'missing id in payload' });
+    const filePath = path.join(__dirname, 'metadata', `${payload.id}.json`);
+    await fs.writeFile(filePath, JSON.stringify(payload, null, 2));
+    return res.json({ ok: true, saved: filePath });
+  } catch (e) {
+    console.error('Failed to save orchestration metadata:', e.message);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Validate orchestration payload basic structure
+app.post('/orchestrate/validate', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    if (!payload.id || !payload.steps) return res.json({ ok: false, error: 'id and steps are required' });
+    // Basic sanity checks
+    if (!Array.isArray(payload.steps) || payload.steps.length === 0) return res.json({ ok: false, error: 'steps must be a non-empty array' });
+    return res.json({ ok: true, message: 'validation passed' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Execute an orchestration metadata payload directly
+app.post('/orchestrate/execute', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    let metadata = payload.metadata;
+    const inputs = payload.inputs || {};
+    if (!metadata || !metadata.steps) return res.status(400).json({ ok: false, error: 'missing metadata.steps' });
+    const executionId = payload.executionId || uuidv4();
+    // Determine execution mode: explicit query param or payload.sync or metadata.operation === 'sync'
+    const querySync = (req.query && (req.query.sync === 'true' || req.query.sync === '1')) || false;
+    const payloadSync = !!payload.sync;
+    const metadataSync = metadata && metadata.operation && metadata.operation.toString().toLowerCase() === 'sync';
+    const shouldRunSync = querySync || payloadSync || metadataSync;
+
+    if (shouldRunSync) {
+      try {
+        const result = await orchestrator.execute(metadata, inputs, { executionId });
+        return res.json(Object.assign({ ok: true }, result));
+      } catch (e) {
+        console.error('synchronous execute error', e && e.stack ? e.stack : e);
+        return res.status(500).json({ ok: false, error: e.message || String(e) });
+      }
+    }
+
+    // Async: persist a queued record and publish job
+    const queuedRecord = {
+      executionId,
+      metadataId: metadata.id || null,
+      name: metadata.name || null,
+      start: new Date().toISOString(),
+      status: 'queued',
+      inputs,
+      steps: [],
+      errors: []
+    };
+    await orchestrator.saveExecutionRecord(queuedRecord);
+
+    // publish job to JetStream
+    await queue.publishJob({ executionId, metadata, inputs });
+
+    return res.status(202).json({ ok: true, executionId, message: 'queued' });
+  } catch (e) {
+    console.error('Orchestrate enqueue error:', e.message);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Allow executing a saved orchestration by id (metadata file)
+app.post('/orchestrate/executeById', async (req, res) => {
+  try {
+    const { id, inputs = {}, idempotencyKey } = req.body || {};
+    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+    const filePath = path.join(__dirname, 'metadata', `${id}.json`);
+    try {
+      const raw = await fs.readFile(filePath, 'utf8');
+      const metadata = JSON.parse(raw);
+      const executionId = uuidv4();
+      // Determine execution mode: query param ?sync=true, body.sync, or metadata.operation === 'sync'
+      const querySync = (req.query && (req.query.sync === 'true' || req.query.sync === '1')) || false;
+      const payloadSync = !!req.body.sync;
+      const metadataSync = metadata && metadata.operation && metadata.operation.toString().toLowerCase() === 'sync';
+      const shouldRunSync = querySync || payloadSync || metadataSync;
+
+      if (shouldRunSync) {
+        try {
+          const result = await orchestrator.execute(metadata, inputs, { executionId, idempotencyKey });
+          return res.json(Object.assign({ ok: true }, result));
+        } catch (e) {
+          console.error('synchronous executeById error', e && e.stack ? e.stack : e);
+          return res.status(500).json({ ok: false, error: e.message || String(e) });
+        }
+      }
+
+      // Async path: persist queued record and publish job
+      const queuedRecord = {
+        executionId,
+        metadataId: metadata.id || null,
+        name: metadata.name || null,
+        start: new Date().toISOString(),
+        status: 'queued',
+        inputs,
+        steps: [],
+        errors: []
+      };
+      await orchestrator.saveExecutionRecord(queuedRecord);
+      await queue.publishJob({ executionId, metadata, inputs });
+      return res.status(202).json({ ok: true, executionId, message: 'queued' });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: 'failed to load metadata: ' + (e.message || e) });
+    }
+  } catch (e) {
+    console.error('executeById error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Orchestration bindings (map module+action -> orchestrationId)
+const BINDINGS_FILE = path.join(__dirname, 'config', 'orchestration_bindings.json');
+async function ensureBindingsFile() {
+  try { await fs.mkdir(path.join(__dirname, 'config'), { recursive: true }); } catch (e) {}
+  try { await fs.access(BINDINGS_FILE); } catch (e) { await fs.writeFile(BINDINGS_FILE, JSON.stringify({}, null, 2)); }
+}
+
+// List saved orchestration metadata (id, name, description)
+app.get('/orchestrate/metadataList', async (req, res) => {
+  try {
+    const moduleQuery = (req.query.module || '').toString().trim();
+    const metaDir = path.join(__dirname, 'metadata');
+    const files = await fs.readdir(metaDir).catch(() => []);
+    const list = [];
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        const raw = await fs.readFile(path.join(metaDir, f), 'utf8');
+        const j = JSON.parse(raw || '{}');
+        const id = j.id || f.replace(/\.json$/, '');
+        const name = j.name || id;
+        const description = j.description || '';
+
+        // Collect module-like markers from metadata (flexible: module, modules, tags)
+        const modules = [];
+        if (j.module) modules.push(j.module);
+        if (Array.isArray(j.modules)) modules.push(...j.modules);
+        if (Array.isArray(j.tags)) modules.push(...j.tags);
+
+        // Determine match: if no module query provided, include all. If provided, include only those whose metadata mentions the module
+        let include = true;
+        if (moduleQuery) {
+          include = false;
+          if (modules.includes(moduleQuery)) include = true;
+          if (!include && name && name.includes(moduleQuery)) include = true;
+          if (!include && id && id.includes(moduleQuery)) include = true;
+        }
+
+        if (!include) continue;
+
+        list.push({ id, name, description, module: j.module || null, modules: j.modules || null });
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+    return res.json({ ok: true, list });
+  } catch (e) {
+    console.error('metadataList error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Save module-level bindings (actions map + customButtons array)
+app.post('/orchestration/moduleBindings', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const { module, bindings, customButtons } = payload;
+    if (!module) return res.status(400).json({ ok: false, error: 'module required' });
+    await ensureBindingsFile();
+    const raw = await fs.readFile(BINDINGS_FILE, 'utf8');
+    const map = JSON.parse(raw || '{}');
+    map[module] = map[module] || {};
+    if (bindings && typeof bindings === 'object') {
+      // copy allowed CRUD keys
+      ['create', 'read', 'update', 'delete'].forEach(k => {
+        if (bindings[k]) map[module][k] = bindings[k];
+        else if (map[module][k] && !bindings[k]) {
+          // if explicitly set to null/empty, delete
+          if (bindings.hasOwnProperty(k) && !bindings[k]) delete map[module][k];
+        }
+      });
+    }
+    if (Array.isArray(customButtons)) {
+      // store customButtons as array of { id, label, orchestrationId }
+      map[module].customButtons = customButtons.map(cb => ({ id: cb.id || String(Date.now()), label: cb.label || 'btn', orchestrationId: cb.orchestrationId || null }));
+    }
+    await fs.writeFile(BINDINGS_FILE, JSON.stringify(map, null, 2));
+    return res.json({ ok: true, bindings: map });
+  } catch (e) {
+    console.error('moduleBindings write error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/orchestration/bindings', async (req, res) => {
+  try {
+    await ensureBindingsFile();
+    const raw = await fs.readFile(BINDINGS_FILE, 'utf8');
+    return res.json({ ok: true, bindings: JSON.parse(raw || '{}') });
+  } catch (e) {
+    console.error('bindings read error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/orchestration/bindings', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const { module, action, orchestrationId } = payload;
+    // Allow optional operation flag; orchestrationId may be a string or payload.orchestrationId
+    const operation = payload.operation || null;
+    if (!module || !action || !orchestrationId) return res.status(400).json({ ok: false, error: 'module, action, orchestrationId required' });
+    await ensureBindingsFile();
+    const raw = await fs.readFile(BINDINGS_FILE, 'utf8');
+    const map = JSON.parse(raw || '{}');
+    map[module] = map[module] || {};
+    // Store binding as object { orchestrationId, operation } for richer metadata
+    map[module][action] = operation ? { orchestrationId, operation } : orchestrationId;
+    await fs.writeFile(BINDINGS_FILE, JSON.stringify(map, null, 2));
+    return res.json({ ok: true, bindings: map });
+  } catch (e) {
+    console.error('bindings write error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// NOTE: Realtime status is published to Kafka topics and delivered via SSE
+
+// Builder models endpoint
+app.get('/builder/models', async (req, res) => {
+  try {
+    const models = await dataModeller.getModels();
+    return res.json({ ok: true, models });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/orchestrate/status/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const rec = await orchestrator.getExecution(id);
+    if (!rec) return res.status(404).json({ ok: false, error: 'not found' });
+    return res.json({ ok: true, record: rec });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/orchestrate/list', async (req, res) => {
+  try {
+    const list = await orchestrator.listExecutions();
+    return res.json({ ok: true, list });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Requeue an existing execution by executionId. Will attempt to load associated metadata file
+// and publish a new job; returns a new executionId.
+app.post('/orchestrate/requeue', async (req, res) => {
+  try {
+    const { executionId } = req.body || {};
+    if (!executionId) return res.status(400).json({ ok: false, error: 'executionId required' });
+    const rec = await orchestrator.getExecution(executionId);
+    if (!rec) return res.status(404).json({ ok: false, error: 'execution record not found' });
+
+    // Try to load metadata from saved metadataId
+    let metadata = null;
+    if (rec.metadataId) {
+      try {
+        const raw = await fs.readFile(path.join(__dirname, 'metadata', `${rec.metadataId}.json`), 'utf8');
+        metadata = JSON.parse(raw || '{}');
+      } catch (e) {
+        console.warn('requeue: could not load metadata file', rec.metadataId, e && e.message ? e.message : e);
+      }
+    }
+
+    if (!metadata) return res.status(400).json({ ok: false, error: 'metadata not available for execution; cannot requeue' });
+
+    const inputs = rec.inputs || {};
+    const newExecutionId = uuidv4();
+    const queuedRecord = {
+      executionId: newExecutionId,
+      metadataId: metadata.id || null,
+      name: metadata.name || null,
+      start: new Date().toISOString(),
+      status: 'queued',
+      inputs,
+      steps: [],
+      errors: []
+    };
+    await orchestrator.saveExecutionRecord(queuedRecord);
+    await queue.publishJob({ executionId: newExecutionId, metadata, inputs });
+    return res.status(202).json({ ok: true, executionId: newExecutionId, message: 'requeued' });
+  } catch (e) {
+    console.error('requeue error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
 // POST /ai/send - forward arbitrary payloads to the hardcoded AI endpoint
 app.post('/ai/send', async (req, res) => {
   try {
@@ -858,6 +1655,260 @@ app.get('/ai/health', async (req, res) => {
   } catch (e) {
     console.error('AI health check error:', e.message || e);
     return res.json({ ok: false, status: 'red', error: e.message || String(e) });
+  }
+});
+
+// ============================================================================
+// TAXONOMY API - The Business Language Layer
+// ============================================================================
+app.get('/api/taxonomy', async (req, res) => {
+  try {
+    const taxonomy = await taxonomyService.getTaxonomy();
+    res.json({ ok: true, taxonomy });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/taxonomy/concepts', async (req, res) => {
+  try {
+    const concepts = await taxonomyService.getConcepts();
+    res.json({ ok: true, concepts });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/taxonomy/concepts', async (req, res) => {
+  try {
+    const concept = await taxonomyService.addConcept(req.body);
+    res.json({ ok: true, concept });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.put('/api/taxonomy/concepts/:id', async (req, res) => {
+  try {
+    const concept = await taxonomyService.updateConcept(req.params.id, req.body);
+    res.json({ ok: true, concept });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/taxonomy/concepts/:id', async (req, res) => {
+  try {
+    await taxonomyService.deleteConcept(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/taxonomy/events', async (req, res) => {
+  try {
+    const events = await taxonomyService.getEvents();
+    res.json({ ok: true, events });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/taxonomy/events', async (req, res) => {
+  try {
+    const event = await taxonomyService.addEvent(req.body);
+    res.json({ ok: true, event });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/taxonomy/actions', async (req, res) => {
+  try {
+    const actions = await taxonomyService.getActions();
+    res.json({ ok: true, actions });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/taxonomy/actions', async (req, res) => {
+  try {
+    const action = await taxonomyService.addAction(req.body);
+    res.json({ ok: true, action });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/taxonomy/capabilities', async (req, res) => {
+  try {
+    const capabilities = await taxonomyService.getCapabilities();
+    res.json({ ok: true, capabilities });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/taxonomy/capabilities', async (req, res) => {
+  try {
+    const capability = await taxonomyService.addCapability(req.body);
+    res.json({ ok: true, capability });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ============================================================================
+// RULES ENGINE API - The Decision Layer
+// ============================================================================
+app.get('/api/rules', async (req, res) => {
+  try {
+    const ruleSets = await rulesEngine.getRuleSets();
+    res.json({ ok: true, ruleSets });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/rules/:id', async (req, res) => {
+  try {
+    const ruleSet = await rulesEngine.getRuleSet(req.params.id);
+    if (!ruleSet) return res.status(404).json({ ok: false, error: 'RuleSet not found' });
+    res.json({ ok: true, ruleSet });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/rules', async (req, res) => {
+  try {
+    const ruleSet = await rulesEngine.addRuleSet(req.body);
+    res.json({ ok: true, ruleSet });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.put('/api/rules/:id', async (req, res) => {
+  try {
+    const ruleSet = await rulesEngine.updateRuleSet(req.params.id, req.body);
+    res.json({ ok: true, ruleSet });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/rules/:id', async (req, res) => {
+  try {
+    await rulesEngine.deleteRuleSet(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/rules/:id/evaluate', async (req, res) => {
+  try {
+    const results = await rulesEngine.evaluate(req.params.id, req.body);
+    res.json({ ok: true, results });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ============================================================================
+// WORKFLOW ENGINE API - The Sequence Layer
+// ============================================================================
+app.get('/api/workflows', async (req, res) => {
+  try {
+    const workflows = await workflowEngine.getWorkflows();
+    res.json({ ok: true, workflows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/workflows/:id', async (req, res) => {
+  try {
+    const workflow = await workflowEngine.getWorkflow(req.params.id);
+    if (!workflow) return res.status(404).json({ ok: false, error: 'Workflow not found' });
+    res.json({ ok: true, workflow });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/workflows', async (req, res) => {
+  try {
+    const workflow = await workflowEngine.addWorkflow(req.body);
+    res.json({ ok: true, workflow });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.put('/api/workflows/:id', async (req, res) => {
+  try {
+    const workflow = await workflowEngine.updateWorkflow(req.params.id, req.body);
+    res.json({ ok: true, workflow });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/workflows/:id', async (req, res) => {
+  try {
+    await workflowEngine.deleteWorkflow(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Start workflow execution
+app.post('/api/workflows/:id/execute', async (req, res) => {
+  try {
+    const execution = await workflowEngine.startExecution(
+      req.params.id,
+      req.body.inputs || {},
+      req.body.triggeredBy
+    );
+    res.json({ ok: true, execution });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Get workflow executions
+app.get('/api/executions', async (req, res) => {
+  try {
+    const executions = await workflowEngine.getExecutions(req.query);
+    res.json({ ok: true, executions });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Get single execution
+app.get('/api/executions/:id', async (req, res) => {
+  try {
+    const execution = await workflowEngine.getExecution(req.params.id);
+    if (!execution) return res.status(404).json({ ok: false, error: 'Execution not found' });
+    res.json({ ok: true, execution });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Complete human task in workflow
+app.post('/api/executions/:id/complete-task', async (req, res) => {
+  try {
+    await workflowEngine.completeHumanTask(req.params.id, req.body);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 

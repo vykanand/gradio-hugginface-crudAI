@@ -1,3 +1,5 @@
+To start this server cleanly - docker-compose up --build app
+
 POST - http://localhost:3000/crud
 
 {

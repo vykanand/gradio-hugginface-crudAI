@@ -84,7 +84,7 @@
         "Extra": "DEFAULT_GENERATED"
       }
     ],
-    "rowCount": 1,
+    "rowCount": 2,
     "foreignKeys": [],
     "indexes": [
       {
@@ -94,7 +94,7 @@
         "Seq_in_index": 1,
         "Column_name": "id",
         "Collation": "A",
-        "Cardinality": 1,
+        "Cardinality": 2,
         "Sub_part": null,
         "Packed": null,
         "Null": "",
@@ -108,12 +108,12 @@
     "stats": {
       "TABLE_NAME": "appsthink_crm",
       "ENGINE": "InnoDB",
-      "TABLE_ROWS": 1,
-      "AVG_ROW_LENGTH": 16384,
+      "TABLE_ROWS": 2,
+      "AVG_ROW_LENGTH": 8192,
       "DATA_LENGTH": 16384,
       "INDEX_LENGTH": 0,
-      "CREATE_TIME": "2025-12-03T14:18:57.000Z",
-      "UPDATE_TIME": "2025-12-03T14:21:16.000Z"
+      "CREATE_TIME": "2025-12-03T19:48:57.000Z",
+      "UPDATE_TIME": "2025-12-07T20:37:17.000Z"
     }
   }
 }

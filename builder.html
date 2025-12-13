@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orchestration Builder</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="container mt-4">
+      <h2>Orchestration Builder</h2>
+      <p class="text-muted">
+        Use persisted schema information to build and queue orchestrations.
+      </p>
+
+      <div class="row">
+        <div class="col-md-4">
+          <h5>Available Models</h5>
+          <div id="models-list">Loading...</div>
+        </div>
+        <div class="col-md-8">
+          <h5>Orchestration JSON</h5>
+          <textarea
+            id="orchestration-json"
+            class="form-control"
+            rows="16"
+          ></textarea>
+          <div class="mt-2">
+            <button id="save-btn" class="btn btn-primary">Save</button>
+            <button id="queue-btn" class="btn btn-success">
+              Queue (Execute)
+            </button>
+            <select
+              id="crud-action"
+              class="form-select d-inline-block"
+              style="width: 160px; margin-left: 8px"
+            >
+              <option value="create">Create</option>
+              <option value="read">Read</option>
+              <option value="update">Update</option>
+              <option value="delete">Delete</option>
+            </select>
+            <select
+              id="operation-mode"
+              class="form-select d-inline-block"
+              style="width: 120px; margin-left: 8px"
+            >
+              <option value="async">Async</option>
+              <option value="sync">Sync</option>
+            </select>
+            <button
+              id="bind-btn"
+              class="btn btn-outline-secondary"
+              style="margin-left: 8px"
+            >
+              Bind Action
+            </button>
+            <span id="status" style="margin-left: 12px"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+      async function init() {
+        const modelsList = document.getElementById("models-list");
+        modelsList.innerHTML =
+          '<div class="text-muted">Loading models...</div>';
+        try {
+          // 1) load persisted schema-store (from DB explorer)
+          let schemaModels = [];
+          try {
+            const idx = await axios.get("/schema-store");
+            if (
+              idx.data &&
+              idx.data.ok &&
+              idx.data.index &&
+              Array.isArray(idx.data.index.tables)
+            ) {
+              const tables = idx.data.index.tables;
+              // fetch per-table schema (limit to 50 tables to avoid long waits)
+              const tablePromises = tables.slice(0, 50).map(async (t) => {
+                try {
+                  const r = await axios.get(
+                    `/api/schema/${encodeURIComponent(t)}`
+                  );
+                  if (r.data) {
+                    let cols = [];
+                    if (Array.isArray(r.data.columns))
+                      cols = r.data.columns.map((c) => ({
+                        name: c.Field || c.name,
+                        type: c.Type || c.type,
+                      }));
+                    else if (
+                      r.data.table &&
+                      r.data.table.schema &&
+                      Array.isArray(r.data.table.schema.columns)
+                    )
+                      cols = r.data.table.schema.columns.map((c) => ({
+                        name: c.Field || c.name || c.name,
+                        type: c.Type || c.type || "",
+                      }));
+                    else if (
+                      r.data.schema &&
+                      Array.isArray(r.data.schema.columns)
+                    )
+                      cols = r.data.schema.columns.map((c) => ({
+                        name: c.Field || c.name,
+                        type: c.Type || c.type,
+                      }));
+                    return { tableName: t, columns: cols };
+                  }
+                } catch (e) {
+                  return { tableName: t, columns: [] };
+                }
+                return { tableName: t, columns: [] };
+              });
+              schemaModels = await Promise.all(tablePromises);
+            }
+          } catch (e) {
+            console.warn(
+              "Failed to load schema-store",
+              e && e.message ? e.message : e
+            );
+          }
+
+          // 2) load example models (existing behavior)
+          let exampleModels = [];
+          try {
+            const r = await axios.get("/builder/models");
+            exampleModels = (r.data && r.data.models) || [];
+          } catch (e) {
+            console.warn(
+              "Failed to load example models",
+              e && e.message ? e.message : e
+            );
+          }
+
+          // Merge: give precedence to schemaModels (discovered by DB explorer)
+          const merged = [];
+          const seen = new Set();
+          for (const m of schemaModels) {
+            const id = (m.tableName || m.table || m.name || "").toString();
+            if (!id) continue;
+            seen.add(id);
+            merged.push({ tableName: m.tableName, columns: m.columns || [] });
+          }
+          for (const m of exampleModels) {
+            const id = (
+              m.tableName ||
+              m.table ||
+              m.name ||
+              m.id ||
+              ""
+            ).toString();
+            if (seen.has(id)) continue;
+            merged.push(m);
+          }
+
+          if (!merged.length) {
+            modelsList.innerHTML =
+              '<div class="alert alert-info">No models available</div>';
+            return;
+          }
+
+          modelsList.innerHTML = "";
+          merged.forEach((m) => {
+            const el = document.createElement("div");
+            el.style.padding = "8px";
+            el.style.borderBottom = "1px solid #eee";
+            const displayName =
+              m.name || m.table || m.tableName || m.id || "model";
+            const colsSrc = m.columns || m.schema || m.fields || [];
+            const cols = Array.isArray(colsSrc)
+              ? colsSrc.map((c) => {
+                  if (!c) return { name: "unknown", type: "" };
+                  return {
+                    name:
+                      c.Field ||
+                      c.name ||
+                      c.field ||
+                      c.column ||
+                      c.columnName ||
+                      c.name ||
+                      String(Object.keys(c)[0] || ""),
+                    type: c.Type || c.type || c.dataType || "",
+                  };
+                })
+              : [];
+            el.innerHTML = `<strong>${displayName}</strong><div style="font-size:0.9rem;color:#555">${cols
+              .map((c) => c.name + " (" + c.type + ")")
+              .join(", ")}</div>`;
+            el.addEventListener("click", () => populateTemplate(m));
+            modelsList.appendChild(el);
+          });
+        } catch (e) {
+          modelsList.innerHTML =
+            '<div class="alert alert-danger">Failed to load models: ' +
+            (e.message || e) +
+            "</div>";
+        }
+      }
+
+      // derive moduleKey for this builder session (helpful when saving orchestrations)
+      function deriveModuleKey() {
+        try {
+          if (window.__MODULE_NAME__) return window.__MODULE_NAME__.toString();
+          const dm =
+            document.body &&
+            document.body.getAttribute &&
+            document.body.getAttribute("data-module");
+          if (dm) return dm.toString();
+          const parts = window.location.pathname.split("/").filter(Boolean);
+          if (parts.length >= 2) return parts[parts.length - 2];
+          if (parts.length === 1) return parts[0];
+        } catch (e) {}
+        return "";
+      }
+      const moduleKey = deriveModuleKey();
+
+      function populateTemplate(model) {
+        const table =
+          model.tableName || model.table || model.name || model.id || "table";
+        const cols = (model.columns || [])
+          .map((c) => c.name || c.Field || c.name)
+          .filter(Boolean);
+        const sampleDoc = {};
+        cols.slice(0, 5).forEach((c) => (sampleDoc[c] = `{{input.${c}}}`));
+        const tpl = {
+          module: table,
+          id: "orch_" + table + "_" + Date.now(),
+          name: "Orchestration for " + table,
+          description: "Auto-generated template from discovered schema",
+          version: "1.0",
+          steps: [
+            {
+              name: "read_rows",
+              type: "db.query",
+              connector: "jsonAdapter",
+              params: { table, limit: 10 },
+            },
+            {
+              name: "create_sample",
+              type: "db.create",
+              connector: "jsonAdapter",
+              params: { table, document: sampleDoc },
+            },
+            {
+              name: "notify",
+              type: "logical.run",
+              script:
+                "const created = inputs.create_sample || inputs.create_sample.result || {}; return { message: 'Created ' + JSON.stringify(created) };",
+            },
+          ],
+          outputs: { result: "notify" },
+        };
+        document.getElementById("orchestration-json").value = JSON.stringify(
+          tpl,
+          null,
+          2
+        );
+      }
+
+      // Generate a simple CRUD orchestration template for the given action and table
+      function generateCrudOrchestration(
+        action,
+        table,
+        sampleDoc,
+        moduleKey,
+        baseId
+      ) {
+        // Use HTTP-like verb prefixes so the orchestration id clearly indicates CRUD intent
+        const verbMap = {
+          create: "post",
+          read: "get",
+          update: "put",
+          delete: "delete",
+        };
+        const verb = verbMap[(action || "").toLowerCase()] || "orch";
+        const idBase = baseId || `${verb}_${table}_${Date.now()}`;
+        // include action suffix for clarity in case baseId already contains verb
+        const id = `${idBase}`;
+        const name = `${action.toUpperCase()} orchestration for ${table}`;
+        let steps = [];
+        let outputs = {};
+
+        switch ((action || "").toLowerCase()) {
+          case "create":
+            steps = [
+              {
+                name: "create_row",
+                type: "db.create",
+                connector: "jsonAdapter",
+                params: { table, document: "${inputs.row}" },
+              },
+              {
+                name: "notify",
+                type: "logical.run",
+                script:
+                  "const created = inputs.create_row || {}; return { message: 'Created ' + JSON.stringify(created) };",
+              },
+            ];
+            outputs = { result: "notify" };
+            break;
+          case "read":
+            steps = [
+              {
+                name: "read_rows",
+                type: "db.query",
+                connector: "jsonAdapter",
+                params: { table, id: "${inputs.id}", limit: 100 },
+              },
+            ];
+            outputs = { result: "read_rows" };
+            break;
+          case "update":
+            steps = [
+              {
+                name: "update_row",
+                type: "db.update",
+                connector: "jsonAdapter",
+                params: { table, id: "${inputs.id}", changes: "${inputs.row}" },
+              },
+              {
+                name: "notify",
+                type: "logical.run",
+                script:
+                  "const upd = inputs.update_row || {}; return { message: 'Updated ' + JSON.stringify(upd) };",
+              },
+            ];
+            outputs = { result: "notify" };
+            break;
+          case "delete":
+            steps = [
+              {
+                name: "delete_row",
+                type: "db.delete",
+                connector: "jsonAdapter",
+                params: { table, id: "${inputs.id}" },
+              },
+            ];
+            outputs = { result: "delete_row" };
+            break;
+          default:
+            steps = [];
+            outputs = {};
+        }
+
+        return {
+          module: moduleKey || table,
+          id,
+          name,
+          description: `Auto-generated ${action} orchestration for ${table}`,
+          version: "1.0",
+          operation:
+            action && action.toString().toLowerCase() === "read"
+              ? "sync"
+              : undefined,
+          steps,
+          outputs,
+        };
+      }
+
+      document
+        .getElementById("save-btn")
+        .addEventListener("click", async () => {
+          const txt = document.getElementById("orchestration-json").value;
+          try {
+            const payload = JSON.parse(txt);
+            // Ensure module is present on saved metadata. Prefer explicit payload.module,
+            // otherwise use derived moduleKey or try to infer from first step params.table
+            if (!payload.module) {
+              payload.module =
+                moduleKey ||
+                (payload.steps &&
+                  payload.steps[0] &&
+                  payload.steps[0].params &&
+                  payload.steps[0].params.table) ||
+                null;
+            }
+            // Persist operation preference from UI selector when saving metadata
+            try {
+              const op = document.getElementById("operation-mode").value;
+              if (op) payload.operation = op;
+            } catch (e) {}
+            const r = await axios.post("/orchestrate/save", payload);
+            document.getElementById("status").innerText =
+              "Saved: " + (r.data && r.data.saved);
+          } catch (e) {
+            document.getElementById("status").innerText =
+              "Save failed: " + (e.message || e);
+          }
+        });
+
+      document
+        .getElementById("queue-btn")
+        .addEventListener("click", async () => {
+          const txt = document.getElementById("orchestration-json").value;
+          try {
+            const payload = JSON.parse(txt);
+            const r = await axios.post(
+              "/orchestrate/execute",
+              { metadata: payload },
+              { timeout: 30000 }
+            );
+            if (r.data && r.data.ok) {
+              const execId = r.data.executionId || "unknown";
+              document.getElementById("status").innerHTML =
+                "Queued: " +
+                execId +
+                ' <a href="/orchestration-monitor.html?executionId=' +
+                encodeURIComponent(execId) +
+                '" target="_blank">Open Monitor</a>';
+            } else {
+              document.getElementById("status").innerText =
+                "Queue failed: " + JSON.stringify(r.data);
+            }
+          } catch (e) {
+            document.getElementById("status").innerText =
+              "Queue error: " + (e.message || e);
+          }
+        });
+
+      // Bind a saved orchestration to a CRUD action for this model
+      document
+        .getElementById("bind-btn")
+        .addEventListener("click", async () => {
+          const txt = document.getElementById("orchestration-json").value;
+          try {
+            const payload = JSON.parse(txt);
+            const action =
+              document.getElementById("crud-action").value || "create";
+            // Determine module: prefer explicit payload.module, then derived moduleKey, then fallback to step params.table
+            const module =
+              payload.module ||
+              moduleKey ||
+              (payload.steps &&
+                payload.steps[0] &&
+                payload.steps[0].params &&
+                payload.steps[0].params.table) ||
+              null;
+            if (!module)
+              return alert(
+                "Cannot determine module/table name from orchestration. Ensure metadata.module or that the builder is served from a folder named for your module."
+              );
+
+            // Prepare an action-specific orchestration template. Use existing sampleDoc if present in payload, else try to infer columns.
+            let table = module;
+            if (
+              payload.steps &&
+              payload.steps[0] &&
+              payload.steps[0].params &&
+              payload.steps[0].params.table
+            )
+              table = payload.steps[0].params.table || table;
+            // try to extract sampleDoc from existing payload if present
+            let sampleDoc = {};
+            try {
+              if (payload.steps) {
+                for (const s of payload.steps) {
+                  if (s.params && s.params.document) {
+                    sampleDoc = s.params.document;
+                    break;
+                  }
+                }
+              }
+            } catch (e) {}
+
+            // Generate a CRUD orchestration tailored to the action
+            // Build a verb-prefixed base id when none provided so orchestration ids reveal intent
+            const verbMap = {
+              create: "post",
+              read: "get",
+              update: "put",
+              delete: "delete",
+            };
+            const verb = verbMap[action] || "orch";
+            const baseId = payload.id || `${verb}_${table}_${Date.now()}`;
+            // include chosen operation mode from builder when generating orchestration
+            const opMode =
+              (document.getElementById("operation-mode") &&
+                document.getElementById("operation-mode").value) ||
+              null;
+            const newOrch = generateCrudOrchestration(
+              action,
+              table,
+              sampleDoc,
+              module,
+              baseId
+            );
+
+            if (opMode && !newOrch.operation) newOrch.operation = opMode;
+
+            // Save the generated orchestration (overwrite or create). This ensures id includes action name.
+            await axios.post("/orchestrate/save", newOrch);
+
+            // Bind using the new orchestration id (which includes the action)
+            const r = await axios.post("/orchestration/bindings", {
+              module,
+              action,
+              orchestrationId: newOrch.id,
+              operation: newOrch.operation || null,
+            });
+            if (r.data && r.data.ok) {
+              document.getElementById(
+                "status"
+              ).innerText = `Bound ${module} -> ${action} -> ${newOrch.id}`;
+              // Update textarea to reflect saved orchestration
+              document.getElementById("orchestration-json").value =
+                JSON.stringify(newOrch, null, 2);
+            } else {
+              document.getElementById("status").innerText = "Bind failed";
+            }
+          } catch (e) {
+            document.getElementById("status").innerText =
+              "Bind error: " + (e.message || e);
+          }
+        });
+
+      init();
+    </script>
+  </body>
+</html>

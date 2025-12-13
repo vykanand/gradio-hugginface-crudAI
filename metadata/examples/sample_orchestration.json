@@ -1,0 +1,31 @@
+{
+  "id": "sample_user_create_and_notify",
+  "title": "Sample: create user and send welcome",
+  "description": "Creates a user in the JSON file adapter and runs a logical step to produce a welcome message.",
+  "version": "1.0",
+  "steps": [
+    {
+      "name": "create_user",
+      "type": "db.create",
+      "connector": "jsonAdapter",
+      "params": {
+        "collection": "users",
+        "document": {
+          "name": "{{input.name}}",
+          "email": "{{input.email}}",
+          "createdAt": "{{now}}"
+        }
+      },
+      "retry": { "retries": 2, "backoffMs": 500 }
+    },
+    {
+      "name": "send_welcome",
+      "type": "logical.run",
+      "script": "// input contains step outputs and original input\nconst user = inputs.create_user.result || inputs.create_user;\nreturn { message: `Welcome ${user.name}!`, to: user.email };",
+      "timeoutMs": 3000
+    }
+  ],
+  "outputs": {
+    "welcome": "send_welcome"
+  }
+}

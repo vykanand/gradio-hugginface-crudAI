@@ -1,0 +1,11 @@
+{
+  "ignore": [
+    "storage/**",
+    "metadata/**",
+    "faiss/**",
+    ".history/**",
+    "*.log"
+  ],
+  "watch": ["server.js", "services", "lib", "workers", "config", "custom"],
+  "ext": "js,json,html"
+}

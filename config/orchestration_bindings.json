@@ -1,0 +1,13 @@
+{
+  "appsthink_crm": {
+    "update": {
+      "orchestrationId": "orch_appsthink_crm_1765143082596",
+      "operation": "async"
+    },
+    "create": {
+      "orchestrationId": "orch_appsthink_crm_1765143082596",
+      "operation": "async"
+    },
+    "customButtons": []
+  }
+}

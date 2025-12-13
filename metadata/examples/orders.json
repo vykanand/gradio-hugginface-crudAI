@@ -1,0 +1,14 @@
+{
+  "tableName": "orders",
+  "columns": [
+    {"name":"id","type":"integer","primary":true},
+    {"name":"user_id","type":"integer"},
+    {"name":"product","type":"string"},
+    {"name":"amount","type":"number"},
+    {"name":"created_at","type":"string","format":"datetime"}
+  ],
+  "rows": [
+    {"id":1,"user_id":1,"product":"Widget A","amount":19.99,"created_at":"2024-03-01T09:00:00Z"},
+    {"id":2,"user_id":2,"product":"Widget B","amount":29.99,"created_at":"2024-03-05T11:20:00Z"}
+  ]
+}

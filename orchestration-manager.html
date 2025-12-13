@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Orchestration Manager</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        padding: 12px;
+      }
+      #left {
+        max-height: 80vh;
+        overflow: auto;
+      }
+      #events {
+        max-height: 40vh;
+        overflow: auto;
+        background: #fff;
+        padding: 8px;
+        border-radius: 6px;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-md-3">
+          <h5>Saved Orchestrations</h5>
+          <div
+            id="metaList"
+            class="list-group mb-3"
+            style="max-height: 40vh; overflow: auto"
+          ></div>
+          <h6>Executions</h6>
+          <div
+            id="execList"
+            class="list-group"
+            style="max-height: 35vh; overflow: auto"
+          ></div>
+          <div class="mt-2">
+            <button id="refreshAll" class="btn btn-sm btn-primary">
+              Refresh
+            </button>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <h5>Execution Details</h5>
+          <div id="execDetail">Select an execution to view details</div>
+          <hr />
+          <h6>Payload / Inputs</h6>
+          <pre id="payload">-</pre>
+          <hr />
+          <h6>Steps & Status</h6>
+          <div id="steps"></div>
+        </div>
+        <div class="col-md-3">
+          <h5>Pub / Sub Manager</h5>
+          <div><strong>Subscriptions</strong></div>
+          <div id="subsList" style="margin-bottom: 8px"></div>
+          <div class="mb-2">
+            <textarea
+              id="pubPayload"
+              class="form-control form-control-sm"
+              rows="4"
+              placeholder='{"foo":"bar"}'
+            ></textarea>
+            <input
+              id="pubSubject"
+              class="form-control form-control-sm mt-1"
+              placeholder="subject e.g. ORCHESTRATIONS.JOBS"
+            />
+            <button id="publishBtn" class="btn btn-sm btn-success mt-1">
+              Publish
+            </button>
+          </div>
+
+          <hr />
+          <h5>Live Events (monitor)</h5>
+          <div id="events"></div>
+          <div class="mt-2">
+            <button id="clearEvents" class="btn btn-sm btn-outline-secondary">
+              Clear
+            </button>
+            <button id="togglePause" class="btn btn-sm btn-outline-primary">
+              Pause
+            </button>
+          </div>
+
+          <hr />
+          <h6>Executions (All)</h6>
+          <div>
+            <select id="statusFilter" class="form-control form-control-sm">
+              <option value="all">All</option>
+              <option value="queued">Queued / pending</option>
+              <option value="success">Succeeded</option>
+              <option value="failed">Failed</option>
+            </select>
+            <button id="refreshExecs" class="btn btn-sm btn-secondary mt-1">
+              Refresh
+            </button>
+          </div>
+          <div
+            id="execQuickList"
+            style="
+              max-height: 18vh;
+              overflow: auto;
+              margin-top: 8px;
+              background: #fff;
+              padding: 8px;
+              border-radius: 6px;
+            "
+          ></div>
+
+          <hr />
+          <h6>Stream Messages</h6>
+          <div>
+            <select id="streamSelect" class="form-control form-control-sm">
+              <option value="ORCHESTRATIONS_JOBS">ORCHESTRATIONS_JOBS</option>
+            </select>
+            <button id="loadMsgs" class="btn btn-sm btn-secondary mt-1">
+              Load Messages
+            </button>
+          </div>
+          <div
+            id="streamMsgs"
+            style="
+              max-height: 30vh;
+              overflow: auto;
+              margin-top: 8px;
+              background: #fff;
+              padding: 8px;
+              border-radius: 6px;
+            "
+          ></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const metaListEl = document.getElementById("metaList");
+      const execListEl = document.getElementById("execList");
+      const execDetailEl = document.getElementById("execDetail");
+      const payloadEl = document.getElementById("payload");
+      const stepsEl = document.getElementById("steps");
+      const eventsEl = document.getElementById("events");
+      const streamMsgsEl = document.getElementById("streamMsgs");
+      const streamSelect = document.getElementById("streamSelect");
+      let paused = false;
+
+      function fmtDate(d) {
+        if (!d) return "-";
+        try {
+          return new Date(d).toLocaleString();
+        } catch (e) {
+          return d;
+        }
+      }
+
+      async function fetchMeta() {
+        const r = await fetch("/orchestrate/metadataList");
+        const j = await r.json();
+        if (!j.ok) return;
+        metaListEl.innerHTML = "";
+        j.list.forEach((m) => {
+          const a = document.createElement("a");
+          a.className = "list-group-item list-group-item-action";
+          a.href = "#";
+          a.innerText = (m.name || m.id) + (m.module ? " — " + m.module : "");
+          a.onclick = (e) => {
+            e.preventDefault();
+            selectMetadata(m);
+          };
+          metaListEl.appendChild(a);
+        });
+      }
+
+      function selectMetadata(m) {
+        // show metadata quick preview
+        execDetailEl.innerHTML =
+          "<pre>" + JSON.stringify(m, null, 2) + "</pre>";
+      }
+
+      async function fetchExecs() {
+        const r = await fetch("/orchestrate/list");
+        const j = await r.json();
+        if (!j.ok) return;
+        execListEl.innerHTML = "";
+        j.list.forEach((rec) => {
+          const a = document.createElement("a");
+          a.className = "list-group-item list-group-item-action";
+          a.href = "#";
+          a.innerHTML = `<strong>${rec.executionId}</strong><br/><small>${
+            rec.name || ""
+          } — ${rec.status || ""} — ${fmtDate(rec.start)}</small>`;
+          a.onclick = (e) => {
+            e.preventDefault();
+            loadExecution(rec.executionId);
+          };
+          execListEl.appendChild(a);
+        });
+      }
+
+      async function loadExecution(id) {
+        const r = await fetch("/orchestrate/status/" + encodeURIComponent(id));
+        const j = await r.json();
+        if (!j.ok) {
+          execDetailEl.innerHTML = '<div class="text-danger">Not found</div>';
+          return;
+        }
+        const rec = j.record;
+        execDetailEl.innerHTML = `<div class="card"><div class="card-body"><h6>${
+          rec.name || rec.executionId
+        }</h6><div><strong>Status:</strong> ${
+          rec.status || ""
+        }</div><div><strong>Started:</strong> ${
+          rec.start || rec.startedAt || ""
+        }</div></div></div>`;
+        payloadEl.innerText = JSON.stringify(
+          rec.inputs || rec.payload || rec.inputs || {},
+          null,
+          2
+        );
+        // render steps
+        stepsEl.innerHTML = "";
+        const steps = rec.steps || [];
+        steps.forEach((s) => {
+          const d = document.createElement("div");
+          d.className = "card mb-2";
+          d.innerHTML = `<div class="card-body"><h6>${
+            s.name || s.step || s.action || "step"
+          }</h6><div>Status: ${
+            s.status || s.state || ""
+          }</div><pre>${JSON.stringify(s, null, 2)}</pre></div>`;
+          stepsEl.appendChild(d);
+        });
+      }
+
+      // Live monitor SSE
+      const evt = new EventSource("/monitor/stream");
+      evt.onmessage = function (e) {
+        if (paused) return;
+        try {
+          const it = JSON.parse(e.data);
+          addEvent(it);
+        } catch (e) {}
+      };
+      evt.onerror = function (e) {
+        console.warn("SSE err", e);
+      };
+
+      function addEvent(it) {
+        const el = document.createElement("div");
+        el.className = "mb-2";
+        const subj = it.subject || "";
+        el.innerHTML = `<div><strong>${subj}</strong> <small class="text-muted">${
+          it.ts || ""
+        }</small></div><pre>${JSON.stringify(it.data, null, 2)}</pre>`;
+        eventsEl.insertBefore(el, eventsEl.firstChild);
+        while (eventsEl.childNodes.length > 200)
+          eventsEl.removeChild(eventsEl.lastChild);
+      }
+
+      document.getElementById("clearEvents").addEventListener("click", () => {
+        eventsEl.innerHTML = "";
+      });
+      document.getElementById("togglePause").addEventListener("click", () => {
+        paused = !paused;
+        document.getElementById("togglePause").innerText = paused
+          ? "Resume"
+          : "Pause";
+      });
+
+      document.getElementById("refreshAll").addEventListener("click", () => {
+        fetchMeta();
+        fetchExecs();
+      });
+
+      document
+        .getElementById("loadMsgs")
+        .addEventListener("click", async () => {
+          streamMsgsEl.innerHTML = "Loading...";
+          const stream = streamSelect.value;
+          const r = await fetch(
+            "/monitor/streamMessages?stream=" +
+              encodeURIComponent(stream) +
+              "&last=50"
+          );
+          const j = await r.json();
+          if (!j.ok) {
+            streamMsgsEl.innerHTML =
+              '<div class="text-danger">' + (j.error || "error") + "</div>";
+            return;
+          }
+          streamMsgsEl.innerHTML = "";
+          j.messages.forEach((m) => {
+            const e = document.createElement("div");
+            e.className = "mb-2";
+            e.innerHTML = `<div><strong>seq ${m.seq}</strong> <small>${
+              m.subject
+            }</small></div><pre>${JSON.stringify(m.data, null, 2)}</pre>`;
+            streamMsgsEl.appendChild(e);
+          });
+        });
+
+      // Pub/Sub manager helpers
+      async function loadSubs() {
+        try {
+          const r = await fetch("/monitor/subscriptions");
+          const j = await r.json();
+          const el = document.getElementById("subsList");
+          el.innerHTML = "";
+          if (!j.ok) {
+            el.innerText = "Error loading subscriptions";
+            return;
+          }
+          (j.subjects || []).forEach((s) => {
+            const d = document.createElement("div");
+            d.innerText = s;
+            el.appendChild(d);
+          });
+        } catch (e) {
+          console.warn("loadSubs err", e);
+        }
+      }
+
+      document
+        .getElementById("publishBtn")
+        .addEventListener("click", async () => {
+          const subj = document.getElementById("pubSubject").value.trim();
+          let payload = document.getElementById("pubPayload").value.trim();
+          try {
+            payload = JSON.parse(payload);
+          } catch (e) {
+            /* keep as string */
+          }
+          const r = await fetch("/monitor/publish", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subject: subj, payload }),
+          });
+          const j = await r.json();
+          if (j.ok) {
+            alert("published");
+          } else {
+            alert("publish failed: " + (j.error || "unknown"));
+          }
+        });
+
+      // executions quick list and requeue
+      async function loadExecQuick() {
+        try {
+          const filter = document.getElementById("statusFilter").value;
+          const r = await fetch("/orchestrate/list");
+          const j = await r.json();
+          const el = document.getElementById("execQuickList");
+          el.innerHTML = "";
+          if (!j.ok) return;
+          (j.list || [])
+            .filter((rec) => {
+              if (filter === "all") return true;
+              if (filter === "queued")
+                return (
+                  (rec.status || "").toLowerCase().includes("queued") ||
+                  (rec.status || "").toLowerCase().includes("pending")
+                );
+              if (filter === "success") return !!rec.success;
+              if (filter === "failed")
+                return !!(rec.errors && rec.errors.length);
+              return true;
+            })
+            .forEach((rec) => {
+              const d = document.createElement("div");
+              d.className = "mb-2";
+              d.innerHTML = `<div><strong>${rec.executionId}</strong> <small>${
+                rec.name || ""
+              } — ${rec.status || ""}</small></div>`;
+              const btn = document.createElement("button");
+              btn.className = "btn btn-sm btn-outline-primary mt-1";
+              btn.innerText = "View";
+              btn.onclick = () => loadExecution(rec.executionId);
+              const rq = document.createElement("button");
+              rq.className = "btn btn-sm btn-outline-warning mt-1 ml-1";
+              rq.innerText = "Requeue";
+              rq.onclick = () => requeueExecution(rec.executionId);
+              d.appendChild(btn);
+              d.appendChild(rq);
+              el.appendChild(d);
+            });
+        } catch (e) {
+          console.warn("loadExecQuick err", e);
+        }
+      }
+
+      async function requeueExecution(execId) {
+        if (!confirm("Requeue execution " + execId + "?")) return;
+        const r = await fetch("/orchestrate/requeue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ executionId: execId }),
+        });
+        const j = await r.json();
+        if (j.ok) alert("requeued: " + j.executionId);
+        else alert("failed: " + (j.error || "unknown"));
+      }
+
+      document
+        .getElementById("refreshExecs")
+        .addEventListener("click", loadExecQuick);
+      document
+        .getElementById("statusFilter")
+        .addEventListener("change", loadExecQuick);
+
+      // initial load
+      fetchMeta();
+      fetchExecs();
+      loadSubs();
+      loadExecQuick();
+    </script>
+  </body>
+</html>

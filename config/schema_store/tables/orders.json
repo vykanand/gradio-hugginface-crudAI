@@ -58,6 +58,14 @@
         "Key": "",
         "Default": "CURRENT_TIMESTAMP",
         "Extra": "DEFAULT_GENERATED"
+      },
+      {
+        "Field": "product_id",
+        "Type": "int",
+        "Null": "YES",
+        "Key": "",
+        "Default": null,
+        "Extra": ""
       }
     ],
     "rowCount": 1,
@@ -88,8 +96,8 @@
       "AVG_ROW_LENGTH": 16384,
       "DATA_LENGTH": 16384,
       "INDEX_LENGTH": 0,
-      "CREATE_TIME": "2025-12-03T10:41:42.000Z",
-      "UPDATE_TIME": "2025-12-03T12:56:06.000Z"
+      "CREATE_TIME": "2025-12-06T21:21:25.000Z",
+      "UPDATE_TIME": null
     }
   }
 }

@@ -93,6 +93,7 @@
 
       <!-- Navigation Links -->
       <div
+        id="tools-nav"
         style="
           margin-bottom: 20px;
           padding: 15px;
@@ -119,6 +120,41 @@
           style="color: #1da1f2; text-decoration: none; font-weight: 600"
         >
           ⚙️ Database Configuration
+        </a>
+        <!-- Orchestration links -->
+        <a
+          href="/orchestration-builder.html"
+          style="
+            margin-left: 15px;
+            margin-right: 15px;
+            color: #1da1f2;
+            text-decoration: none;
+            font-weight: 600;
+          "
+        >
+          🧭 Orchestration Builder
+        </a>
+        <a
+          href="/orchestration-manager.html"
+          style="
+            margin-left: 0;
+            color: #1da1f2;
+            text-decoration: none;
+            font-weight: 600;
+          "
+        >
+          ⚙️ Orchestration Manager
+        </a>
+        <a
+          href="/orchestration-monitor.html"
+          style="
+            margin-left: 12px;
+            color: #1da1f2;
+            text-decoration: none;
+            font-weight: 600;
+          "
+        >
+          🔍 Orchestration Monitor
         </a>
       </div>
 
@@ -227,10 +263,17 @@
           const urlParams = new URLSearchParams(window.location.search);
           const selectedTablesParam = urlParams.get("selectedTables");
 
-          // If an active config exists and no explicit selectedTables param, start with explorer
+          // Previously auto-redirected to /explorer when an active config existed.
+          // Stop auto-redirecting; instead show a prominent button users can click.
           if (!selectedTablesParam && active) {
-            window.location.href = "/explorer";
-            return;
+            const nav = document.getElementById("tools-nav");
+            if (nav) {
+              const banner = document.createElement("div");
+              banner.style.marginTop = "10px";
+              banner.innerHTML =
+                '<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;"><div style="flex:1; font-weight:600; color:#0d6efd">Active DB configuration detected.</div><a href="/explorer" class="btn btn-outline-primary">Open Database Explorer</a></div>';
+              nav.appendChild(banner);
+            }
           }
 
           // Otherwise continue loading tables and UI

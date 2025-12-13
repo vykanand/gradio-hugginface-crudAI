@@ -1,0 +1,27 @@
+{
+  "module": "appsthink_crm",
+  "id": "orch_appsthink_crm_1765143082596",
+  "name": "CREATE orchestration for appsthink_crm",
+  "description": "Auto-generated create orchestration for appsthink_crm",
+  "version": "1.0",
+  "operation": "async",
+  "steps": [
+    {
+      "name": "create_row",
+      "type": "db.create",
+      "connector": "jsonAdapter",
+      "params": {
+        "table": "appsthink_crm",
+        "document": "${inputs.row}"
+      }
+    },
+    {
+      "name": "notify",
+      "type": "logical.run",
+      "script": "const created = inputs.create_row || {}; return { message: 'Created ' + JSON.stringify(created) };"
+    }
+  ],
+  "outputs": {
+    "result": "notify"
+  }
+}

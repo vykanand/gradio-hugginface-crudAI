@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orchestration Manager</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background: #f7f9fc;
+      }
+      .card-pre {
+        white-space: pre-wrap;
+        font-size: 12px;
+      }
+      .small-metric {
+        font-size: 0.9rem;
+      }
+      .monospace {
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container mt-3">
+      <div class="d-flex justify-content-between align-items-center">
+        <h4>Orchestration Manager</h4>
+        <div>
+          <button id="refresh-all" class="btn btn-sm btn-outline-primary">
+            Refresh
+          </button>
+          <button id="pause-poll" class="btn btn-sm btn-outline-secondary">
+            Pause Poll
+          </button>
+        </div>
+      </div>
+
+      <div class="row mt-3">
+        <div class="col-md-4">
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-title">System Health</h6>
+              <div id="health-panel">Loading...</div>
+            </div>
+          </div>
+
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-title">Kafka Metrics</h6>
+              <div id="kafka-panel">Loading...</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <h6 class="card-title">Quick Actions</h6>
+              <div class="d-grid gap-2">
+                <button id="scan-stuck" class="btn btn-sm btn-warning">
+                  Scan & Recover Stuck
+                </button>
+                <button id="purge-dlq" class="btn btn-sm btn-danger">
+                  Purge Dead Letter Queue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-8">
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-title">Trace / Execution Search</h6>
+              <div class="input-group mb-2">
+                <input
+                  id="trace-input"
+                  class="form-control"
+                  placeholder="Enter traceId or executionId"
+                />
+                <button id="trace-search" class="btn btn-primary">
+                  Search
+                </button>
+              </div>
+              <div id="trace-result">No trace selected</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <h6 class="card-title">Execution Details</h6>
+              <div id="exec-summary"></div>
+              <div id="steps-list" class="mt-2"></div>
+              <div id="controls" class="mt-2"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+      const POLL_INTERVAL = 3000;
+      let poller = null;
+      let paused = false;
+
+      function human(ms) {
+        if (!ms) return "-";
+        if (ms < 1000) return ms + "ms";
+        return (ms / 1000).toFixed(2) + "s";
+      }
+
+      async function fetchHealth() {
+        try {
+          const r = await axios.get("/api/health").catch(() => null);
+          const panel = document.getElementById("health-panel");
+          if (!r || !r.data) {
+            panel.innerHTML =
+              '<div class="text-muted">Health endpoint unavailable</div>';
+            return;
+          }
+          const d = r.data;
+          panel.innerHTML = `
+            <div class="small-metric">Workflows: <strong>${
+              d.workflows?.runningExecutions || 0
+            }</strong> running</div>
+            <div class="small-metric">Waiting: <strong>${
+              d.workflows?.waitingExecutions || 0
+            }</strong></div>
+            <div class="small-metric">Failed: <strong>${
+              d.workflows?.failedExecutions || 0
+            }</strong></div>
+            <div class="small-metric">Active transactions: <strong>${
+              d.transactions?.active || 0
+            }</strong></div>
+            <div class="small-metric">Open Circuit Breakers: <strong>${
+              d.metrics?.openCircuitBreakers || 0
+            }</strong></div>
+          `;
+        } catch (e) {
+          console.error("health err", e);
+        }
+      }
+
+      async function fetchKafka() {
+        try {
+          const r = await axios.get("/api/kafka/metrics").catch(() => null);
+          const panel = document.getElementById("kafka-panel");
+          if (!r || !r.data) {
+            panel.innerHTML =
+              '<div class="text-muted">Kafka metrics unavailable</div>';
+            return;
+          }
+          const t = r.data;
+          panel.innerHTML = `
+            <div class="small-metric">Topic: <strong>${
+              t.topic || "ORCHESTRATIONS_EVENTS"
+            }</strong></div>
+            <div class="small-metric">Partitions: <strong>${
+              t.partitions || "-"
+            }</strong></div>
+            <div class="small-metric">Lag: <strong>${t.lag || 0}</strong></div>
+            <div class="small-metric">Consumer Groups: <strong>${
+              (t.consumerGroups || []).length
+            }</strong></div>
+          `;
+        } catch (e) {
+          console.error("kafka err", e);
+        }
+      }
+
+      function renderSteps(rec) {
+        const stepsList = document.getElementById("steps-list");
+        const controls = document.getElementById("controls");
+        if (!rec) {
+          stepsList.innerHTML = "";
+          controls.innerHTML = "";
+          return;
+        }
+        const steps = rec.steps || rec.plan || rec.executionSteps || [];
+        stepsList.innerHTML = "";
+        steps.forEach((s, idx) => {
+          const c = document.createElement("div");
+          c.className = "card mb-2";
+          const status =
+            s.status || s.state || (s.error ? "failed" : "pending");
+          const title = s.name || s.step || "step_" + (idx + 1);
+          c.innerHTML = `<div class="card-body"><h6>${title} <small class="text-muted">(${status})</small></h6><pre class="card-pre">${JSON.stringify(
+            s,
+            null,
+            2
+          )}</pre></div>`;
+          stepsList.appendChild(c);
+        });
+
+        controls.innerHTML = `
+          <div class="btn-group" role="group">
+            <button id="btn-retry" class="btn btn-sm btn-outline-primary">Retry Execution</button>
+            <button id="btn-compensate" class="btn btn-sm btn-outline-warning">Compensate</button>
+            <button id="btn-replay" class="btn btn-sm btn-outline-secondary">Replay Event</button>
+            <button id="btn-open-logs" class="btn btn-sm btn-outline-info">Open Logs</button>
+          </div>
+        `;
+
+        // attach handlers
+        document.getElementById("btn-retry").onclick = () =>
+          controlAction("retry");
+        document.getElementById("btn-compensate").onclick = () =>
+          controlAction("compensate");
+        document.getElementById("btn-replay").onclick = () =>
+          controlAction("replay");
+        document.getElementById("btn-open-logs").onclick = () => {
+          if (window.open)
+            window.open("/logs?traceId=" + encodeURIComponent(currentTrace));
+        };
+      }
+
+      let currentTrace = null;
+
+      async function fetchExecutionByTrace(id) {
+        try {
+          // Try by execution id first
+          let r = await axios
+            .get("/orchestrate/status/" + encodeURIComponent(id))
+            .catch(() => null);
+          if (r && r.data && (r.data.ok || r.data.id)) {
+            const rec = r.data.record || r.data;
+            showExecution(rec);
+            return;
+          }
+
+          // Fallback to metrics API that returns timeline/execution by trace
+          r = await axios
+            .get(
+              "/api/orchestrations/metrics?traceId=" + encodeURIComponent(id)
+            )
+            .catch(() => null);
+          if (r && r.data) {
+            const rec = r.data;
+            showExecution(rec);
+            return;
+          }
+
+          document.getElementById("trace-result").innerHTML =
+            '<div class="alert alert-warning">Not found</div>';
+          renderSteps(null);
+        } catch (e) {
+          console.error("fetchExecutionByTrace err", e);
+        }
+      }
+
+      function showExecution(rec) {
+        currentTrace = rec.traceId || rec.id || rec.executionId || currentTrace;
+        document.getElementById(
+          "trace-result"
+        ).innerHTML = `<div class="mb-2 monospace">Trace: <strong>${currentTrace}</strong></div>`;
+        const summary = document.getElementById("exec-summary");
+        summary.innerHTML = `
+          <div class="row">
+            <div class="col-sm-6"><div class="small-metric">Execution ID: <strong>${
+              rec.executionId || rec.id || "-"
+            }</strong></div></div>
+            <div class="col-sm-6"><div class="small-metric">Status: <strong>${
+              rec.status || "-"
+            }</strong></div></div>
+          </div>
+          <div class="mt-2"><small class="text-muted">Started: ${
+            rec.startedAt || rec.createdAt || "-"
+          }</small></div>
+        `;
+        renderSteps(rec);
+      }
+
+      async function controlAction(action) {
+        if (!currentTrace) return alert("No execution selected");
+        try {
+          const urlMap = {
+            retry:
+              "/api/executions/" + encodeURIComponent(currentTrace) + "/retry",
+            compensate:
+              "/api/executions/" +
+              encodeURIComponent(currentTrace) +
+              "/compensate",
+            replay:
+              "/api/executions/" + encodeURIComponent(currentTrace) + "/replay",
+          };
+          const url = urlMap[action];
+          if (!url) return alert("Unknown action");
+          const r = await axios
+            .post(url)
+            .catch(
+              (e) =>
+                e.response || { data: { ok: false, error: "request failed" } }
+            );
+          if (r && r.data && (r.data.ok || r.data.success)) {
+            alert(action + " queued");
+          } else {
+            alert(action + " failed: " + JSON.stringify(r && r.data));
+          }
+        } catch (e) {
+          console.error("control err", e);
+          alert(action + " error");
+        }
+      }
+
+      // Quick commands
+      document
+        .getElementById("scan-stuck")
+        .addEventListener("click", async () => {
+          try {
+            const r = await axios
+              .post("/api/executions/recover-stuck")
+              .catch(() => null);
+            alert("recover requested");
+          } catch (e) {
+            alert("error");
+          }
+        });
+      document
+        .getElementById("purge-dlq")
+        .addEventListener("click", async () => {
+          if (!confirm("Purge DLQ? This is destructive.")) return;
+          try {
+            await axios.post("/api/kafka/dlq/purge");
+            alert("DLQ purge requested");
+          } catch (e) {
+            alert("error");
+          }
+        });
+
+      document.getElementById("trace-search").addEventListener("click", () => {
+        const q = document.getElementById("trace-input").value.trim();
+        if (!q) return alert("enter traceId/executionId");
+        fetchExecutionByTrace(q);
+      });
+
+      document.getElementById("refresh-all").addEventListener("click", () => {
+        fetchHealth();
+        fetchKafka();
+        if (currentTrace) fetchExecutionByTrace(currentTrace);
+      });
+      document.getElementById("pause-poll").addEventListener("click", () => {
+        paused = !paused;
+        document.getElementById("pause-poll").innerText = paused
+          ? "Resume Poll"
+          : "Pause Poll";
+      });
+
+      // Auto poll
+      setInterval(() => {
+        if (paused) return;
+        fetchHealth();
+        fetchKafka();
+      }, POLL_INTERVAL);
+
+      // On load, fetch once
+      fetchHealth();
+      fetchKafka();
+
+      // Auto-load from query
+      (function () {
+        const p = new URLSearchParams(window.location.search);
+        const id = p.get("executionId") || p.get("traceId") || p.get("id");
+        if (id) {
+          document.getElementById("trace-input").value = id;
+          fetchExecutionByTrace(id);
+        }
+      })();
+    </script>
+  </body>
+</html>

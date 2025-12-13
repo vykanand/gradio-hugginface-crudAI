@@ -1,0 +1,11 @@
+{
+  "arithmetic": ["add","subtract","multiply","divide","modulo","negate"],
+  "aggregation": ["sum","average","count","min","max"],
+  "percentage": ["percentageOf","percentageChange","ratio","proportion"],
+  "datetime": ["addDays","addMonths","addYears","subtractDates","getMonth","getYear","timeDiff"],
+  "conditional": ["if","case","compare","rangeCheck"],
+  "lookup": ["lookupRate","lookupRow","lookupCategory"],
+  "sequence": ["getNext","popOldest","popNewest","weightedAverage"],
+  "structural": ["groupBy","aggregate","iterate","accumulate"],
+  "iterative": ["loopN","loopUntil","reduce","map"]
+}

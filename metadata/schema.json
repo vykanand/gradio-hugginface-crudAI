@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Orchestration Metadata",
+  "type": "object",
+  "required": ["id","name","steps"],
+  "properties": {
+    "id": {"type":"string"},
+    "name": {"type":"string"},
+    "description": {"type":"string"},
+    "mode": {"type":"string","enum":["sync","async","batch"],"default":"sync"},
+    "inputs": {"type":"object"},
+    "steps": {
+      "type":"array",
+      "items": {
+        "type":"object",
+        "required":["id","type"],
+        "properties":{
+          "id":{"type":"string"},
+          "type":{"type":"string","enum":["logic","data"]},
+          "action":{"type":"string"},
+          "resource":{"type":"string"},
+          "params":{"type":"object"},
+          "snippet":{"type":"string"},
+          "compensation":{"type":"array"}
+        }
+      }
+    },
+    "outputs": {"type":"object"}
+  }
+}

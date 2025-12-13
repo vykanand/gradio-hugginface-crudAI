@@ -1,0 +1,195 @@
+{
+  "version": "1.0.0",
+  "definitions": [
+    {
+      "id": "invoice-processing",
+      "name": "Invoice Processing",
+      "description": "Process vendor invoice from receipt to payment",
+      "triggerEvent": "InvoiceReceived",
+      "concept": "Invoice",
+      "steps": [
+        {
+          "id": "validate",
+          "type": "action",
+          "name": "Validate Invoice",
+          "action": "ValidateInvoice",
+          "next": "determine-approval",
+          "x": 44,
+          "y": 100,
+          "outgoing": [
+            "determine-approval"
+          ]
+        },
+        {
+          "id": "determine-approval",
+          "type": "decision",
+          "name": "Determine Approval Required",
+          "ruleSet": "invoice-approval-policy",
+          "branches": {
+            "requiresApproval:true": "await-approval",
+            "requiresApproval:false": "post-accounting"
+          },
+          "default": "await-approval",
+          "x": 300,
+          "y": 100,
+          "outgoing": [
+            "await-approval"
+          ],
+          "next": "await-approval"
+        },
+        {
+          "id": "await-approval",
+          "type": "human-task",
+          "name": "Await Approval",
+          "taskType": "approval",
+          "assignmentRule": "approvalLevel",
+          "timeout": "72h",
+          "next": "check-approval-result",
+          "x": 653,
+          "y": 100,
+          "outgoing": [
+            "check-approval-result"
+          ]
+        },
+        {
+          "id": "check-approval-result",
+          "type": "decision",
+          "name": "Check Approval Result",
+          "condition": {
+            "field": "approved",
+            "operator": "==",
+            "value": true
+          },
+          "branches": {
+            "true": "post-accounting",
+            "false": "reject-invoice"
+          },
+          "x": 935,
+          "y": 85,
+          "outgoing": [
+            "post-accounting",
+            "post-accounting"
+          ],
+          "next": "post-accounting"
+        },
+        {
+          "id": "post-accounting",
+          "type": "action",
+          "name": "Post to Accounting",
+          "action": "PostAccountingEntry",
+          "next": null,
+          "x": 1157,
+          "y": 99,
+          "outgoing": []
+        },
+        {
+          "id": "reject-invoice",
+          "type": "action",
+          "name": "Reject Invoice",
+          "action": "RejectInvoice",
+          "next": null,
+          "outgoing": []
+        },
+        {
+          "id": "close-workflow",
+          "type": "end",
+          "name": "Complete",
+          "outgoing": [],
+          "next": null
+        }
+      ],
+      "connections": [
+        {
+          "from": "validate",
+          "to": "determine-approval",
+          "id": "c_1765660706065_702"
+        },
+        {
+          "from": "determine-approval",
+          "to": "await-approval",
+          "id": "c_1765660720796_9160"
+        },
+        {
+          "from": "await-approval",
+          "to": "check-approval-result",
+          "id": "c_1765660727628_7517"
+        },
+        {
+          "from": "check-approval-result",
+          "to": "post-accounting",
+          "id": "c_1765660764394_2039"
+        },
+        {
+          "from": "check-approval-result",
+          "to": "post-accounting",
+          "id": "c_1765660768099_6546"
+        }
+      ]
+    },
+    {
+      "id": "purchase-order-approval",
+      "name": "Purchase Order Approval",
+      "description": "Approve purchase order with dynamic routing",
+      "triggerEvent": "PurchaseOrderCreated",
+      "concept": "PurchaseOrder",
+      "steps": [
+        {
+          "id": "validate-po",
+          "type": "action",
+          "name": "Validate PO",
+          "action": "ValidatePO",
+          "next": "determine-approver"
+        },
+        {
+          "id": "determine-approver",
+          "type": "decision",
+          "name": "Determine Approver",
+          "ruleSet": "purchase-order-routing",
+          "next": "await-approval"
+        },
+        {
+          "id": "await-approval",
+          "type": "human-task",
+          "name": "Await PO Approval",
+          "taskType": "approval",
+          "assignmentRule": "approver",
+          "timeout": "48h",
+          "next": "check-result"
+        },
+        {
+          "id": "check-result",
+          "type": "decision",
+          "name": "Check Result",
+          "condition": {
+            "field": "approved",
+            "operator": "==",
+            "value": true
+          },
+          "branches": {
+            "true": "create-po",
+            "false": "cancel-po"
+          }
+        },
+        {
+          "id": "create-po",
+          "type": "action",
+          "name": "Create Purchase Order",
+          "action": "CreatePO",
+          "next": "complete"
+        },
+        {
+          "id": "cancel-po",
+          "type": "action",
+          "name": "Cancel Purchase Order",
+          "action": "CancelPO",
+          "next": "complete"
+        },
+        {
+          "id": "complete",
+          "type": "end",
+          "name": "Complete"
+        }
+      ]
+    }
+  ]
+}

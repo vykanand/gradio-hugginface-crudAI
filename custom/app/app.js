@@ -56,6 +56,155 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   const port = window.location.port ? `:${window.location.port}` : '';
   const basePath = window.location.pathname.split('/')[1];
   $scope.url = `${protocol}//${hostname}${port}/${basePath}/api`;
+  // Strict: orchestration endpoints MUST come from central `/orchestration.config.json` only.
+  // Do not use any window-level fallback or client-side defaults.
+  let orchBase = '';
+  $scope.orchConfig = null;
+  $scope.orchServerUrl = '';
+
+  // Resolve orchestration URLs strictly from central config. Returns full URL string or null if not resolvable.
+  function orchUrl(pathOrKey) {
+    // Require central config and orchestration_server_url
+    if (!$scope.orchConfig || !$scope.orchConfig.orchestration_server_url) return null;
+    const base = ($scope.orchConfig.orchestration_server_url || '').toString().replace(/\/$/, '');
+    if (!pathOrKey) return base;
+
+    // If a leading slash is passed, append as path to base
+    if (pathOrKey.startsWith('/')) return base + pathOrKey;
+
+    // Otherwise treat as a key and lookup in api_paths
+    if ($scope.orchConfig.api_paths && $scope.orchConfig.api_paths[pathOrKey]) {
+      const mapped = $scope.orchConfig.api_paths[pathOrKey];
+      if (!mapped) return null;
+      if (/^https?:\/\//i.test(mapped)) return mapped; // mapped absolute URL
+      if (mapped.startsWith('/')) return base + mapped;
+      return base + '/' + mapped;
+    }
+
+    // Not configured — do not use any fallback
+    return null;
+  }
+
+  // Event-driven architecture: CRUD operations publish events to Kafka
+  // Workflows subscribe to events they care about - no binding configuration needed
+
+    // Publish a CRUD event to orchestration system with full traceability
+    $scope.publishCrudEvent = function(action, payload) {
+      try {
+        // Generate unique trace ID for end-to-end visibility
+        const traceId = `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const eventObj = {
+          traceId: traceId,                  // Unique ID tracked through entire system
+          contractVersion: '1.0',
+          eventType: 'CRUD',
+          action: action,                    // 'create', 'update', 'delete'
+          module: $scope.moduleKey || (window.__MODULE_NAME__ || document.body.getAttribute('data-module') || ''),
+          timestamp: new Date().toISOString(),
+          payload: payload || {},
+          userId: $scope.userdata?.id,       // Who triggered the action
+          sessionId: $scope.sessionId        // Browser session tracking
+        };
+        
+        // Publish to Kafka via monitor endpoint
+        fetch('/monitor/publish', { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ subject: 'ORCHESTRATIONS_EVENTS', payload: eventObj }) 
+        })
+        .then(response => {
+          if (response.ok) {
+            console.log(`[${traceId}] CRUD event published: ${action} on ${eventObj.module}`);
+          }
+        })
+        .catch(error => {
+          console.error(`[${traceId}] Failed to publish CRUD event:`, error);
+        });
+        
+        // Return trace ID for optional UI tracking
+        return traceId;
+      } catch (e) { 
+        console.warn('publishCrudEvent error', e); 
+        return null;
+      }
+    };
+
+  // compute module key once for the page (used for bindings lookup)
+  try {
+    // Priority:
+    // 1. `window.__MODULE_NAME__` if host app explicitly sets it
+    // 2. `data-module` attribute on body
+    // 3. Derive from URL path: use the folder name that contains this page (parent directory)
+    let inferred = '';
+    try {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        // e.g. /some/path/module/boot.html -> module is second-to-last segment
+        inferred = parts[parts.length - 2];
+      } else if (parts.length === 1) {
+        // e.g. /module or /boot.html served from /module/ -> fallback to first segment
+        inferred = parts[0];
+      }
+    } catch (e) { inferred = ''; }
+    $scope.moduleKey = (window.__MODULE_NAME__ || document.body.getAttribute('data-module') || inferred || '').toString();
+  } catch (e) { $scope.moduleKey = ''; }
+
+  // Event-driven architecture: No custom row buttons or bindings modal needed
+  // All CRUD operations automatically publish events that workflows can subscribe to
+                }
+              }
+              $scope.orchBindings = norm;
+              window.top.postMessage('success^Bindings saved', '*');
+              modalInstance.close();
+            } else {
+              window.top.postMessage('error^Failed to save bindings', '*');
+            }
+          }).catch(e => { window.top.postMessage('error^Bindings save error', '*'); });
+      };
+
+      modalScope.cancel = function () { modalInstance.dismiss('cancel'); };
+
+      // build modal template
+      const tpl = `
+        <div class="modal-header"><h3 class="modal-title">Bindings for module: ${$scope.moduleKey}</h3></div>
+        <div class="modal-body" style="max-height:60vh;overflow:auto;">
+          <div class="form-group">
+            <label>Create</label>
+            <select class="form-control" ng-model="bindings.create" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- none --</option></select>
+          </div>
+          <div class="form-group">
+            <label>Read</label>
+            <select class="form-control" ng-model="bindings.read" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- none --</option></select>
+          </div>
+          <div class="form-group">
+            <label>Update</label>
+            <select class="form-control" ng-model="bindings.update" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- none --</option></select>
+          </div>
+          <div class="form-group">
+            <label>Delete</label>
+            <select class="form-control" ng-model="bindings.delete" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- none --</option></select>
+          </div>
+          <hr />
+          <h4>Custom Row Buttons</h4>
+          <p>Add buttons that will appear on each row and execute an orchestration with the clicked row as input.</p>
+          <div ng-repeat="(idx, cb) in customButtons track by $index" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <input class="form-control" ng-model="cb.label" placeholder="Button label" />
+            <select class="form-control" ng-model="cb.orchestrationId" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- select orch --</option></select>
+            <button class="btn btn-danger" ng-click="removeCustomButton($index)">Remove</button>
+          </div>
+          <div style="margin-top:8px;">
+            <button class="btn btn-secondary" ng-click="addCustomButton()">Add Button</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" ng-click="save()">Save</button>
+          <button class="btn btn-default" ng-click="cancel()">Cancel</button>
+        </div>
+      `;
+
+      const modalInstance = $uibModal.open({ template: tpl, scope: modalScope, size: 'lg' });
+    }).catch(e => console.warn('openBindings failed', e));
+  };
   // deepcode ignore JS-0002: Development logging for API endpoint debugging
   if (typeof console !== 'undefined') console.log('API Base URL:', $scope.url);
   const passphrase = "yug";
@@ -1317,7 +1466,34 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       return;
     }
 
-    //post req start
+    // If there's a binding for this module+action, run orchestration instead of default API
+    try {
+      const moduleKey = (window.__MODULE_NAME__ || document.body.getAttribute('data-module') || window.location.pathname.split('/')[1] || '').toString();
+      const binding = ($scope.orchBindings && $scope.orchBindings[moduleKey] && $scope.orchBindings[moduleKey]['create']) || null;
+      if (binding && action === 'setcontent') {
+        // run orchestration by binding (supports sync/async)
+        $scope.invokeOrchestrationByBinding(binding, addata)
+          .then(resp => {
+            if (resp && (resp.executionId || resp.success)) {
+              window.top.postMessage('success^Created Successfully (via orchestration)', '*');
+            } else {
+              window.top.postMessage('error^Orchestration failed to queue', '*');
+            }
+            window.location.reload();
+          }).catch(e => { window.top.postMessage('error^Orchestration error', '*'); window.location.reload(); });
+        return;
+      }
+    } catch (e) { console.warn('binding check failed', e); }
+
+    // Publish CRUD event - workflows will react automatically
+    try { 
+      const traceId = $scope.publishCrudEvent('create', addata); 
+      console.log(`[${traceId}] Create event published for module`);
+    } catch (e) { 
+      console.warn('publishCrudEvent create failed', e); 
+    }
+
+    //post req start (default behaviour)
     $http({
       method: "POST",
       url: url,
@@ -1469,6 +1645,13 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     console.log("Raw edls:", $scope.edls);
     console.log("Formatted eddata:", eddata);
     console.log("POST URL:", $scope.url);
+    // Publish CRUD event - workflows will react automatically
+    try { 
+      const traceId = $scope.publishCrudEvent('update', eddata); 
+      console.log(`[${traceId}] Update event published`);
+    } catch (e) { 
+      console.warn('publishCrudEvent update failed', e); 
+    }
 
     //post req start
     $http({
@@ -1780,6 +1963,14 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   };
 
   $scope.delyes = function (id, vx) {
+    // Publish CRUD event - workflows will react automatically
+    try { 
+      const traceId = $scope.publishCrudEvent('delete', { id: id, role: $scope.userdata && $scope.userdata.role }); 
+      console.log(`[${traceId}] Delete event published for id: ${id}`);
+    } catch (e) { 
+      console.warn('publishCrudEvent delete failed', e); 
+    }
+
     var url = $scope.url + "?id=" + id + "&" + vx + "=true";
     // //post req start
     $http({

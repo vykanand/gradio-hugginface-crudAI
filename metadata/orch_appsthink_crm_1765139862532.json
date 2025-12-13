@@ -1,0 +1,40 @@
+{
+  "id": "orch_appsthink_crm_1765139862532",
+  "name": "Orchestration for appsthink_crm",
+  "description": "Auto-generated template from discovered schema",
+  "version": "1.0",
+  "steps": [
+    {
+      "name": "read_rows",
+      "type": "db.query",
+      "connector": "jsonAdapter",
+      "params": {
+        "table": "appsthink_crm",
+        "limit": 10
+      }
+    },
+    {
+      "name": "create_sample",
+      "type": "db.create",
+      "connector": "jsonAdapter",
+      "params": {
+        "table": "appsthink_crm",
+        "document": {
+          "id": "{{input.id}}",
+          "email": "{{input.email}}",
+          "phone_number": "{{input.phone_number}}",
+          "company_name": "{{input.company_name}}",
+          "address": "{{input.address}}"
+        }
+      }
+    },
+    {
+      "name": "notify",
+      "type": "logical.run",
+      "script": "const created = inputs.create_sample || inputs.create_sample.result || {}; return { message: 'Created ' + JSON.stringify(created) };"
+    }
+  ],
+  "outputs": {
+    "result": "notify"
+  }
+}

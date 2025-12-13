@@ -1,0 +1,131 @@
+{
+  "version": "1.0.0",
+  "ruleSets": [
+    {
+      "id": "invoice-approval-policy",
+      "name": "Invoice Approval Policy",
+      "description": "Determines who must approve invoices based on amount and vendor risk",
+      "concept": "Invoice",
+      "rules": [
+        {
+          "id": "high-amount-cfo-approval",
+          "condition": {
+            "type": "comparison",
+            "field": "amount",
+            "operator": ">",
+            "value": 100000
+          },
+          "outcome": {
+            "approvalLevel": "CFO",
+            "requiresApproval": true
+          }
+        },
+        {
+          "id": "high-risk-vendor-compliance",
+          "condition": {
+            "type": "comparison",
+            "field": "vendor.risk",
+            "operator": "==",
+            "value": "High"
+          },
+          "outcome": {
+            "approvalLevel": "Compliance",
+            "requiresApproval": true
+          }
+        },
+        {
+          "id": "low-amount-auto-approve",
+          "condition": {
+            "type": "comparison",
+            "field": "amount",
+            "operator": "<",
+            "value": 1000
+          },
+          "outcome": {
+            "approvalLevel": "Auto",
+            "requiresApproval": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "inventory-reconciliation-policy",
+      "name": "Inventory Reconciliation Policy",
+      "description": "Determines when inventory reconciliation is needed",
+      "concept": "InventoryItem",
+      "rules": [
+        {
+          "id": "variance-under-threshold-auto",
+          "condition": {
+            "type": "and",
+            "conditions": [
+              {
+                "type": "comparison",
+                "field": "variance",
+                "operator": "<",
+                "value": 0.01
+              },
+              {
+                "type": "comparison",
+                "field": "varianceAmount",
+                "operator": "<",
+                "value": 100
+              }
+            ]
+          },
+          "outcome": {
+            "action": "AutoReconcile",
+            "requiresApproval": false
+          }
+        },
+        {
+          "id": "high-variance-manual",
+          "condition": {
+            "type": "comparison",
+            "field": "variance",
+            "operator": ">=",
+            "value": 0.01
+          },
+          "outcome": {
+            "action": "ManualReconciliation",
+            "requiresApproval": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "purchase-order-routing",
+      "name": "Purchase Order Routing",
+      "description": "Routes purchase orders to appropriate approver",
+      "concept": "PurchaseOrder",
+      "rules": [
+        {
+          "id": "po-over-50k-director",
+          "condition": {
+            "type": "comparison",
+            "field": "amount",
+            "operator": ">",
+            "value": 50000
+          },
+          "outcome": {
+            "approver": "Director",
+            "priority": "High"
+          }
+        },
+        {
+          "id": "po-under-5k-manager",
+          "condition": {
+            "type": "comparison",
+            "field": "amount",
+            "operator": "<=",
+            "value": 5000
+          },
+          "outcome": {
+            "approver": "Manager",
+            "priority": "Normal"
+          }
+        }
+      ]
+    }
+  ]
+}

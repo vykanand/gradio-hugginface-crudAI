@@ -413,7 +413,8 @@
                             <div class="row" style="margin-top: 1rem;">
                                 <div class="col-sm-12">
                                     <div class="text-right align-to-box-header">
-                                        <a class="pure-material-button-contained add-entry-button btna" ng-click="addproduct()" role="button"><span class="btn-label">+ Add Entry</span></a>
+                                                <!-- Simple Add Entry button - CRUD events are published automatically -->
+                                                <a class="pure-material-button-contained add-entry-button btna" ng-click="addproduct()" role="button"><span class="btn-label">+ Add Entry</span></a>
                                     </div>
                                 </div>
                             </div>
@@ -457,12 +458,17 @@
                             <span ng-if="!isCheckboxField(key, column) && !isDateString(column)">{{ column }}</span>
                         </td>
                         <td style="display: flex;">
+                            <!-- Simple action buttons - CRUD events are published automatically -->
                             <a href="javascript:void(0);" style="cursor: pointer;text-decoration: none;"
                                 ng-click="editproduct(data)"> <img src="edit.png" style="width: 25px;height: 25px;">
                             </a>
                             <a href="javascript:void(0);" style="cursor: pointer;text-decoration: none;" id="btdel"
                                 ng-click="deleteproduct(data.id)"> <img src="delete.png"
                                     style="width: 25px;height: 25px;"> </a>
+                            <!-- Dynamic custom buttons bound to orchestrations -->
+                            <span ng-if="moduleKey && orchBindings && orchBindings[moduleKey] && orchBindings[moduleKey].customButtons" style="display:flex;align-items:center;margin-left:6px;">
+                                <button ng-repeat="cb in orchBindings[moduleKey].customButtons" class="btn btn-xs btn-info" ng-click="runRowButton(cb, data)" style="margin-left:6px;padding:6px 8px;">{{cb.label}}</button>
+                            </span>
                         </td>
 
                     </tr>
