@@ -24,3 +24,11 @@ $env:PORT = '5050';
 $env:AI_MODE = 'proxy';
 node .\\server.js
 ```
+
+## Orchestration Guide
+
+For step-by-step instructions on designing and building orchestrations (non-technical friendly), including a worked example for an insurance claims triage workflow, see the guide:
+
+- **Orchestration Guide:** [docs/ORCHESTRATION_GUIDE.md](docs/ORCHESTRATION_GUIDE.md)
+
+The guide includes taxonomy and rules examples, sample payloads, and a walkthrough for creating workflows in the builder UI.

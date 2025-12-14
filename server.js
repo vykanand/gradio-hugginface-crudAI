@@ -126,24 +126,6 @@ async function getActiveConfig() {
     return configs.configurations[configs.activeConfig];
 }
 
-// Add database connection test endpoint
-app.get('/api/testConnection', async (req, res) => {
-    try {
-        // Test query to verify connection
-        await pool.query('SELECT 1');
-        res.json({ 
-            status: 'connected',
-            config: await getActiveConfig()
-        });
-    } catch (error) {
-        res.status(500).json({ 
-            error: 'Database connection failed',
-            details: error.message,
-            config: await getActiveConfig()
-        });
-    }
-});
-
 // Routes for multiple configurations
 app.get('/api/configs', async (req, res) => {
     try {
@@ -216,60 +198,8 @@ async function initializeDatabase() {
     console.log("MySQL pool created with active configuration");
 }
 
-// Redis client setup
-// const redisClient = redis.createClient({
-//   url: "redis://localhost:6379", // Replace with your Redis URL if needed
-// });
-// redisClient.on("error", (err) => console.error("Redis error:", err));
-// redisClient.connect().then(() => console.log("Redis connected."));
-
-// MySQL connection pool setup
-// const pool = mysql.createPool({
-//   host: "sql7.freemysqlhosting.net",
-//   user: "sql7755772",
-//   password: "LbQdGMH7w9",
-//   database: "sql7755772",
-//   waitForConnections: true,
-//   connectionLimit: 10, // Set appropriate connection limit based on load
-//   queueLimit: 0,
-// });
-
-// const pool = mysql.createPool({
-//   host: "localhost",
-//   user: "root",
-//   password: "niveus@123",
-//   database: "dynamic_app",
-//   waitForConnections: true,
-//   connectionLimit: 10, // Set appropriate connection limit based on load
-//   queueLimit: 0,
-// });
-// console.log("MySQL pool created.");
-
-// Function to get table structure with Redis caching
+// Function to get table structure
 async function getTableStructure(entity) {
-  // try {
-  //   // Check cache
-  //   const cachedData = await redisClient.get(entity);
-  //   if (cachedData) {
-  //     console.log(`Cache hit for table: ${entity}`);
-  //     return JSON.parse(cachedData);
-  //   }
-
-  //   console.log(`Cache miss for table: ${entity}. Fetching from DB...`);
-  //   // Fetch from DB
-  //   const tableStructure = await getTableStructureFromDB(entity);
-  //   if (tableStructure) {
-  //     // Store in cache with 1-day expiry
-  //     await redisClient.set(entity, JSON.stringify(tableStructure), {
-  //       EX: 86400, // Expire in 1 day
-  //     });
-  //   }
-  //   return tableStructure;
-  // } catch (error) {
-  //   console.error("Error accessing Redis or DB:", error.message);
-  //   return null;
-  // }
-
   const connection = await pool.getConnection();
   try {
     const [columns] = await connection.query(`DESCRIBE ${entity}`);
@@ -323,6 +253,37 @@ app.get("/database", async (req, res) => {
     } catch (e2) {
       console.warn('schema_store fallback not available:', e2 && e2.message ? e2.message : e2);
       res.status(500).json({ error: 'Failed to fetch database schema.', details: error && error.message ? error.message : String(error) });
+    }
+  }
+});
+
+// New: API used by the frontend DB Explorer
+// Returns { tables: { tableName: { columns: [ { name, type, nullable, key }, ... ] } } }
+app.get('/api/db/schema', async (req, res) => {
+  try {
+    const tableNames = await getAllTables();
+    if (!tableNames) return res.status(500).json({ ok: false, error: 'Failed to list tables' });
+    const tables = {};
+    for (const t of tableNames) {
+      try {
+        const cols = await getTableStructure(t);
+        tables[t] = { columns: (cols || []).map(c => ({ name: c.name || c.Field || c.Field, type: c.type || c.Type || c.Type, nullable: c.nullable || c.Null === 'YES', key: c.key || c.Key })) };
+      } catch (e) {
+        tables[t] = { columns: [] };
+      }
+    }
+    return res.json({ ok: true, tables });
+  } catch (error) {
+    console.error('/api/db/schema error', error && error.stack ? error.stack : error);
+    // Fallback: try to return persisted schema_store index if available
+    try {
+      const indexPath = path.join(__dirname, 'config', 'schema_store', 'index.json');
+      const raw = await fs.readFile(indexPath, 'utf8');
+      const index = JSON.parse(raw);
+      return res.json({ ok: true, fallback: true, source: 'schema_store', index });
+    } catch (e2) {
+      console.warn('schema_store fallback not available:', e2 && e2.message ? e2.message : e2);
+      return res.status(500).json({ ok: false, error: 'Failed to fetch DB schema', details: error && error.message ? error.message : String(error) });
     }
   }
 });
@@ -1794,6 +1755,25 @@ app.post('/api/rules', async (req, res) => {
 app.put('/api/rules/:id', async (req, res) => {
   try {
     const ruleSet = await rulesEngine.updateRuleSet(req.params.id, req.body);
+    res.json({ ok: true, ruleSet });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Backwards-compatible endpoint: some clients historically used
+// PUT /api/rules/:id/rules to update just the rules array. Support
+// that shape and forward to the canonical updateRuleSet call.
+app.put('/api/rules/:id/rules', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const updates = {};
+    if (Array.isArray(body.rules)) updates.rules = body.rules;
+    else if (Array.isArray(body)) updates.rules = body;
+    else if (body && body.id && Array.isArray(body.rules)) updates.rules = body.rules;
+    // If no rules present, respond with bad request
+    if (!updates.rules) return res.status(400).json({ ok: false, error: 'Missing rules array in request body' });
+    const ruleSet = await rulesEngine.updateRuleSet(req.params.id, updates);
     res.json({ ok: true, ruleSet });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });

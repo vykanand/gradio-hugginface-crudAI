@@ -180,6 +180,36 @@
         box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
       }
 
+      /* draggable column styles (used by modal and drag/drop) */
+      .db-column {
+        padding: 6px 8px;
+        border-radius: 6px;
+        margin-bottom: 4px;
+        background: #f7f9fc;
+        cursor: grab;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .db-column:active {
+        cursor: grabbing;
+      }
+
+      /* droppable inputs styles */
+      .droppable-input {
+        transition: all 0.12s ease;
+        border: 1px dashed transparent;
+      }
+      .droppable-input.droppable {
+        border-color: #cfe9ff;
+        background: #fbfdff;
+      }
+      .droppable-input.drag-over {
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.12);
+        border-color: #667eea;
+        background: #f0f7ff;
+      }
+
       .workflow-node-header {
         display: flex;
         align-items: center;
@@ -554,6 +584,7 @@
               <div class="node-desc">Execute a business action</div>
             </div>
           </div>
+
           <div class="node-type" draggable="true" data-node-type="decision">
             <div class="node-icon" style="background: #fff3e0; color: #f57c00">
               🔀
@@ -717,12 +748,826 @@
       let connections = [];
       let nextNodeId = 1;
 
+      /* UI Modal + Notification Utilities (modular, reusable) */
+      // modal root will be created dynamically
+      (function initUIHelpers() {
+        const root = document.createElement("div");
+        root.id = "ui-modals";
+        document.body.appendChild(root);
+
+        const toastRoot = document.createElement("div");
+        toastRoot.id = "toast-root";
+        document.body.appendChild(toastRoot);
+
+        // inject styles for modal and toast
+        const style = document.createElement("style");
+        style.innerHTML = `
+          #ui-modals .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:9999; }
+          #ui-modals .modal { background: white; border-radius:10px; width: 640px; max-width:95%; box-shadow:0 20px 50px rgba(0,0,0,0.3); overflow:hidden; }
+          #ui-modals .modal-header { padding:16px 20px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #eef2f7; }
+          #ui-modals .modal-title { font-weight:700; color:#2c3e50; }
+          #ui-modals .modal-close { width:34px; height:34px; border-radius:999px; background:#e74c3c; color:white; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 4px 12px rgba(231,76,60,0.18); }
+          #ui-modals .modal-body { padding:18px 20px; max-height:60vh; overflow:auto; }
+          #ui-modals .modal-footer { padding:12px 20px; border-top:1px solid #eef2f7; display:flex; gap:8px; justify-content:flex-end; }
+          #ui-modals .form-row { margin-bottom:12px; }
+          #ui-modals label { display:block; font-size:0.85rem; color:#657786; margin-bottom:6px; }
+          #ui-modals input[type=text], #ui-modals textarea, #ui-modals select { width:100%; padding:10px 12px; border-radius:8px; border:1px solid #e6eef6; font-size:0.95rem; }
+          #ui-modals textarea { min-height:120px; font-family:inherit; }
+
+          #toast-root { position: fixed; right: 20px; top: 20px; z-index:10000; display:flex; flex-direction:column; gap:10px; }
+          .toast { background:white; border-radius:8px; padding:10px 14px; box-shadow:0 6px 18px rgba(0,0,0,0.12); border-left:6px solid #667eea; color:#2c3e50; min-width:180px; }
+          .toast.success { border-left-color: #28a745; }
+          .toast.error { border-left-color: #e74c3c; }
+          .toast.info { border-left-color: #667eea; }
+        `;
+        document.head.appendChild(style);
+      })();
+
+      function showToast(message, type = "info", timeout = 3000) {
+        const root = document.getElementById("toast-root");
+        if (!root) return;
+        // simple dedupe: avoid showing identical message repeatedly within short window
+        try {
+          window.__lastToast = window.__lastToast || { msg: null, ts: 0 };
+          const now = Date.now();
+          if (
+            window.__lastToast.msg === message &&
+            now - window.__lastToast.ts < Math.max(1500, timeout - 500)
+          ) {
+            return;
+          }
+          window.__lastToast.msg = message;
+          window.__lastToast.ts = now;
+        } catch (e) {
+          /* ignore */
+        }
+        const t = document.createElement("div");
+        t.className = "toast " + (type || "info");
+        t.textContent = message;
+        root.appendChild(t);
+        setTimeout(() => {
+          t.style.opacity = "0";
+          setTimeout(() => t.remove(), 250);
+        }, timeout);
+      }
+
+      function _createModal({
+        title,
+        bodyEl,
+        onConfirm,
+        confirmText = "OK",
+        cancelText = "Cancel",
+        showCancel = true,
+      }) {
+        return new Promise((resolve) => {
+          const root = document.getElementById("ui-modals");
+          const overlay = document.createElement("div");
+          overlay.className = "modal-overlay";
+          const modal = document.createElement("div");
+          modal.className = "modal";
+
+          const header = document.createElement("div");
+          header.className = "modal-header";
+          const titleEl = document.createElement("div");
+          titleEl.className = "modal-title";
+          titleEl.textContent = title || "";
+          const closeBtn = document.createElement("div");
+          closeBtn.className = "modal-close";
+          closeBtn.innerHTML = "&times;";
+          header.appendChild(titleEl);
+          header.appendChild(closeBtn);
+
+          const body = document.createElement("div");
+          body.className = "modal-body";
+          if (bodyEl) body.appendChild(bodyEl);
+
+          const footer = document.createElement("div");
+          footer.className = "modal-footer";
+          const btnCancel = document.createElement("button");
+          btnCancel.className = "btn btn-secondary";
+          btnCancel.textContent = cancelText;
+          const btnConfirm = document.createElement("button");
+          btnConfirm.className = "btn btn-primary";
+          btnConfirm.textContent = confirmText;
+          if (showCancel) footer.appendChild(btnCancel);
+          footer.appendChild(btnConfirm);
+
+          modal.appendChild(header);
+          modal.appendChild(body);
+          modal.appendChild(footer);
+          overlay.appendChild(modal);
+          root.appendChild(overlay);
+
+          function cleanup() {
+            overlay.remove();
+          }
+          closeBtn.addEventListener("click", () => {
+            cleanup();
+            resolve(null);
+          });
+          btnCancel.addEventListener("click", () => {
+            cleanup();
+            resolve(null);
+          });
+          btnConfirm.addEventListener("click", () => {
+            try {
+              const v = onConfirm && onConfirm();
+              cleanup();
+              resolve(v === undefined ? true : v);
+            } catch (e) {
+              cleanup();
+              resolve(null);
+            }
+          });
+        });
+      }
+
+      async function showConfirm(message) {
+        const el = document.createElement("div");
+        const p = document.createElement("div");
+        p.textContent = message;
+        el.appendChild(p);
+        const res = await _createModal({
+          title: "Confirm",
+          bodyEl: el,
+          confirmText: "Yes",
+          cancelText: "No",
+        });
+        return !!res;
+      }
+
+      async function showFormModal(title, fields) {
+        const form = document.createElement("div");
+        const inputs = {};
+        fields.forEach((f) => {
+          const row = document.createElement("div");
+          row.className = "form-row";
+          const label = document.createElement("label");
+          label.textContent = f.label || f.name;
+          row.appendChild(label);
+          let input;
+          if (f.type === "textarea") {
+            input = document.createElement("textarea");
+            input.value = f.value || "";
+          } else {
+            input = document.createElement("input");
+            input.type = "text";
+            input.value = f.value || "";
+          }
+          if (f.placeholder) input.placeholder = f.placeholder;
+          inputs[f.name] = input;
+          row.appendChild(input);
+
+          // optional DB chooser button
+          if (f.dbChooser) {
+            const btn = document.createElement("button");
+            btn.className = "btn btn-secondary";
+            btn.style.marginLeft = "8px";
+            btn.textContent = "Choose from DB";
+            btn.addEventListener("click", async (ev) => {
+              ev.preventDefault();
+              const sel = await showDBExplorer("Choose table/columns");
+              if (sel) {
+                // if selection contains a single table and columns, populate input
+                if (sel.table && sel.columns) {
+                  // default populate as table.column1,column2
+                  input.value = sel.table + "." + sel.columns.join(",");
+                } else if (sel.table) {
+                  input.value = sel.table;
+                }
+              }
+            });
+            row.appendChild(btn);
+          }
+
+          form.appendChild(row);
+        });
+        const res = await _createModal({
+          title,
+          bodyEl: form,
+          onConfirm: () => {
+            const out = {};
+            for (const k of Object.keys(inputs)) out[k] = inputs[k].value;
+            return out;
+          },
+          confirmText: "Save",
+        });
+        return res;
+      }
+
+      async function showJSONEditor(title, json) {
+        const ta = document.createElement("textarea");
+        ta.value = JSON.stringify(json || [], null, 2);
+        ta.style.fontFamily = "monospace";
+        ta.style.minHeight = "240px";
+        const res = await _createModal({
+          title,
+          bodyEl: ta,
+          onConfirm: () => {
+            try {
+              return JSON.parse(ta.value);
+            } catch (e) {
+              showToast("Invalid JSON: " + e.message, "error");
+              return null;
+            }
+          },
+          confirmText: "Save",
+        });
+        return res;
+      }
+
+      // DB Explorer modal - reusable component
+      async function showDBExplorer(title) {
+        // loads DB schema from the required /api/db/schema endpoint (no fallbacks)
+        const root = document.createElement("div");
+        root.style.display = "flex";
+        root.style.flexDirection = "column";
+        root.style.gap = "8px";
+
+        // tabs
+        const tabs = document.createElement("div");
+        tabs.style.display = "flex";
+        tabs.style.gap = "8px";
+        const tabTables = document.createElement("button");
+        tabTables.className = "btn btn-secondary";
+        tabTables.textContent = "Tables";
+        const tabTaxonomy = document.createElement("button");
+        tabTaxonomy.className = "btn btn-secondary";
+        tabTaxonomy.textContent = "Taxonomy";
+        const tabRules = document.createElement("button");
+        tabRules.className = "btn btn-secondary";
+        tabRules.textContent = "Rule Sets";
+        tabs.appendChild(tabTables);
+        tabs.appendChild(tabTaxonomy);
+        tabs.appendChild(tabRules);
+        root.appendChild(tabs);
+
+        const body = document.createElement("div");
+        body.style.display = "flex";
+        body.style.gap = "12px";
+        body.style.minHeight = "240px";
+
+        const left = document.createElement("div");
+        left.style.width = "260px";
+        left.style.borderRight = "1px solid #eef2f7";
+        left.style.padding = "8px";
+        const middle = document.createElement("div");
+        middle.style.flex = "1";
+        const right = document.createElement("div");
+        right.style.width = "260px";
+        right.style.borderLeft = "1px solid #eef2f7";
+        right.style.padding = "8px";
+
+        body.appendChild(left);
+        body.appendChild(middle);
+        body.appendChild(right);
+        root.appendChild(body);
+
+        // load DB schema from the single required endpoint (no fallbacks)
+        let schema = null;
+        try {
+          const r = await fetch("/api/db/schema");
+          if (r.ok) schema = await r.json();
+        } catch (e) {
+          schema = null;
+        }
+        if (!schema) {
+          showToast(
+            "Unable to load database schema from /api/db/schema",
+            "error"
+          );
+          // expose empty schema so UI can render an informative message
+          schema = { tables: {} };
+        }
+
+        const tables = schema.tables || {};
+        try {
+          window.__lastDbTables = tables;
+        } catch (e) {}
+        const tableKeys = Object.keys(tables);
+        // tables that require fully-qualified column values (table.column)
+        const QUALIFIED_TABLES = ["crimping_process"];
+        let selectedTable = null;
+        let selectedColumns = [];
+        let selectedTables = [];
+        let selectedTaxItem = null;
+        let taxonomyList = taxonomy || {
+          concepts: {},
+          events: {},
+          actions: {},
+        };
+        let rulesList = [];
+        let selectedRuleSet = null;
+        let activeTab = "tables";
+
+        tabTables.addEventListener("click", () => {
+          activeTab = "tables";
+          render();
+        });
+        tabTaxonomy.addEventListener("click", () => {
+          activeTab = "taxonomy";
+          render();
+        });
+        tabRules.addEventListener("click", async () => {
+          activeTab = "rules";
+          await loadRules();
+          render();
+        });
+
+        async function render() {
+          left.innerHTML = "";
+          middle.innerHTML = "";
+          right.innerHTML = "";
+          tabTables.classList.toggle("active", activeTab === "tables");
+          tabTaxonomy.classList.toggle("active", activeTab === "taxonomy");
+          tabRules.classList.toggle("active", activeTab === "rules");
+          if (activeTab === "tables") {
+            // allow multi-select of tables via checkboxes
+            const selectAll = document.createElement("div");
+            selectAll.style.display = "flex";
+            selectAll.style.justifyContent = "space-between";
+            selectAll.style.alignItems = "center";
+            selectAll.style.padding = "6px 8px";
+            const lbl = document.createElement("div");
+            lbl.textContent = "Tables";
+            lbl.style.fontWeight = "700";
+            const selAllBtn = document.createElement("button");
+            selAllBtn.className = "btn btn-secondary";
+            selAllBtn.textContent = "Clear";
+            selAllBtn.addEventListener("click", () => {
+              selectedTables = [];
+              selectedTable = null;
+              selectedColumns = [];
+              render();
+            });
+            selectAll.appendChild(lbl);
+            selectAll.appendChild(selAllBtn);
+            left.appendChild(selectAll);
+
+            tableKeys.forEach((t) => {
+              const row = document.createElement("div");
+              row.style.display = "flex";
+              row.style.alignItems = "center";
+              row.style.justifyContent = "space-between";
+              row.style.padding = "6px 8px";
+              row.style.cursor = "pointer";
+              // highlight if this table is selected in the multi-select list
+              if (selectedTables.includes(t)) {
+                row.style.background = "#eef6ff";
+                row.style.borderRadius = "6px";
+              }
+              const name = document.createElement("div");
+              name.textContent = t;
+              name.style.flex = "1";
+              name.addEventListener("click", (ev) => {
+                // single-select behavior: select this table exclusively
+                ev.stopPropagation();
+                selectedTables = [t];
+                selectedTable = t;
+                selectedColumns = [];
+                render();
+              });
+              row.appendChild(name);
+              left.appendChild(row);
+            });
+            if (selectedTable) {
+              const cols =
+                (tables[selectedTable] && tables[selectedTable].columns) || [];
+              // Middle pane header
+              const midHeader = document.createElement("div");
+              midHeader.style.fontWeight = "700";
+              midHeader.style.marginBottom = "8px";
+              midHeader.textContent = "Columns";
+              middle.appendChild(midHeader);
+
+              cols.forEach((c) => {
+                const colName = c.name || c;
+                const row = document.createElement("div");
+                row.className = "db-column";
+                row.style.display = "flex";
+                row.style.alignItems = "center";
+                row.style.justifyContent = "space-between";
+                row.style.padding = "6px 8px";
+                row.style.cursor = "pointer";
+                // visual highlight for selected columns
+                if (selectedColumns.includes(colName)) {
+                  row.style.background = "#eef6ff";
+                }
+                const label = document.createElement("div");
+                label.textContent = colName;
+                label.draggable = true;
+                label.addEventListener("dragstart", (ev) => {
+                  const colVal = QUALIFIED_TABLES.includes(selectedTable)
+                    ? `${selectedTable}.${colName}`
+                    : colName;
+                  const payload = { table: selectedTable, column: colVal };
+                  ev.dataTransfer.setData(
+                    "application/json",
+                    JSON.stringify(payload)
+                  );
+                });
+                label.addEventListener("click", (ev) => {
+                  ev.stopPropagation();
+                  // toggle selection (store qualified name when required)
+                  const qualified = QUALIFIED_TABLES.includes(selectedTable)
+                    ? `${selectedTable}.${colName}`
+                    : colName;
+                  if (selectedColumns.includes(qualified)) {
+                    selectedColumns = selectedColumns.filter(
+                      (x) => x !== qualified
+                    );
+                  } else {
+                    selectedColumns.push(qualified);
+                  }
+                  render();
+                });
+                const dragHint = document.createElement("div");
+                dragHint.style.opacity = "0.6";
+                dragHint.style.fontSize = "0.85rem";
+                dragHint.textContent = "⇅";
+                row.appendChild(label);
+                row.appendChild(dragHint);
+                middle.appendChild(row);
+              });
+
+              // Right pane: selection summary + removable pills
+              const h = document.createElement("div");
+              h.style.fontWeight = "700";
+              h.style.marginTop = "8px";
+              h.textContent = selectedTable;
+              right.appendChild(h);
+
+              const selLabel = document.createElement("div");
+              selLabel.style.fontWeight = "600";
+              selLabel.style.marginTop = "8px";
+              selLabel.textContent = "Selected Columns";
+              right.appendChild(selLabel);
+
+              const selectionBox = document.createElement("div");
+              selectionBox.style.display = "flex";
+              selectionBox.style.flexWrap = "wrap";
+              selectionBox.style.gap = "6px";
+              selectionBox.style.marginTop = "6px";
+
+              if (!selectedColumns || !selectedColumns.length) {
+                const none = document.createElement("div");
+                none.style.color = "#657786";
+                none.textContent = "No columns selected";
+                selectionBox.appendChild(none);
+              } else {
+                selectedColumns.forEach((col) => {
+                  const pill = document.createElement("div");
+                  pill.style.display = "inline-flex";
+                  pill.style.alignItems = "center";
+                  pill.style.gap = "6px";
+                  pill.style.background = "#eef6ff";
+                  pill.style.padding = "6px 8px";
+                  pill.style.borderRadius = "999px";
+                  pill.style.fontSize = "0.9rem";
+                  const name = document.createElement("div");
+                  name.textContent = col;
+                  const removeBtn = document.createElement("button");
+                  removeBtn.className = "btn btn-ghost";
+                  removeBtn.style.padding = "4px 6px";
+                  removeBtn.textContent = "✕";
+                  removeBtn.title = "Remove";
+                  removeBtn.addEventListener("click", (ev) => {
+                    ev.stopPropagation();
+                    selectedColumns = selectedColumns.filter((x) => x !== col);
+                    render();
+                  });
+                  pill.appendChild(name);
+                  pill.appendChild(removeBtn);
+                  selectionBox.appendChild(pill);
+                });
+              }
+
+              right.appendChild(selectionBox);
+
+              // add a clear selected columns button
+              const clearCols = document.createElement("button");
+              clearCols.className = "btn btn-secondary";
+              clearCols.style.marginTop = "8px";
+              clearCols.textContent = "Clear Selected";
+              clearCols.addEventListener("click", () => {
+                selectedColumns = [];
+                render();
+              });
+              right.appendChild(clearCols);
+            }
+          } else if (activeTab === "taxonomy") {
+            taxonomyList = taxonomy || {
+              concepts: {},
+              events: {},
+              actions: {},
+            };
+            const header = document.createElement("div");
+            header.style.display = "flex";
+            header.style.gap = "8px";
+            const btnNewConcept = document.createElement("button");
+            btnNewConcept.className = "btn btn-primary";
+            btnNewConcept.textContent = "New Concept";
+            btnNewConcept.addEventListener("click", async () => {
+              await showAddConceptDialog();
+              taxonomyList = taxonomy;
+              render();
+            });
+            header.appendChild(btnNewConcept);
+            left.appendChild(header);
+            const concepts = Object.values(taxonomyList.concepts || {});
+            concepts.forEach((c) => {
+              const el = document.createElement("div");
+              el.style.padding = "8px";
+              el.style.cursor = "pointer";
+              el.textContent = c.name;
+              el.addEventListener("click", () => {
+                selectedTaxItem = { type: "concept", item: c };
+                render();
+              });
+              if (
+                selectedTaxItem &&
+                selectedTaxItem.item &&
+                selectedTaxItem.item.id === c.id
+              )
+                el.style.background = "#eef2f7";
+              left.appendChild(el);
+            });
+            if (selectedTaxItem && selectedTaxItem.type === "concept") {
+              const it = selectedTaxItem.item;
+              const title = document.createElement("div");
+              title.style.fontWeight = "700";
+              title.textContent = it.name;
+              right.appendChild(title);
+              const desc = document.createElement("div");
+              desc.textContent = it.description || "";
+              right.appendChild(desc);
+              const foot = document.createElement("div");
+              foot.style.marginTop = "8px";
+              const btnEdit = document.createElement("button");
+              btnEdit.className = "btn btn-secondary";
+              btnEdit.textContent = "Edit";
+              btnEdit.addEventListener("click", async () => {
+                await editConcept(it.id);
+                taxonomyList = taxonomy;
+                render();
+              });
+              const btnDelete = document.createElement("button");
+              btnDelete.className = "btn btn-secondary";
+              btnDelete.style.marginLeft = "8px";
+              btnDelete.textContent = "Delete";
+              btnDelete.addEventListener("click", async () => {
+                const ok = await showConfirm("Delete concept?");
+                if (ok) {
+                  await deleteConcept(it.id);
+                  taxonomyList = taxonomy;
+                  selectedTaxItem = null;
+                  render();
+                }
+              });
+              foot.appendChild(btnEdit);
+              foot.appendChild(btnDelete);
+              right.appendChild(foot);
+            }
+          } else if (activeTab === "rules") {
+            // load rule sets
+            try {
+              const r = await fetch("/api/rules");
+              const d = await r.json();
+              rulesList = d.ruleSets || [];
+            } catch (e) {
+              rulesList = [];
+            }
+            const header = document.createElement("div");
+            header.style.display = "flex";
+            header.style.gap = "8px";
+            const btnNew = document.createElement("button");
+            btnNew.className = "btn btn-primary";
+            btnNew.textContent = "New Rule Set";
+            btnNew.addEventListener("click", async () => {
+              await showAddRuleSetDialog();
+              render();
+            });
+            header.appendChild(btnNew);
+            left.appendChild(header);
+            rulesList.forEach((rset) => {
+              const el = document.createElement("div");
+              el.style.padding = "8px";
+              el.style.cursor = "pointer";
+              el.textContent = rset.name;
+              el.addEventListener("click", () => {
+                selectedRuleSet = rset;
+                render();
+              });
+              if (selectedRuleSet && selectedRuleSet.id === rset.id)
+                el.style.background = "#eef2f7";
+              left.appendChild(el);
+            });
+            if (selectedRuleSet) {
+              const title = document.createElement("div");
+              title.style.fontWeight = "700";
+              title.textContent = selectedRuleSet.name;
+              right.appendChild(title);
+              const desc = document.createElement("div");
+              desc.textContent = selectedRuleSet.description || "";
+              right.appendChild(desc);
+              const rules = document.createElement("pre");
+              rules.textContent = JSON.stringify(
+                selectedRuleSet.rules || [],
+                null,
+                2
+              );
+              rules.style.whiteSpace = "pre-wrap";
+              right.appendChild(rules);
+              const foot = document.createElement("div");
+              foot.style.marginTop = "8px";
+              const btnEdit = document.createElement("button");
+              btnEdit.className = "btn btn-secondary";
+              btnEdit.textContent = "Edit";
+              btnEdit.addEventListener("click", async () => {
+                await editRuleSet(selectedRuleSet.id);
+                render();
+              });
+              const btnEditRules = document.createElement("button");
+              btnEditRules.className = "btn btn-secondary";
+              btnEditRules.style.marginLeft = "8px";
+              btnEditRules.textContent = "Edit Rules";
+              btnEditRules.addEventListener("click", async () => {
+                await editRules(selectedRuleSet.id);
+                render();
+              });
+              const btnDelete = document.createElement("button");
+              btnDelete.className = "btn btn-secondary";
+              btnDelete.style.marginLeft = "8px";
+              btnDelete.textContent = "Delete";
+              btnDelete.addEventListener("click", async () => {
+                const ok = await showConfirm("Delete rule set?");
+                if (ok) {
+                  await deleteRuleSet(selectedRuleSet.id);
+                  selectedRuleSet = null;
+                  render();
+                }
+              });
+              foot.appendChild(btnEdit);
+              foot.appendChild(btnEditRules);
+              foot.appendChild(btnDelete);
+              right.appendChild(foot);
+            }
+          }
+        }
+
+        // initial render
+        render();
+
+        const res = await _createModal({
+          title: title || "DB Explorer",
+          bodyEl: root,
+          onConfirm: () => {
+            if (activeTab === "tables") {
+              // prefer single-table shape using `selectedTable` and `selectedColumns`
+              if (selectedTable) {
+                return {
+                  type: "table",
+                  table: selectedTable,
+                  columns: selectedColumns || [],
+                };
+              }
+              // fallback to any selectedTables array (legacy)
+              if (!selectedTables || !selectedTables.length) return null;
+              const out = selectedTables.map((tn) => ({
+                table: tn,
+                columns:
+                  tables[tn] && tables[tn].columns
+                    ? (tables[tn].columns || []).map((c) =>
+                        QUALIFIED_TABLES.includes(tn)
+                          ? `${tn}.${(c && c.name) || c}`
+                          : (c && c.name) || c
+                      )
+                    : [],
+              }));
+              return { type: "tables", tables: out };
+            }
+            if (activeTab === "taxonomy") {
+              if (!selectedTaxItem) return null;
+              return { type: selectedTaxItem.type, item: selectedTaxItem.item };
+            }
+            if (activeTab === "rules") {
+              if (!selectedRuleSet) return null;
+              return { type: "rules", item: selectedRuleSet };
+            }
+            return null;
+          },
+          confirmText: "Use Selection",
+          cancelText: "Close",
+        });
+        return res;
+      }
+
+      // Setup drag/drop from DB Explorer into canvas nodes
+      function setupDBDragDrop() {
+        // Highlight droppable inputs on dragover and support dropping directly into inputs
+        document.addEventListener("dragover", (e) => {
+          if (!e.dataTransfer) return;
+          const raw = e.dataTransfer.getData("application/json");
+          if (!raw) return;
+          const el = document.elementFromPoint(e.clientX, e.clientY);
+          // highlight droppable inputs
+          const input =
+            el && (el.closest ? el.closest(".droppable-input") : null);
+          document
+            .querySelectorAll(".droppable-input")
+            .forEach((inp) => inp.classList.remove("drag-over"));
+          if (input) {
+            input.classList.add("drag-over");
+            e.preventDefault();
+          } else {
+            // allow canvas drops too
+            if (e.dataTransfer.types.includes("application/json"))
+              e.preventDefault();
+          }
+        });
+
+        document.addEventListener("drop", (e) => {
+          if (!e.dataTransfer) return;
+          const raw = e.dataTransfer.getData("application/json");
+          if (!raw) return;
+          let payload;
+          try {
+            payload = JSON.parse(raw);
+          } catch (err) {
+            console.debug("drop: invalid payload", err);
+            return;
+          }
+          const el = document.elementFromPoint(e.clientX, e.clientY);
+          if (!el) return;
+          // prefer dropping onto droppable input
+          const input = el.closest && el.closest(".droppable-input");
+          if (input) {
+            console.debug("[DBDragDrop] dropped on input", input, payload);
+            // format payload into input value
+            if (payload.table && payload.column) {
+              input.value = payload.table + "." + payload.column;
+            } else if (payload.table) {
+              input.value = payload.table;
+            }
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+            input.classList.remove("drag-over");
+            e.preventDefault();
+            return;
+          }
+          // fallback: drop on canvas node
+          const nodeEl = el.closest && el.closest(".workflow-node");
+          if (nodeEl) {
+            const nodeId = nodeEl.getAttribute("id")?.replace(/^wfnode-/, "");
+            if (nodeId) {
+              console.debug("[DBDragDrop] dropped on node", nodeId, payload);
+              applyDroppedDBField(nodeId, payload);
+            }
+          }
+          e.preventDefault();
+        });
+      }
+
+      function applyDroppedDBField(nodeId, payload) {
+        const nd = nodes.find((n) => n.id === nodeId);
+        if (!nd) return;
+        nd.data.db = nd.data.db || {};
+        if (payload.table) nd.data.db.table = payload.table;
+        if (payload.column) {
+          nd.data.db.columns = nd.data.db.columns || [];
+          if (!nd.data.db.columns.includes(payload.column))
+            nd.data.db.columns.push(payload.column);
+        }
+        // update node display
+        const el = document.getElementById("wfnode-" + nodeId);
+        if (el) {
+          const content = el.querySelector(".workflow-node-content");
+          if (content)
+            content.textContent = `DB:${nd.data.db.table || ""} ${
+              nd.data.db.columns ? "(" + nd.data.db.columns.join(",") + ")" : ""
+            }`;
+        }
+        showToast("DB field applied to node", "success");
+      }
+
+      // ensure DB drag/drop setup runs on init
+      document.addEventListener("DOMContentLoaded", () => {
+        try {
+          setupDBDragDrop();
+        } catch (e) {
+          console.warn("DB dragdrop init failed", e);
+        }
+      });
+
+      // Inline DB explorer removed — use modal-only `showDBExplorer()`
+
       // Initialize
       document.addEventListener("DOMContentLoaded", () => {
         loadTaxonomy();
         loadWorkflows();
         setupDragAndDrop();
       });
+
+      // Inline DB explorer initialization removed; modal is used instead
 
       function switchTab(tabName) {
         // Update tab buttons
@@ -912,7 +1757,7 @@
 
       async function saveCurrentWorkflow() {
         if (!currentWorkflow) {
-          alert("No workflow to save");
+          showToast("No workflow to save", "error");
           return;
         }
 
@@ -944,13 +1789,13 @@
           });
           const data = await res.json();
           if (data.ok) {
-            alert("Workflow saved successfully");
+            showToast("Workflow saved successfully", "success");
             await loadWorkflows();
           } else {
-            alert("Failed to save workflow: " + data.error);
+            showToast("Failed to save workflow: " + data.error, "error");
           }
         } catch (e) {
-          alert("Error saving workflow: " + e.message);
+          showToast("Error saving workflow: " + e.message, "error");
         }
       }
 
@@ -1234,8 +2079,87 @@
                 `
                     : ""
                 }
+                <div class="form-group">
+                    <label class="form-label">DB Target</label>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                      <input type="text" id="node-db-target-${
+                        node.id
+                      }" class="form-input" value="${
+          node.data.db
+            ? node.data.db.table +
+              (node.data.db.columns ? "." + node.data.db.columns.join(",") : "")
+            : ""
+        }" onchange="updateNodeDB('${node.id}', this.value)">
+                      <button class="btn btn-secondary" onclick="chooseDBForNode('${
+                        node.id
+                      }')">Choose from DB</button>
+                    </div>
+                </div>
                 <button class="btn btn-danger" onclick="deleteSelectedNode()">Delete Node</button>
             `;
+      }
+
+      async function chooseDBForNode(nodeId) {
+        const sel = await showDBExplorer("Choose table/columns for node");
+        if (!sel) return;
+        const nd = nodes.find((n) => n.id === nodeId);
+        if (!nd) return;
+        nd.data.db = nd.data.db || {};
+        if (sel.type === "table" || sel.type === undefined) {
+          nd.data.db.table = sel.table;
+          nd.data.db.columns = sel.columns || [];
+        } else if (sel.type === "tables" && Array.isArray(sel.tables)) {
+          // multi-table selection
+          nd.data.db.tables = sel.tables.map((t) => ({
+            table: t.table,
+            columns: t.columns || [],
+          }));
+        } else if (sel.type === "concept") {
+          nd.data.taxonomy = sel.item;
+        } else if (sel.type === "rules") {
+          nd.data.ruleSet = sel.item.id;
+        }
+        // refresh UI
+        renderCanvas();
+        if (selectedNode && selectedNode.id === nodeId) showNodeProperties(nd);
+        showToast("DB selection applied to node", "success");
+      }
+
+      function updateNodeDB(nodeId, raw) {
+        const nd = nodes.find((n) => n.id === nodeId);
+        if (!nd) return;
+        nd.data.db = nd.data.db || {};
+        // support multiple table entries separated by semicolon: table.col1,col2;other.col
+        if (raw.includes(";")) {
+          nd.data.db.tables = raw
+            .split(";")
+            .map((entry) => {
+              const parts = entry.split(".");
+              const t = parts[0] ? parts[0].trim() : "";
+              const cols = parts[1]
+                ? parts[1]
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                : [];
+              return { table: t, columns: cols };
+            })
+            .filter((x) => x.table);
+          // clear single-table fields
+          delete nd.data.db.table;
+          delete nd.data.db.columns;
+        } else {
+          const parts = raw.split(".");
+          nd.data.db.table = parts[0] || "";
+          if (parts[1])
+            nd.data.db.columns = parts[1]
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+          else nd.data.db.columns = [];
+          delete nd.data.db.tables;
+        }
+        renderCanvas();
       }
 
       function updateNodeProperty(prop, value) {
@@ -1354,10 +2278,12 @@
               path.style.cursor = "pointer";
               path.style.pointerEvents = "auto";
               path.addEventListener("click", (ev) => {
-                if (confirm("Delete connection?")) {
-                  connections = connections.filter((cc) => cc.id !== c.id);
-                  renderConnections();
-                }
+                showConfirm("Delete connection?").then((ok) => {
+                  if (ok) {
+                    connections = connections.filter((cc) => cc.id !== c.id);
+                    renderConnections();
+                  }
+                });
                 ev.stopPropagation();
               });
               svg.appendChild(path);
@@ -1593,20 +2519,36 @@
           const data = await res.json();
           if (data.ok) {
             const rulesList = document.getElementById("rules-list");
-            rulesList.innerHTML = data.ruleSets
-              .map(
-                (rs) => `
-                        <div class="list-item">
-                            <div class="list-item-title">${rs.name}</div>
-                            <div class="list-item-desc">${
-                              rs.description || ""
-                            } <span class="badge">${rs.concept}</span></div>
-                            <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #657786;">
-                                ${(rs.rules || []).length} rules
-                            </div>
-                        </div>
-                    `
-              )
+            rulesList.innerHTML = (data.ruleSets || [])
+              .map((rs) => {
+                const count = (rs.rules || []).length;
+                return `
+                  <div class="list-item">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <div>
+                        <div class="list-item-title">${rs.name}</div>
+                        <div class="list-item-desc">${
+                          rs.description || ""
+                        } <span class="badge">${rs.concept || ""}</span></div>
+                        <div style="margin-top:0.5rem; font-size:0.85rem; color:#657786;">${count} rule${
+                  count === 1 ? "" : "s"
+                }</div>
+                      </div>
+                      <div style="display:flex; gap:8px;">
+                        <button class="btn btn-secondary" onclick="editRuleSet('${
+                          rs.id
+                        }')">Edit</button>
+                        <button class="btn btn-secondary" onclick="editRules('${
+                          rs.id
+                        }')">Rules</button>
+                        <button class="btn btn-danger" onclick="deleteRuleSet('${
+                          rs.id
+                        }')">Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              })
               .join("");
           }
         } catch (e) {
@@ -1658,19 +2600,32 @@
         }
       }
 
-      // Dialog functions (simplified - would need full modal implementation)
-      function showAddConceptDialog() {
-        const name = prompt("Concept Name:");
-        if (!name) return;
-        const description = prompt("Description:");
-        addConcept({
-          id: name.replace(/\s+/g, ""),
-          name,
-          description,
-          properties: [],
+      // Dialog functions (modal-driven CRUD for taxonomy & rules)
+      async function showAddConceptDialog() {
+        const form = await showFormModal("Add Concept", [
+          { name: "name", label: "Concept Name" },
+          { name: "description", label: "Description", type: "textarea" },
+          {
+            name: "properties",
+            label: "Properties (comma separated)",
+            dbChooser: true,
+          },
+        ]);
+        if (!form) return;
+        const concept = {
+          id: form.name.replace(/\s+/g, ""),
+          name: form.name,
+          description: form.description,
+          properties: form.properties
+            ? form.properties
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : [],
           relatedEvents: [],
           relatedActions: [],
-        });
+        };
+        await addConcept(concept);
       }
 
       async function addConcept(concept) {
@@ -1682,32 +2637,41 @@
           });
           const data = await res.json();
           if (data.ok) {
+            showToast("Concept added", "success");
             await loadTaxonomy();
           } else {
-            alert("Failed to add concept: " + data.error);
+            showToast("Failed to add concept: " + data.error, "error");
           }
         } catch (e) {
-          alert("Error adding concept: " + e.message);
+          showToast("Error adding concept: " + e.message, "error");
         }
       }
 
       async function editConcept(id) {
         try {
           const c = taxonomy.concepts && taxonomy.concepts[id];
-          if (!c) return alert("Concept not found");
-          const name = prompt("Concept name:", c.name);
-          if (!name) return;
-          const description = prompt("Description:", c.description || "");
-          const props = prompt(
-            "Properties (comma separated):",
-            (c.properties || []).join(",")
-          );
+          if (!c) return showToast("Concept not found", "error");
+          const form = await showFormModal("Edit Concept", [
+            { name: "name", label: "Name", value: c.name },
+            {
+              name: "description",
+              label: "Description",
+              value: c.description || "",
+              type: "textarea",
+            },
+            {
+              name: "properties",
+              label: "Properties (comma separated)",
+              value: (c.properties || []).join(","),
+            },
+          ]);
+          if (!form) return;
           const body = {
             id,
-            name,
-            description,
-            properties: props
-              ? props
+            name: form.name,
+            description: form.description,
+            properties: form.properties
+              ? form.properties
                   .split(",")
                   .map((s) => s.trim())
                   .filter(Boolean)
@@ -1723,44 +2687,47 @@
           );
           const data = await res.json();
           if (data.ok) {
+            showToast("Concept updated", "success");
             await loadTaxonomy();
-          } else {
-            alert("Failed to update concept: " + data.error);
-          }
+          } else showToast("Failed to update concept: " + data.error, "error");
         } catch (e) {
-          alert("Error updating concept: " + e.message);
+          showToast("Error updating concept: " + e.message, "error");
         }
       }
 
       async function deleteConcept(id) {
-        if (
-          !confirm(
-            "Delete this concept? This will remove it from related events/actions."
-          )
-        )
-          return;
         try {
+          const ok = await showConfirm(
+            "Delete this concept? This will remove it from related events/actions."
+          );
+          if (!ok) return;
           const res = await fetch(
             `/api/taxonomy/concepts/${encodeURIComponent(id)}`,
             { method: "DELETE" }
           );
           const data = await res.json();
           if (data.ok) {
+            showToast("Concept deleted", "success");
             await loadTaxonomy();
-          } else {
-            alert("Failed to delete concept: " + data.error);
-          }
+          } else showToast("Failed to delete concept: " + data.error, "error");
         } catch (e) {
-          alert("Error deleting concept: " + e.message);
+          showToast("Error deleting concept: " + e.message, "error");
         }
       }
 
-      function showAddEventDialog() {
-        const name = prompt("Event name:");
-        if (!name) return;
-        const description = prompt("Description:") || "";
-        const concept = prompt("Concept (optional):") || "";
-        addEvent({ id: name.replace(/\s+/g, ""), name, description, concept });
+      async function showAddEventDialog() {
+        const form = await showFormModal("Add Event", [
+          { name: "name", label: "Event name" },
+          { name: "description", label: "Description", type: "textarea" },
+          { name: "concept", label: "Concept (optional)", dbChooser: true },
+        ]);
+        if (!form) return;
+        await addEvent({
+          id: form.name.replace(/\s+/g, ""),
+          name: form.name,
+          description: form.description,
+          concept: form.concept,
+        });
       }
 
       async function addEvent(ev) {
@@ -1771,22 +2738,40 @@
             body: JSON.stringify(ev),
           });
           const data = await res.json();
-          if (data.ok) await loadTaxonomy();
-          else alert("Failed to add event: " + data.error);
+          if (data.ok) {
+            showToast("Event added", "success");
+            await loadTaxonomy();
+          } else showToast("Failed to add event: " + data.error, "error");
         } catch (e) {
-          alert("Error adding event: " + e.message);
+          showToast("Error adding event: " + e.message, "error");
         }
       }
 
       async function editEvent(id) {
         try {
           const ev = taxonomy.events && taxonomy.events[id];
-          if (!ev) return alert("Event not found");
-          const name = prompt("Event name:", ev.name);
-          if (!name) return;
-          const description = prompt("Description:", ev.description || "");
-          const concept = prompt("Concept (optional):", ev.concept || "");
-          const body = { id, name, description, concept };
+          if (!ev) return showToast("Event not found", "error");
+          const form = await showFormModal("Edit Event", [
+            { name: "name", label: "Event name", value: ev.name },
+            {
+              name: "description",
+              label: "Description",
+              value: ev.description || "",
+              type: "textarea",
+            },
+            {
+              name: "concept",
+              label: "Concept (optional)",
+              value: ev.concept || "",
+            },
+          ]);
+          if (!form) return;
+          const body = {
+            id,
+            name: form.name,
+            description: form.description,
+            concept: form.concept,
+          };
           const res = await fetch(
             `/api/taxonomy/events/${encodeURIComponent(id)}`,
             {
@@ -1796,34 +2781,53 @@
             }
           );
           const data = await res.json();
-          if (data.ok) await loadTaxonomy();
-          else alert("Failed to update event: " + data.error);
+          if (data.ok) {
+            showToast("Event updated", "success");
+            await loadTaxonomy();
+          } else showToast("Failed to update event: " + data.error, "error");
         } catch (e) {
-          alert("Error updating event: " + e.message);
+          showToast("Error updating event: " + e.message, "error");
         }
       }
 
       async function deleteEvent(id) {
-        if (!confirm("Delete this event?")) return;
         try {
+          const ok = await showConfirm("Delete this event?");
+          if (!ok) return;
           const res = await fetch(
             `/api/taxonomy/events/${encodeURIComponent(id)}`,
             { method: "DELETE" }
           );
           const data = await res.json();
-          if (data.ok) await loadTaxonomy();
-          else alert("Failed to delete event: " + data.error);
+          if (data.ok) {
+            showToast("Event deleted", "success");
+            await loadTaxonomy();
+          } else showToast("Failed to delete event: " + data.error, "error");
         } catch (e) {
-          alert("Error deleting event: " + e.message);
+          showToast("Error deleting event: " + e.message, "error");
         }
       }
 
-      function showAddActionDialog() {
-        const name = prompt("Action name:");
-        if (!name) return;
-        const description = prompt("Description:") || "";
-        const concept = prompt("Concept (optional):") || "";
-        addAction({ id: name.replace(/\s+/g, ""), name, description, concept });
+      async function showAddActionDialog() {
+        const form = await showFormModal("Add Action", [
+          { name: "name", label: "Action name" },
+          { name: "description", label: "Description", type: "textarea" },
+          { name: "concept", label: "Concept (optional)", dbChooser: true },
+          {
+            name: "target",
+            label: "DB Target (table or table.column)",
+            placeholder: "schema.table or table.column",
+            dbChooser: true,
+          },
+        ]);
+        if (!form) return;
+        await addAction({
+          id: form.name.replace(/\s+/g, ""),
+          name: form.name,
+          description: form.description,
+          concept: form.concept,
+          target: form.target,
+        });
       }
 
       async function addAction(act) {
@@ -1834,22 +2838,48 @@
             body: JSON.stringify(act),
           });
           const data = await res.json();
-          if (data.ok) await loadTaxonomy();
-          else alert("Failed to add action: " + data.error);
+          if (data.ok) {
+            showToast("Action added", "success");
+            await loadTaxonomy();
+          } else showToast("Failed to add action: " + data.error, "error");
         } catch (e) {
-          alert("Error adding action: " + e.message);
+          showToast("Error adding action: " + e.message, "error");
         }
       }
 
       async function editAction(id) {
         try {
           const act = taxonomy.actions && taxonomy.actions[id];
-          if (!act) return alert("Action not found");
-          const name = prompt("Action name:", act.name);
-          if (!name) return;
-          const description = prompt("Description:", act.description || "");
-          const concept = prompt("Concept (optional):", act.concept || "");
-          const body = { id, name, description, concept };
+          if (!act) return showToast("Action not found", "error");
+          const form = await showFormModal("Edit Action", [
+            { name: "name", label: "Action name", value: act.name },
+            {
+              name: "description",
+              label: "Description",
+              value: act.description || "",
+              type: "textarea",
+            },
+            {
+              name: "concept",
+              label: "Concept (optional)",
+              value: act.concept || "",
+              dbChooser: true,
+            },
+            {
+              name: "target",
+              label: "DB Target (table or table.column)",
+              value: act.target || "",
+              dbChooser: true,
+            },
+          ]);
+          if (!form) return;
+          const body = {
+            id,
+            name: form.name,
+            description: form.description,
+            concept: form.concept,
+            target: form.target,
+          };
           const res = await fetch(
             `/api/taxonomy/actions/${encodeURIComponent(id)}`,
             {
@@ -1859,30 +2889,429 @@
             }
           );
           const data = await res.json();
-          if (data.ok) await loadTaxonomy();
-          else alert("Failed to update action: " + data.error);
+          if (data.ok) {
+            showToast("Action updated", "success");
+            await loadTaxonomy();
+          } else showToast("Failed to update action: " + data.error, "error");
         } catch (e) {
-          alert("Error updating action: " + e.message);
+          showToast("Error updating action: " + e.message, "error");
         }
       }
 
       async function deleteAction(id) {
-        if (!confirm("Delete this action?")) return;
         try {
+          const ok = await showConfirm("Delete this action?");
+          if (!ok) return;
           const res = await fetch(
             `/api/taxonomy/actions/${encodeURIComponent(id)}`,
             { method: "DELETE" }
           );
           const data = await res.json();
-          if (data.ok) await loadTaxonomy();
-          else alert("Failed to delete action: " + data.error);
+          if (data.ok) {
+            showToast("Action deleted", "success");
+            await loadTaxonomy();
+          } else showToast("Failed to delete action: " + data.error, "error");
         } catch (e) {
-          alert("Error deleting action: " + e.message);
+          showToast("Error deleting action: " + e.message, "error");
         }
       }
 
-      function showAddRuleSetDialog() {
-        alert("Rule set dialog - simplified for demo");
+      async function showAddRuleSetDialog() {
+        // Use visual rule builder for initial rules
+        const form = await showFormModal("Add Rule Set", [
+          { name: "name", label: "Rule set name" },
+          { name: "description", label: "Description", type: "textarea" },
+          { name: "concept", label: "Concept (optional)" },
+        ]);
+        if (!form) return;
+        const built = await showRuleBuilder("Define Rules (visual)", []);
+        if (built === null) return; // cancelled
+        await addRuleSet({
+          id: form.name.replace(/\s+/g, ""),
+          name: form.name,
+          description: form.description,
+          concept: form.concept,
+          rules: built || [],
+        });
+      }
+
+      async function addRuleSet(rs) {
+        try {
+          const res = await fetch("/api/rules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(rs),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast("Rule set added", "success");
+            await loadRules();
+          } else showToast("Failed to add rule set: " + data.error, "error");
+        } catch (e) {
+          showToast("Error adding rule set: " + e.message, "error");
+        }
+      }
+
+      async function editRuleSet(id) {
+        try {
+          const resList = await fetch("/api/rules");
+          const listData = await resList.json();
+          if (!listData.ok)
+            return showToast("Failed to fetch rule sets", "error");
+          const current = (listData.ruleSets || []).find((r) => r.id === id);
+          if (!current) return showToast("Rule set not found", "error");
+          const form = await showFormModal("Edit Rule Set", [
+            { name: "name", label: "Rule set name", value: current.name },
+            {
+              name: "description",
+              label: "Description",
+              value: current.description || "",
+              type: "textarea",
+            },
+            {
+              name: "concept",
+              label: "Concept (optional)",
+              value: current.concept || "",
+            },
+          ]);
+          if (!form) return;
+          // let user edit the rules visually
+          const updatedRules = await showRuleBuilder(
+            "Edit Rules (visual)",
+            current.rules || []
+          );
+          if (updatedRules === null) return;
+          const body = {
+            id,
+            name: form.name,
+            description: form.description,
+            concept: form.concept,
+            rules: updatedRules || [],
+          };
+          const res = await fetch(`/api/rules/${encodeURIComponent(id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast("Rule set updated", "success");
+            await loadRules();
+          } else showToast("Failed to update rule set: " + data.error, "error");
+        } catch (e) {
+          showToast("Error updating rule set: " + e.message, "error");
+        }
+      }
+
+      async function deleteRuleSet(id) {
+        try {
+          const ok = await showConfirm("Delete this rule set?");
+          if (!ok) return;
+          const res = await fetch(`/api/rules/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast("Rule set deleted", "success");
+            await loadRules();
+          } else showToast("Failed to delete rule set: " + data.error, "error");
+        } catch (e) {
+          showToast("Error deleting rule set: " + e.message, "error");
+        }
+      }
+
+      // Edit rules within a rule set (JSON editor modal)
+      async function editRules(id) {
+        try {
+          const resList = await fetch("/api/rules");
+          const listData = await resList.json();
+          if (!listData.ok)
+            return showToast("Failed to fetch rule sets", "error");
+          const current = (listData.ruleSets || []).find((r) => r.id === id);
+          if (!current) return showToast("Rule set not found", "error");
+          // offer visual rule editor first
+          const updated = await showRuleBuilder(
+            "Edit Rules (visual)",
+            current.rules || []
+          );
+          if (updated === null) return;
+          const body = { id, rules: updated };
+          // update rules using the canonical rule-set update endpoint
+          const res = await fetch(`/api/rules/${encodeURIComponent(id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast("Rules updated", "success");
+            await loadRules();
+          } else showToast("Failed to update rules: " + data.error, "error");
+        } catch (e) {
+          showToast("Error editing rules: " + e.message, "error");
+        }
+      }
+
+      // Return a list of available operators and metadata for the rule builder
+      function getAvailableOperators() {
+        return [
+          { key: "eq", label: "=", arity: 2, desc: "Equal" },
+          { key: "ne", label: "!=", arity: 2, desc: "Not equal" },
+          { key: "lt", label: "<", arity: 2, desc: "Less than" },
+          { key: "lte", label: "<=", arity: 2, desc: "Less than or equal" },
+          { key: "gt", label: ">", arity: 2, desc: "Greater than" },
+          { key: "gte", label: ">=", arity: 2, desc: "Greater than or equal" },
+          {
+            key: "in",
+            label: "IN",
+            arity: 2,
+            desc: "Value in set (comma separated)",
+          },
+          {
+            key: "not_in",
+            label: "NOT IN",
+            arity: 2,
+            desc: "Value not in set",
+          },
+          {
+            key: "between",
+            label: "BETWEEN",
+            arity: 3,
+            desc: "Between two values",
+          },
+          {
+            key: "like",
+            label: "LIKE",
+            arity: 2,
+            desc: "SQL LIKE (use % as wildcard)",
+          },
+          {
+            key: "not_like",
+            label: "NOT LIKE",
+            arity: 2,
+            desc: "SQL NOT LIKE",
+          },
+          { key: "is_null", label: "IS NULL", arity: 1, desc: "Is null" },
+          {
+            key: "is_not_null",
+            label: "IS NOT NULL",
+            arity: 1,
+            desc: "Is not null",
+          },
+          {
+            key: "regex",
+            label: "REGEX",
+            arity: 2,
+            desc: "Regular expression match",
+          },
+          {
+            key: "contains",
+            label: "CONTAINS",
+            arity: 2,
+            desc: "String contains",
+          },
+          {
+            key: "starts",
+            label: "STARTS WITH",
+            arity: 2,
+            desc: "String starts with",
+          },
+          {
+            key: "ends",
+            label: "ENDS WITH",
+            arity: 2,
+            desc: "String ends with",
+          },
+          // arithmetic
+          { key: "add", label: "+", arity: 2, desc: "Addition" },
+          { key: "sub", label: "-", arity: 2, desc: "Subtraction" },
+          { key: "mul", label: "*", arity: 2, desc: "Multiplication" },
+          { key: "div", label: "/", arity: 2, desc: "Division" },
+          // aggregates (used in group/aggregate contexts)
+          { key: "sum", label: "SUM()", arity: 1, desc: "Sum aggregate" },
+          { key: "count", label: "COUNT()", arity: 1, desc: "Count aggregate" },
+          { key: "avg", label: "AVG()", arity: 1, desc: "Average aggregate" },
+          { key: "min", label: "MIN()", arity: 1, desc: "Minimum aggregate" },
+          { key: "max", label: "MAX()", arity: 1, desc: "Maximum aggregate" },
+        ];
+      }
+
+      // Visual Rule Builder modal
+      async function showRuleBuilder(title, initialRules) {
+        const root = document.createElement("div");
+        root.style.display = "flex";
+        root.style.flexDirection = "column";
+        root.style.gap = "8px";
+        const list = document.createElement("div");
+        list.style.display = "flex";
+        list.style.flexDirection = "column";
+        list.style.gap = "8px";
+
+        let rules = Array.isArray(initialRules)
+          ? JSON.parse(JSON.stringify(initialRules))
+          : [];
+
+        function renderList() {
+          list.innerHTML = "";
+          rules.forEach((r, idx) => {
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.gap = "8px";
+            row.style.alignItems = "center";
+            const join = document.createElement("select");
+            join.innerHTML =
+              '<option value="AND">AND</option><option value="OR">OR</option>';
+            join.value = r.join || (idx === 0 ? "AND" : "AND");
+            join.addEventListener("change", () => {
+              r.join = join.value;
+            });
+            const tableSel = document.createElement("select");
+            tableSel.style.minWidth = "120px";
+            const tables = Object.keys(window.__lastDbTables || {});
+            tableSel.innerHTML =
+              '<option value="">(table)</option>' +
+              tables
+                .map(
+                  (t) =>
+                    `<option value="${t}" ${
+                      r.table === t ? "selected" : ""
+                    }>${t}</option>`
+                )
+                .join("");
+            tableSel.addEventListener("change", () => {
+              r.table = tableSel.value;
+              r.column = "";
+              renderList();
+            });
+            const colSel = document.createElement("select");
+            colSel.style.minWidth = "120px";
+            const cols =
+              window.__lastDbTables && window.__lastDbTables[r.table]
+                ? (window.__lastDbTables[r.table].columns || []).map(
+                    (c) => c.name || c
+                  )
+                : [];
+            colSel.innerHTML =
+              '<option value="">(column)</option>' +
+              cols
+                .map(
+                  (c) =>
+                    `<option value="${c}" ${
+                      r.column === c ? "selected" : ""
+                    }>${c}</option>`
+                )
+                .join("");
+            colSel.addEventListener("change", () => {
+              r.column = colSel.value;
+            });
+            const opSel = document.createElement("select");
+            const ops = getAvailableOperators();
+            opSel.innerHTML = ops
+              .map(
+                (o) =>
+                  `<option value="${o.key}" ${
+                    r.operator === o.key ? "selected" : ""
+                  }>${o.label}</option>`
+              )
+              .join("");
+            opSel.addEventListener("change", () => {
+              r.operator = opSel.value;
+            });
+            // optional action attach selector (choose an action from taxonomy)
+            const actionSel = document.createElement("select");
+            actionSel.style.minWidth = "160px";
+            try {
+              const acts = taxonomy && taxonomy.actions ? taxonomy.actions : {};
+              actionSel.innerHTML =
+                '<option value="">(no action)</option>' +
+                Object.keys(acts)
+                  .map(
+                    (a) =>
+                      `<option value="${a}" ${
+                        r.action === a ? "selected" : ""
+                      }>${acts[a].name || a}</option>`
+                  )
+                  .join("");
+            } catch (e) {
+              actionSel.innerHTML = '<option value="">(no action)</option>';
+            }
+            actionSel.addEventListener("change", () => {
+              r.action = actionSel.value;
+            });
+            const val = document.createElement("input");
+            val.type = "text";
+            val.placeholder = "value";
+            val.value = r.value || "";
+            val.addEventListener("input", () => {
+              r.value = val.value;
+            });
+            const btnDel = document.createElement("button");
+            btnDel.className = "btn btn-danger";
+            btnDel.textContent = "Delete";
+            btnDel.addEventListener("click", () => {
+              rules.splice(idx, 1);
+              renderList();
+            });
+            row.appendChild(join);
+            row.appendChild(tableSel);
+            row.appendChild(colSel);
+            row.appendChild(opSel);
+            row.appendChild(actionSel);
+            row.appendChild(val);
+            row.appendChild(btnDel);
+            list.appendChild(row);
+          });
+        }
+
+        const addBtn = document.createElement("button");
+        addBtn.className = "btn btn-primary";
+        addBtn.textContent = "Add Rule";
+        addBtn.addEventListener("click", () => {
+          rules.push({
+            join: rules.length ? "AND" : "AND",
+            table: "",
+            column: "",
+            operator: "eq",
+            value: "",
+            action: "",
+          });
+          renderList();
+        });
+
+        root.appendChild(list);
+        root.appendChild(addBtn);
+
+        // populate lastDbTables global for quick access to schema; attempt fetch if missing
+        if (!window.__lastDbTables) {
+          try {
+            const r = await fetch("/api/db/schema");
+            if (r.ok) {
+              const d = await r.json();
+              window.__lastDbTables = d.tables || {};
+            } else window.__lastDbTables = {};
+          } catch (e) {
+            window.__lastDbTables = {};
+          }
+        }
+
+        // ensure taxonomy (actions) is loaded so action selector can populate
+        if (!taxonomy) {
+          try {
+            await loadTaxonomy();
+          } catch (e) {
+            console.warn("loadTaxonomy failed for rule builder", e);
+          }
+        }
+
+        renderList();
+
+        const res = await _createModal({
+          title: title || "Rule Builder",
+          bodyEl: root,
+          onConfirm: () => rules,
+          confirmText: "Save Rules",
+        });
+        return res === true ? rules : res === null ? null : rules;
       }
     </script>
   </body>
