@@ -476,6 +476,72 @@
         min-height: 0;
       }
 
+      /* Grouped list UI */
+      #concepts-list,
+      #events-list,
+      #actions-list,
+      #rules-list {
+        max-height: 360px;
+        overflow-y: auto;
+        padding-right: 8px; /* avoid content under scrollbar */
+        margin-bottom: 1rem;
+      }
+
+      .group-container {
+        margin-bottom: 0.9rem;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid #e9eef6;
+        background: white;
+      }
+
+      .group-header {
+        padding: 0.5rem 0.75rem;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #2c3e50;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .group-items {
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Type-specific header colors */
+      .concept-group .group-header {
+        background: linear-gradient(90deg, #e8f4ff, #f3fbff);
+        border-bottom: 1px solid #eef7ff;
+      }
+      .event-group .group-header {
+        background: linear-gradient(90deg, #fff8e8, #fffdf4);
+        border-bottom: 1px solid #fff4dd;
+      }
+      .action-group .group-header {
+        background: linear-gradient(90deg, #fff2f8, #fff7fb);
+        border-bottom: 1px solid #ffeef8;
+      }
+      .rules-group .group-header {
+        background: linear-gradient(90deg, #eefdf4, #f7fff9);
+        border-bottom: 1px solid #eaffef;
+      }
+
+      .list-item.type-concept {
+        border-left: 4px solid #67a8ff;
+      }
+      .list-item.type-event {
+        border-left: 4px solid #ffa726;
+      }
+      .list-item.type-action {
+        border-left: 4px solid #f06292;
+      }
+      .list-item.type-rule {
+        border-left: 4px solid #66bb6a;
+      }
+
       .svg-connections {
         position: absolute;
         top: 0;
@@ -782,6 +848,40 @@
         `;
         document.head.appendChild(style);
       })();
+
+      // Global group color registry to produce non-repeating, random palettes
+      window.__groupColorRegistry = window.__groupColorRegistry || {
+        keys: {},
+        usedHues: [],
+      };
+      function getDistinctGroupColors(key) {
+        key = key || "grp";
+        if (window.__groupColorRegistry.keys[key])
+          return window.__groupColorRegistry.keys[key];
+        function pickHue() {
+          return Math.floor(Math.random() * 360);
+        }
+        function tooClose(h) {
+          return window.__groupColorRegistry.usedHues.some((u) => {
+            const d = Math.abs(u - h);
+            return Math.min(d, 360 - d) <= 28; // ensure at least ~28° separation
+          });
+        }
+        let hue = pickHue();
+        let attempts = 0;
+        while (tooClose(hue) && attempts < 36) {
+          hue = (hue + Math.floor(Math.random() * 60) + 20) % 360;
+          attempts++;
+        }
+        window.__groupColorRegistry.usedHues.push(hue);
+        const left = `hsl(${hue}, 92%, 97%)`;
+        const right = `hsl(${(hue + 18) % 360}, 86%, 93%)`;
+        const border = `hsl(${hue}, 60%, 82%)`;
+        const accent = `hsl(${hue}, 68%, 46%)`;
+        const out = { left, right, border, accent, hue };
+        window.__groupColorRegistry.keys[key] = out;
+        return out;
+      }
 
       function showToast(message, type = "info", timeout = 3000) {
         const root = document.getElementById("toast-root");
@@ -1613,90 +1713,128 @@
       function renderTaxonomy() {
         if (!taxonomy) return;
 
-        // Render concepts
-        const conceptsList = document.getElementById("concepts-list");
-        conceptsList.innerHTML = Object.values(taxonomy.concepts || {})
-          .map((concept) => {
-            const props = (concept.properties || [])
-              .map((p) => `<span class="badge">${p}</span>`)
-              .join(" ");
-            return `
-              <div class="list-item">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <div>
-                    <div class="list-item-title">${concept.name}</div>
-                    <div class="list-item-desc">${
-                      concept.description || ""
-                    }</div>
-                    ${props}
-                  </div>
-                  <div style="display:flex; gap:8px;">
-                    <button class="btn btn-secondary" onclick="editConcept('${
-                      concept.id
-                    }')">Edit</button>
-                    <button class="btn btn-danger" onclick="deleteConcept('${
-                      concept.id
-                    }')">Delete</button>
-                  </div>
-                </div>
-              </div>
-            `;
-          })
-          .join("");
+        // helper: group items by first word of the name
+        function groupByFirstWord(list) {
+          const g = {};
+          (list || []).forEach((it) => {
+            const name = (it && it.name) || "";
+            const first = (name.split(/\s+/)[0] || "Other").trim() || "Other";
+            g[first] = g[first] || [];
+            g[first].push(it);
+          });
+          return g;
+        }
 
-        // Render events
-        const eventsList = document.getElementById("events-list");
-        eventsList.innerHTML = Object.values(taxonomy.events || {})
-          .map(
-            (ev) => `
-              <div class="list-item">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <div>
-                    <div class="list-item-title">${ev.name}</div>
-                    <div class="list-item-desc">${
-                      ev.description || ""
-                    } <span class="badge">${ev.concept || ""}</span></div>
-                  </div>
-                  <div style="display:flex; gap:8px;">
-                    <button class="btn btn-secondary" onclick="editEvent('${
-                      ev.id
-                    }')">Edit</button>
-                    <button class="btn btn-danger" onclick="deleteEvent('${
-                      ev.id
-                    }')">Delete</button>
-                  </div>
-                </div>
-              </div>
-            `
-          )
-          .join("");
+        function buildGroupHtml(groups, type) {
+          const cls =
+            type === "concept"
+              ? "concept-group"
+              : type === "event"
+              ? "event-group"
+              : type === "action"
+              ? "action-group"
+              : "rules-group";
 
-        // Render actions
-        const actionsList = document.getElementById("actions-list");
-        actionsList.innerHTML = Object.values(taxonomy.actions || {})
-          .map(
-            (act) => `
-              <div class="list-item">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <div>
-                    <div class="list-item-title">${act.name}</div>
-                    <div class="list-item-desc">${
-                      act.description || ""
-                    } <span class="badge">${act.concept || ""}</span></div>
-                  </div>
-                  <div style="display:flex; gap:8px;">
-                    <button class="btn btn-secondary" onclick="editAction('${
-                      act.id
-                    }')">Edit</button>
-                    <button class="btn btn-danger" onclick="deleteAction('${
-                      act.id
-                    }')">Delete</button>
-                  </div>
+          // use global distinct random color generator
+          return Object.keys(groups)
+            .sort()
+            .map((gk) => {
+              const colors = getDistinctGroupColors(gk || "grp");
+              const items = groups[gk]
+                .map((it) => {
+                  const id = it.id || "";
+                  const title = it.name || "(unnamed)";
+                  const desc = it.description || "";
+                  const badge =
+                    it.concept || it.target || ""
+                      ? `<span class="badge">${
+                          it.concept || it.target || ""
+                        }</span>`
+                      : "";
+                  if (type === "concept") {
+                    const props = (it.properties || [])
+                      .map((p) => `<span class="badge">${p}</span>`)
+                      .join(" ");
+                    return `
+                      <div class="list-item type-concept" style="border-left:4px solid ${colors.accent};">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                          <div>
+                            <div class="list-item-title">${title}</div>
+                            <div class="list-item-desc">${desc}</div>
+                            ${props}
+                          </div>
+                          <div style="display:flex; gap:8px;">
+                            <button class="btn btn-secondary" onclick="editConcept('${id}')">Edit</button>
+                            <button class="btn btn-danger" onclick="deleteConcept('${id}')">Delete</button>
+                          </div>
+                        </div>
+                      </div>`;
+                  }
+                  if (type === "event") {
+                    return `
+                      <div class="list-item type-event" style="border-left:4px solid ${colors.accent};">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                          <div>
+                            <div class="list-item-title">${title}</div>
+                            <div class="list-item-desc">${desc} ${badge}</div>
+                          </div>
+                          <div style="display:flex; gap:8px;">
+                            <button class="btn btn-secondary" onclick="editEvent('${id}')">Edit</button>
+                            <button class="btn btn-danger" onclick="deleteEvent('${id}')">Delete</button>
+                          </div>
+                        </div>
+                      </div>`;
+                  }
+                  // action
+                  return `
+                    <div class="list-item type-action" style="border-left:4px solid ${colors.accent};">
+                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                          <div class="list-item-title">${title}</div>
+                          <div class="list-item-desc">${desc} ${badge}</div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                          <button class="btn btn-secondary" onclick="editAction('${id}')">Edit</button>
+                          <button class="btn btn-danger" onclick="deleteAction('${id}')">Delete</button>
+                        </div>
+                      </div>
+                    </div>`;
+                })
+                .join("");
+
+              return `
+                <div class="group-container ${cls}">
+                  <div class="group-header" style="background: linear-gradient(90deg, ${colors.left}, ${colors.right}); border-bottom:1px solid ${colors.border};">${gk}</div>
+                  <div class="group-items">${items}</div>
                 </div>
-              </div>
-            `
-          )
-          .join("");
+              `;
+            })
+            .join("");
+        }
+
+        // Render concepts grouped by first word
+        const concepts = Object.values(taxonomy.concepts || {});
+        const conceptGroups = groupByFirstWord(concepts);
+        document.getElementById("concepts-list").innerHTML = buildGroupHtml(
+          conceptGroups,
+          "concept"
+        );
+
+        // Render events grouped by first word
+        const events = Object.values(taxonomy.events || {});
+        const eventGroups = groupByFirstWord(events);
+        document.getElementById("events-list").innerHTML = buildGroupHtml(
+          eventGroups,
+          "event"
+        );
+
+        // Render actions grouped by first word
+        const actions = Object.values(taxonomy.actions || {});
+        const actionGroups = groupByFirstWord(actions);
+        document.getElementById("actions-list").innerHTML = buildGroupHtml(
+          actionGroups,
+          "action"
+        );
       }
 
       // Workflow Functions
@@ -2518,38 +2656,75 @@
           const res = await fetch("/api/rules");
           const data = await res.json();
           if (data.ok) {
-            const rulesList = document.getElementById("rules-list");
-            rulesList.innerHTML = (data.ruleSets || [])
-              .map((rs) => {
-                const count = (rs.rules || []).length;
-                return `
-                  <div class="list-item">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                      <div>
-                        <div class="list-item-title">${rs.name}</div>
-                        <div class="list-item-desc">${
-                          rs.description || ""
-                        } <span class="badge">${rs.concept || ""}</span></div>
-                        <div style="margin-top:0.5rem; font-size:0.85rem; color:#657786;">${count} rule${
-                  count === 1 ? "" : "s"
-                }</div>
-                      </div>
-                      <div style="display:flex; gap:8px;">
-                        <button class="btn btn-secondary" onclick="editRuleSet('${
-                          rs.id
-                        }')">Edit</button>
-                        <button class="btn btn-secondary" onclick="editRules('${
-                          rs.id
-                        }')">Rules</button>
-                        <button class="btn btn-danger" onclick="deleteRuleSet('${
-                          rs.id
-                        }')">Delete</button>
-                      </div>
+            const sets = data.ruleSets || [];
+
+            function groupByFirstWord(list) {
+              const g = {};
+              (list || []).forEach((it) => {
+                const name = (it && it.name) || "";
+                const first =
+                  (name.split(/\s+/)[0] || "Other").trim() || "Other";
+                g[first] = g[first] || [];
+                g[first].push(it);
+              });
+              return g;
+            }
+
+            function buildRulesHtml(groups) {
+              // use global distinct random color generator
+              return Object.keys(groups)
+                .sort()
+                .map((gk) => {
+                  const colors = getDistinctGroupColors(gk || "grp");
+                  const items = groups[gk]
+                    .map((rs) => {
+                      const count = (rs.rules || []).length;
+                      return `
+                        <div class="list-item type-rule" style="border-left:4px solid ${
+                          colors.accent
+                        };">
+                          <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                              <div class="list-item-title">${rs.name}</div>
+                              <div class="list-item-desc">${
+                                rs.description || ""
+                              } <span class="badge">${
+                        rs.concept || ""
+                      }</span></div>
+                              <div style="margin-top:0.5rem; font-size:0.85rem; color:#657786;">${count} rule${
+                        count === 1 ? "" : "s"
+                      }</div>
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                              <button class="btn btn-secondary" onclick="editRuleSet('${
+                                rs.id
+                              }')">Edit</button>
+                              <button class="btn btn-secondary" onclick="editRules('${
+                                rs.id
+                              }')">Rules</button>
+                              <button class="btn btn-danger" onclick="deleteRuleSet('${
+                                rs.id
+                              }')">Delete</button>
+                            </div>
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join("");
+
+                  return `
+                    <div class="group-container rules-group">
+                      <div class="group-header" style="background: linear-gradient(90deg, ${colors.left}, ${colors.right}); border-bottom:1px solid ${colors.border};">${gk}</div>
+                      <div class="group-items">${items}</div>
                     </div>
-                  </div>
-                `;
-              })
-              .join("");
+                  `;
+                })
+                .join("");
+            }
+
+            const grouped = groupByFirstWord(sets);
+            document.getElementById("rules-list").innerHTML =
+              buildRulesHtml(grouped);
           }
         } catch (e) {
           console.error("Failed to load rules:", e);
