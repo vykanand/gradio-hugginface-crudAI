@@ -1890,6 +1890,25 @@
             ? workflow.connections.slice()
             : [];
           renderCanvas();
+
+          // If the loaded workflow has no saved connections and auto-connect
+          // is enabled, nudge loaded nodes to reduce overlap and then
+          // attempt a sequential auto-connect. This only runs when there are
+          // no saved connections so manual workflows are untouched.
+          try {
+            const auto = document.getElementById(
+              "auto-connect-toggle"
+            )?.checked;
+            if (auto && (!connections || connections.length === 0)) {
+              nodes.forEach((n) => setTimeout(() => nudgeNode(n.id), 0));
+              setTimeout(() => attemptAutoConnect(), 60);
+            }
+          } catch (e) {
+            console.warn(
+              "post-load auto-nudge failed",
+              e && e.message ? e.message : e
+            );
+          }
         }
       }
 
@@ -2006,6 +2025,8 @@
           });
         }
         renderCanvas();
+        // gently nudge new node if it overlaps others (minimal and non-invasive)
+        setTimeout(() => nudgeNode(node.id), 0);
       }
 
       function renderCanvas() {
@@ -2078,6 +2099,32 @@
           const auto = document.getElementById("auto-connect-toggle")?.checked;
           if (!auto) return;
           if (nodes.length < 2) return;
+          // If there are no saved connections, and auto is enabled,
+          // create a simple sequential chain between all nodes (non-destructive).
+          if (!connections || connections.length === 0) {
+            for (let i = 0; i < nodes.length - 1; i++) {
+              const a = nodes[i];
+              const b = nodes[i + 1];
+              if (!a || !b) continue;
+              const exists = connections.some(
+                (c) =>
+                  String(c.from) === String(a.id) &&
+                  String(c.to) === String(b.id)
+              );
+              if (!exists) {
+                connections.push({
+                  from: a.id,
+                  to: b.id,
+                  id:
+                    "c_" + Date.now() + "_" + Math.floor(Math.random() * 10000),
+                });
+              }
+            }
+            renderConnections();
+            return;
+          }
+
+          // fallback: preserve previous behavior which attempts to auto-connect the last two nodes
           const a = nodes[nodes.length - 2];
           const b = nodes[nodes.length - 1];
           if (!a || !b) return;
@@ -2100,6 +2147,82 @@
         }
       }
 
+      // Ensure minimum spacing between workflow nodes to avoid overlap
+      function ensureMinSpacing(el, node) {
+        const MIN_GAP = 16; // px gap between boxes
+        const canvas = document.getElementById("workflow-canvas");
+        if (!canvas || !el) return;
+        const canvasRect = canvas.getBoundingClientRect();
+
+        // update el rect truth before checking
+        let elRect = el.getBoundingClientRect();
+
+        // iterate and push away from any node that is too close
+        const others = Array.from(document.querySelectorAll(".workflow-node"));
+        let adjusted = false;
+        for (const other of others) {
+          if (other === el) continue;
+          const r = other.getBoundingClientRect();
+
+          // check if rectangles are within MIN_GAP of each other
+          if (
+            elRect.left < r.right + MIN_GAP &&
+            elRect.right > r.left - MIN_GAP &&
+            elRect.top < r.bottom + MIN_GAP &&
+            elRect.bottom > r.top - MIN_GAP
+          ) {
+            // compute centers
+            const cx = elRect.left + elRect.width / 2;
+            const cy = elRect.top + elRect.height / 2;
+            const ox = r.left + r.width / 2;
+            const oy = r.top + r.height / 2;
+            let dx = cx - ox || 1; // avoid zero vector
+            let dy = cy - oy || 0;
+            const len = Math.hypot(dx, dy) || 1;
+            dx /= len;
+            dy /= len;
+
+            // required center distance: use average of sizes + gap
+            const req =
+              Math.max(elRect.width, elRect.height, r.width, r.height) +
+              MIN_GAP;
+            const newCx = ox + dx * req;
+            const newCy = oy + dy * req;
+
+            // convert new center to node.x/node.y (relative to canvas)
+            const newX = newCx - canvasRect.left - elRect.width / 2;
+            const newY = newCy - canvasRect.top - elRect.height / 2;
+
+            node.x = Math.round(newX);
+            node.y = Math.round(newY);
+            el.style.left = node.x + "px";
+            el.style.top = node.y + "px";
+
+            // update elRect for subsequent checks
+            elRect = el.getBoundingClientRect();
+            adjusted = true;
+          }
+        }
+        return adjusted;
+      }
+
+      // Nudge a newly added node to a free space (called after renderCanvas)
+      function nudgeNode(nodeId) {
+        const el = document.getElementById("wfnode-" + nodeId);
+        if (!el) return;
+        const node = nodes.find((n) => n.id === nodeId);
+        if (!node) return;
+        // try a few passes to resolve collisions
+        for (let i = 0; i < 6; i++) {
+          const moved = ensureMinSpacing(el, node);
+          if (!moved) break;
+        }
+        // persist final coords
+        node.data.x = node.x;
+        node.data.y = node.y;
+        renderConnections();
+      }
+
       function makeDraggable(el, node) {
         let isDragging = false;
         let startX, startY;
@@ -2116,6 +2239,13 @@
           if (!isDragging) return;
           node.x = e.clientX - startX;
           node.y = e.clientY - startY;
+          // enforce minimum spacing while dragging (non-invasive)
+          try {
+            ensureMinSpacing(el, node);
+          } catch (err) {
+            // defensive: do not break drag on errors
+            console.warn("ensureMinSpacing failed", err);
+          }
           // persist visual coords on node data for save/load
           node.data.x = node.x;
           node.data.y = node.y;
