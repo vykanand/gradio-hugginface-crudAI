@@ -27,6 +27,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const taxonomyService = require('./taxonomyService');
 const rulesEngine = require('./rulesEngine');
+const dbExecutionEngine = require('./dbExecutionEngine');
 
 const WORKFLOWS_FILE = path.join(__dirname, '..', 'config', 'metadata', 'workflows.json');
 const EXECUTIONS_FILE = path.join(__dirname, '..', 'storage', 'orchestrations', 'workflow_executions.json');
@@ -386,10 +387,144 @@ class WorkflowEngine {
         execution.locks.push(stepKey);
       }
 
-      console.log('[workflow] executing action:', step.action, 'attempt:', retryCount + 1);
-      
-      // EXECUTE ACTION (invoke worker via queue)
-      // Placeholder: would call worker here
+      console.log('[workflow] executing action:', step.action || (step.db && step.db.operation) || '<db-action>', 'attempt:', retryCount + 1);
+
+      // If this action step is mapped to a DB operation, execute it via dbExecutionEngine.
+      if (step.db && (step.db.resource || step.db.table)) {
+        // prepare a transient step object for dbExecutionEngine
+        const op = (step.db.operation || step.action || 'query').toString();
+        const resource = step.db.resource || step.db.table || step.db.tables || null;
+        const tempStep = Object.assign({}, step, { action: op, resource: resource, transactional: !!(step.db && step.db.transactional) });
+
+        // guard rule-set (precondition)
+        if (step.guardRuleSet) {
+          const guardRes = await rulesEngine.evaluate(step.guardRuleSet, execution.context);
+          const passed = Array.isArray(guardRes) && guardRes.length > 0 && guardRes[0].outcome && (guardRes[0].outcome.passed === true || guardRes[0].outcome.success === true || guardRes[0].outcome.allowed === true);
+          if (!passed) {
+            throw new Error('Guard rule-set failed: ' + step.guardRuleSet);
+          }
+        }
+
+        // build params from context and any explicit mapping in step.db.params
+        let params = step.db.params || {};
+        const actionLower = (op || '').toString().toLowerCase();
+        if (actionLower === 'create') {
+          params = params || {};
+          // default: use execution.context as record payload
+          if (!params.record) params.record = execution.context || execution.inputs || {};
+        } else if (actionLower === 'update' || actionLower === 'delete' || actionLower === 'read' || actionLower === 'query') {
+          params = params || {};
+          if (!params.filter) params.filter = step.db.filter || execution.context.filter || {};
+        }
+
+        const execMeta = { executionId: execution.id, stepId: step.id };
+
+    // STATE TRANSITION ENFORCEMENT: if workflow is bound to a concept and the concept defines states,
+    // validate intended transitions (create/update) against allowedTransitions.
+    try {
+      const wf = await this.getWorkflow(execution.workflowId);
+      if (wf && wf.concept) {
+        try {
+          const concept = await taxonomyService.getConcept(wf.concept);
+          const states = (concept && concept.states) || [];
+          if (states && states.length) {
+            const actionLower2 = (op || '').toString().toLowerCase();
+            // determine target state from params.record or params.filter (common fields: status or state)
+            let targetState = null;
+            if (params && params.record) targetState = params.record.status || params.record.state || null;
+            // For updates, if params.record not provided, but step.db may contain mapping
+            if (!targetState && step.db && step.db.params && step.db.params.record) targetState = step.db.params.record.status || step.db.params.record.state || null;
+		
+            if (actionLower2 === 'create') {
+              if (targetState) {
+                const ok = states.some(s => s.id === targetState || s.name === targetState);
+                if (!ok) throw new Error(`Target state '${targetState}' is not defined for concept ${wf.concept}`);
+                // evaluate enter rule-set for target state if defined
+                try {
+                  const targetDef = states.find(s => s.id === targetState || s.name === targetState);
+                  if (targetDef && targetDef.enterRuleSet) {
+                    const enterRes = await rulesEngine.evaluate(targetDef.enterRuleSet, execution.context);
+                    const passedEnter = Array.isArray(enterRes) && enterRes.length && enterRes[0].outcome && (enterRes[0].outcome.passed === true || enterRes[0].outcome.success === true || enterRes[0].outcome.allowed === true);
+                    if (!passedEnter) throw new Error('Enter rule-set failed for target state: ' + targetDef.enterRuleSet);
+                  }
+                } catch (e) {
+                  throw e;
+                }
+              }
+            } else if (actionLower2 === 'update' && targetState) {
+              // need to read current record to determine current state
+              try {
+                const readStep = Object.assign({}, tempStep, { action: 'read' });
+                const readParams = { filter: params.filter || {} };
+                const cur = await dbExecutionEngine.exec(readStep, readParams, execution.context, execMeta);
+                if (cur && cur.ok && Array.isArray(cur.data) && cur.data.length) {
+                  const currentRow = cur.data[0];
+                  const currentState = currentRow.status || currentRow.state || null;
+                  if (currentState && currentState !== targetState) {
+                    const curDef = states.find(s => s.id === currentState || s.name === currentState);
+                    if (curDef && Array.isArray(curDef.allowedTransitions) && curDef.allowedTransitions.length) {
+                      if (!curDef.allowedTransitions.includes(targetState)) {
+                        throw new Error(`Invalid state transition for concept ${wf.concept}: ${currentState} -> ${targetState}`);
+                      }
+                      // evaluate exit rule-set on current state if defined
+                      if (curDef.exitRuleSet) {
+                        const exitRes = await rulesEngine.evaluate(curDef.exitRuleSet, execution.context);
+                        const passedExit = Array.isArray(exitRes) && exitRes.length && exitRes[0].outcome && (exitRes[0].outcome.passed === true || exitRes[0].outcome.success === true || exitRes[0].outcome.allowed === true);
+                        if (!passedExit) throw new Error('Exit rule-set failed for current state: ' + curDef.exitRuleSet);
+                      }
+                      // evaluate enter rule-set for target state if defined
+                      const targetDef = states.find(s => s.id === targetState || s.name === targetState);
+                      if (targetDef && targetDef.enterRuleSet) {
+                        const enterRes = await rulesEngine.evaluate(targetDef.enterRuleSet, execution.context);
+                        const passedEnter = Array.isArray(enterRes) && enterRes.length && enterRes[0].outcome && (enterRes[0].outcome.passed === true || enterRes[0].outcome.success === true || enterRes[0].outcome.allowed === true);
+                        if (!passedEnter) throw new Error('Enter rule-set failed for target state: ' + targetDef.enterRuleSet);
+                      }
+                    }
+                    // if current state has no transitions defined, allow by default
+                  }
+                }
+              } catch (e) {
+                // If we cannot read current state, fail safe: block transition to avoid invalid updates
+                throw new Error('Unable to validate state transition: ' + (e.message || e));
+              }
+            }
+          }
+        } catch (e) {
+          // rethrow to be caught by outer catch and handled as step failure
+          throw e;
+        }
+      }
+    } catch (e) {
+      // allow other checks to surface the error
+      throw e;
+    }
+
+    const dbRes = await dbExecutionEngine.exec(tempStep, params, execution.context, execMeta);
+        if (!dbRes || dbRes.ok === false) {
+          throw new Error('DB operation failed: ' + (dbRes && dbRes.error ? dbRes.error : JSON.stringify(dbRes)));
+        }
+
+        // record success
+        const result = { success: true, executedAt: new Date().toISOString(), data: dbRes.data };
+        execution.context[`${step.id}_result`] = result;
+        // track compensation if configured
+        if (step.compensationAction) {
+          execution.compensations.push({ stepId: step.id, action: step.compensationAction, context: { ...execution.context } });
+        }
+        // record circuit success for action name
+        this.recordCircuitSuccess(step.action || op);
+
+        // release lock if any
+        if (step.requiresLock) {
+          await this.releaseLock(stepKey);
+          execution.locks = execution.locks.filter(l => l !== stepKey);
+        }
+
+        return step.next;
+      }
+
+      // EXECUTE ACTION (invoke worker via queue) - legacy non-DB action
+      // Placeholder: would call worker here (kept for backwards compatibility)
       // const result = await queue.publishJob({ action: step.action, context: execution.context });
       const result = { success: true, executedAt: new Date().toISOString(), data: {} };
 

@@ -56,155 +56,6 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   const port = window.location.port ? `:${window.location.port}` : '';
   const basePath = window.location.pathname.split('/')[1];
   $scope.url = `${protocol}//${hostname}${port}/${basePath}/api`;
-  // Strict: orchestration endpoints MUST come from central `/orchestration.config.json` only.
-  // Do not use any window-level fallback or client-side defaults.
-  let orchBase = '';
-  $scope.orchConfig = null;
-  $scope.orchServerUrl = '';
-
-  // Resolve orchestration URLs strictly from central config. Returns full URL string or null if not resolvable.
-  function orchUrl(pathOrKey) {
-    // Require central config and orchestration_server_url
-    if (!$scope.orchConfig || !$scope.orchConfig.orchestration_server_url) return null;
-    const base = ($scope.orchConfig.orchestration_server_url || '').toString().replace(/\/$/, '');
-    if (!pathOrKey) return base;
-
-    // If a leading slash is passed, append as path to base
-    if (pathOrKey.startsWith('/')) return base + pathOrKey;
-
-    // Otherwise treat as a key and lookup in api_paths
-    if ($scope.orchConfig.api_paths && $scope.orchConfig.api_paths[pathOrKey]) {
-      const mapped = $scope.orchConfig.api_paths[pathOrKey];
-      if (!mapped) return null;
-      if (/^https?:\/\//i.test(mapped)) return mapped; // mapped absolute URL
-      if (mapped.startsWith('/')) return base + mapped;
-      return base + '/' + mapped;
-    }
-
-    // Not configured — do not use any fallback
-    return null;
-  }
-
-  // Event-driven architecture: CRUD operations publish events to Kafka
-  // Workflows subscribe to events they care about - no binding configuration needed
-
-    // Publish a CRUD event to orchestration system with full traceability
-    $scope.publishCrudEvent = function(action, payload) {
-      try {
-        // Generate unique trace ID for end-to-end visibility
-        const traceId = `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        const eventObj = {
-          traceId: traceId,                  // Unique ID tracked through entire system
-          contractVersion: '1.0',
-          eventType: 'CRUD',
-          action: action,                    // 'create', 'update', 'delete'
-          module: $scope.moduleKey || (window.__MODULE_NAME__ || document.body.getAttribute('data-module') || ''),
-          timestamp: new Date().toISOString(),
-          payload: payload || {},
-          userId: $scope.userdata?.id,       // Who triggered the action
-          sessionId: $scope.sessionId        // Browser session tracking
-        };
-        
-        // Publish to Kafka via monitor endpoint
-        fetch('/monitor/publish', { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ subject: 'ORCHESTRATIONS_EVENTS', payload: eventObj }) 
-        })
-        .then(response => {
-          if (response.ok) {
-            console.log(`[${traceId}] CRUD event published: ${action} on ${eventObj.module}`);
-          }
-        })
-        .catch(error => {
-          console.error(`[${traceId}] Failed to publish CRUD event:`, error);
-        });
-        
-        // Return trace ID for optional UI tracking
-        return traceId;
-      } catch (e) { 
-        console.warn('publishCrudEvent error', e); 
-        return null;
-      }
-    };
-
-  // compute module key once for the page (used for bindings lookup)
-  try {
-    // Priority:
-    // 1. `window.__MODULE_NAME__` if host app explicitly sets it
-    // 2. `data-module` attribute on body
-    // 3. Derive from URL path: use the folder name that contains this page (parent directory)
-    let inferred = '';
-    try {
-      const parts = window.location.pathname.split('/').filter(Boolean);
-      if (parts.length >= 2) {
-        // e.g. /some/path/module/boot.html -> module is second-to-last segment
-        inferred = parts[parts.length - 2];
-      } else if (parts.length === 1) {
-        // e.g. /module or /boot.html served from /module/ -> fallback to first segment
-        inferred = parts[0];
-      }
-    } catch (e) { inferred = ''; }
-    $scope.moduleKey = (window.__MODULE_NAME__ || document.body.getAttribute('data-module') || inferred || '').toString();
-  } catch (e) { $scope.moduleKey = ''; }
-
-  // Event-driven architecture: No custom row buttons or bindings modal needed
-  // All CRUD operations automatically publish events that workflows can subscribe to
-                }
-              }
-              $scope.orchBindings = norm;
-              window.top.postMessage('success^Bindings saved', '*');
-              modalInstance.close();
-            } else {
-              window.top.postMessage('error^Failed to save bindings', '*');
-            }
-          }).catch(e => { window.top.postMessage('error^Bindings save error', '*'); });
-      };
-
-      modalScope.cancel = function () { modalInstance.dismiss('cancel'); };
-
-      // build modal template
-      const tpl = `
-        <div class="modal-header"><h3 class="modal-title">Bindings for module: ${$scope.moduleKey}</h3></div>
-        <div class="modal-body" style="max-height:60vh;overflow:auto;">
-          <div class="form-group">
-            <label>Create</label>
-            <select class="form-control" ng-model="bindings.create" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- none --</option></select>
-          </div>
-          <div class="form-group">
-            <label>Read</label>
-            <select class="form-control" ng-model="bindings.read" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- none --</option></select>
-          </div>
-          <div class="form-group">
-            <label>Update</label>
-            <select class="form-control" ng-model="bindings.update" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- none --</option></select>
-          </div>
-          <div class="form-group">
-            <label>Delete</label>
-            <select class="form-control" ng-model="bindings.delete" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- none --</option></select>
-          </div>
-          <hr />
-          <h4>Custom Row Buttons</h4>
-          <p>Add buttons that will appear on each row and execute an orchestration with the clicked row as input.</p>
-          <div ng-repeat="(idx, cb) in customButtons track by $index" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-            <input class="form-control" ng-model="cb.label" placeholder="Button label" />
-            <select class="form-control" ng-model="cb.orchestrationId" ng-options="o.id as (o.name || o.id) for o in orchestrations"><option value="">-- select orch --</option></select>
-            <button class="btn btn-danger" ng-click="removeCustomButton($index)">Remove</button>
-          </div>
-          <div style="margin-top:8px;">
-            <button class="btn btn-secondary" ng-click="addCustomButton()">Add Button</button>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-primary" ng-click="save()">Save</button>
-          <button class="btn btn-default" ng-click="cancel()">Cancel</button>
-        </div>
-      `;
-
-      const modalInstance = $uibModal.open({ template: tpl, scope: modalScope, size: 'lg' });
-    }).catch(e => console.warn('openBindings failed', e));
-  };
   // deepcode ignore JS-0002: Development logging for API endpoint debugging
   if (typeof console !== 'undefined') console.log('API Base URL:', $scope.url);
   const passphrase = "yug";
@@ -681,13 +532,19 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                 delete addObj.created_at;
                 delete addObj.updated_at;
 
-                $scope.addingNew = addObj;
+                // Merge defaults into existing addingNew (do not overwrite user input)
+                if (!$scope.addingNew || Object.keys($scope.addingNew).length === 0) {
+                  $scope.addingNew = addObj;
+                } else {
+                  Object.keys(addObj).forEach(function(k){ try { if (typeof $scope.addingNew[k] === 'undefined') $scope.addingNew[k] = addObj[k]; } catch(e){} });
+                }
               } catch (e) {
                 console.error('Error building addingNew object from getfirstcontent', e);
                 $scope.addingNew = {};
               }
 
               console.log("after building addingNew", $scope.addingNew);
+              try { $scope._ensureModuleFieldConfigs(Object.keys($scope.addingNew || {})); } catch(e) {}
               window.top.postMessage("responseact", "*");
 
               $scope.adjustCells();
@@ -757,13 +614,19 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                 delete addObj2.role;
                 delete addObj2.created_at;
                 delete addObj2.updated_at;
-                $scope.addingNew = addObj2;
+                // Merge defaults into existing addingNew (do not overwrite user input)
+                if (!$scope.addingNew || Object.keys($scope.addingNew).length === 0) {
+                  $scope.addingNew = addObj2;
+                } else {
+                  Object.keys(addObj2).forEach(function(k){ try { if (typeof $scope.addingNew[k] === 'undefined') $scope.addingNew[k] = addObj2[k]; } catch(e){} });
+                }
               } catch (e) {
                 console.error('Error building addingNew object (nodata branch)', e);
                 $scope.addingNew = {};
               }
 
               console.log("addingnew when no data found", $scope.addingNew);
+              try { $scope._ensureModuleFieldConfigs(Object.keys($scope.addingNew || {})); } catch(e) {}
               $scope.addproduct();
               window.top.postMessage("responseact", "*");
             });
@@ -784,41 +647,107 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   $scope.addproduct = function () {
     var modalPromise = amodalPopup();
 
-    // Wait for modal to be fully rendered and initialize number inputs
+    // Wait for modal to be rendered, then use a MutationObserver + delegated handlers for robustness
     modalPromise.rendered.then(function () {
-      $("#adtfrm")
-        .find("input")
-        .each(function () {
-          var rawName = $(this).attr("name") || '';
-          var fieldName = rawName.toLowerCase().replace(/ /g, "_");
-          var type = ($scope.fieldTypeMap && ($scope.fieldTypeMap[rawName] || $scope.fieldTypeMap[rawName.toLowerCase()] || $scope.fieldTypeMap[fieldName])) || $(this).attr('type') || 'text';
+      try {
+        var $frm = $("#adtfrm");
+        // Ensure initial configs and listener registration
+        try { $scope._ensureModuleFieldConfigs(Object.keys($scope.addingNew || {})); } catch(e) {}
+        try { $scope.registerModuleEventListeners(); } catch(e) {}
 
-          // Initialize number/range inputs with numeric value (0 or empty)
-          if (type === 'number' || type === 'range') {
-            if ($scope.addingNew && typeof $scope.addingNew[rawName] !== 'undefined') {
-              var val = $scope.addingNew[rawName];
-              if (val !== '' && val !== null) {
-                var numVal = Number(val);
-                if (!isNaN(numVal)) {
-                  try {
-                    if (!$scope.$$phase) {
-                      $scope.$apply(function () { $scope.addingNew[rawName] = numVal; });
-                    } else {
-                      $scope.addingNew[rawName] = numVal;
-                    }
-                  } catch (e) {
-                    // ignore
-                  }
-                }
+        // Delegated handlers on form container (faster than per-control binds)
+        try {
+          $frm.off('.fieldEvents');
+          $frm.on('input.fieldEvents change.fieldEvents', 'input,select,textarea', function(){
+            var $el = $(this);
+            var rawName = $el.attr('name') || '';
+            if (!rawName) return;
+            try {
+              var val;
+              if ($el.is(':checkbox')) { val = $scope.addingNew && $scope.addingNew[rawName]; }
+              else if ($el.is(':radio')) { val = $scope.addingNew && $scope.addingNew[rawName] || $el.val(); }
+              else { val = $el.val(); }
+              try { if (!$scope.$$phase) { $scope.$apply(); } } catch(e) {}
+            } catch(e) {}
+          });
+
+          // focusin/focusout bubble — use to detect focus change
+          $frm.on('focusin.fieldEvents', 'input,select,textarea', function(){
+            try {
+              var rawName = $(this).attr('name') || '';
+              if (!rawName) return;
+              if ($scope._lastFocusedAdd && $scope._lastFocusedAdd !== rawName) {
+                $scope._flushFieldChange('add', $scope._lastFocusedAdd);
               }
-            }
+              $scope._lastFocusedAdd = rawName;
+            } catch(e){}
+          });
+
+          $frm.on('focusout.fieldEvents', 'input,select,textarea', function(){
+            try {
+              var rawName = $(this).attr('name') || '';
+              if (!rawName) return;
+              try { $scope.$apply(function(){ $scope._flushFieldChange('add', rawName); }); } catch(e){ try { $scope._flushFieldChange('add', rawName); } catch(e2){} }
+              if ($scope._lastFocusedAdd === rawName) $scope._lastFocusedAdd = null;
+            } catch(e){}
+          });
+        } catch(e) { console.warn('attach delegated add handlers failed', e); }
+
+        // Process existing controls (set numeric defaults) and hide loader
+        var processAddControls = function() {
+          try {
+            var $controls = $frm.find('input,select,textarea');
+            $controls.each(function () {
+              var rawName = $(this).attr('name') || '';
+              var fieldName = rawName.toLowerCase().replace(/ /g, "_");
+              var type = ($scope.fieldTypeMap && ($scope.fieldTypeMap[rawName] || $scope.fieldTypeMap[rawName.toLowerCase()] || $scope.fieldTypeMap[fieldName])) || $(this).attr('type') || 'text';
+              if (type === 'number' || type === 'range') {
+                try {
+                  if (!$scope.addingNew) $scope.addingNew = {};
+                  // Only initialize numeric defaults when the model key is undefined or an empty string
+                  var cur = $scope.addingNew[rawName];
+                  if (typeof cur === 'undefined' || cur === '') {
+                    // only coerce if there's a usable default value
+                    var val = cur;
+                    if (typeof val !== 'undefined' && val !== null && val !== '') {
+                      var numVal = Number(val);
+                      if (!isNaN(numVal)) {
+                        try { if (!$scope.$$phase) { $scope.$apply(function () { $scope.addingNew[rawName] = numVal; }); } else { $scope.addingNew[rawName] = numVal; } } catch(e){}
+                      }
+                    }
+                  }
+                } catch(e){}
+              }
+            });
+            try { $('.loadmodal, .loading').hide(); } catch(e){}
+          } catch(e) { /* ignore */ }
+        };
+
+        // Initial process
+        processAddControls();
+
+        // MutationObserver to react to ng-repeat/DOM insertions and dynamic column changes
+        try {
+          if (window.MutationObserver) {
+            var addObserver = new MutationObserver(function(mutations) {
+              // whenever children change, re-run control processing and ensure configs
+              processAddControls();
+              try { $scope._ensureModuleFieldConfigs(Object.keys($scope.addingNew || {})); } catch(e){}
+              try { $scope.registerModuleEventListeners(); } catch(e){}
+            });
+            addObserver.observe($frm[0], { childList: true, subtree: true });
+            $scope._addModalObserver = addObserver;
           }
-        });
+        } catch(e) { /* ignore */ }
+      } catch(e) { console.warn('add modal rendered handler error', e); }
     });
 
     modalPromise.result
       .then(function (data) {})
       .then(null, function (reason) {
+        try { Object.keys($scope._pendingFieldChanges.add||{}).forEach(function(k){ try{$scope._flushFieldChange('add',k);}catch(e){} }); } catch(e) {}
+        // disconnect observer if any
+        try { if ($scope._addModalObserver) { $scope._addModalObserver.disconnect(); delete $scope._addModalObserver; } } catch(e) {}
         document.getElementById("mainsection").classList.remove("blurcontent");
       });
   };
@@ -1412,6 +1341,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   };
 
   $scope.crtpag = function (action) {
+    // flush any queued add-field changes before collecting data
+    try { Object.keys($scope._pendingFieldChanges && $scope._pendingFieldChanges.add || {}).forEach(function(nk){ try{$scope._flushFieldChange('add', nk);}catch(e){} }); } catch(e){}
     var addata = {};
     
     // Collect data from $scope.addingNew for all field types
@@ -1466,34 +1397,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       return;
     }
 
-    // If there's a binding for this module+action, run orchestration instead of default API
-    try {
-      const moduleKey = (window.__MODULE_NAME__ || document.body.getAttribute('data-module') || window.location.pathname.split('/')[1] || '').toString();
-      const binding = ($scope.orchBindings && $scope.orchBindings[moduleKey] && $scope.orchBindings[moduleKey]['create']) || null;
-      if (binding && action === 'setcontent') {
-        // run orchestration by binding (supports sync/async)
-        $scope.invokeOrchestrationByBinding(binding, addata)
-          .then(resp => {
-            if (resp && (resp.executionId || resp.success)) {
-              window.top.postMessage('success^Created Successfully (via orchestration)', '*');
-            } else {
-              window.top.postMessage('error^Orchestration failed to queue', '*');
-            }
-            window.location.reload();
-          }).catch(e => { window.top.postMessage('error^Orchestration error', '*'); window.location.reload(); });
-        return;
-      }
-    } catch (e) { console.warn('binding check failed', e); }
-
-    // Publish CRUD event - workflows will react automatically
-    try { 
-      const traceId = $scope.publishCrudEvent('create', addata); 
-      console.log(`[${traceId}] Create event published for module`);
-    } catch (e) { 
-      console.warn('publishCrudEvent create failed', e); 
-    }
-
-    //post req start (default behaviour)
+    //post req start
     $http({
       method: "POST",
       url: url,
@@ -1513,12 +1417,19 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     })
       .success(function (response) {
         console.log(response + $scope.url);
+        // dispatch only the 'add' module action and per-field add events
+        try {
+          var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
+          var addAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'add'; });
+          if (addAction && addAction.event) $scope.dispatchModuleEvent(addAction.event, { response: response, module: mod });
+          ($scope.moduleEvents.fields || []).forEach(function(f){ if (!f) return; if (f.addEvent) $scope.dispatchModuleEvent(f.addEvent, { field: f.name, module: mod }); });
+        } catch(e) { console.warn('emit add events error', e); }
         window.top.postMessage("success^Created Successfully", "*");
-        window.location.reload();
+        // window.location.reload(); // temporarily disabled for in-page debugging
       })
       .catch(function onError(response) {
         window.top.postMessage("error^Some Error Occured", "*");
-        window.location.reload();
+        // window.location.reload(); // temporarily disabled for in-page debugging
       });
   };
 
@@ -1645,13 +1556,6 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     console.log("Raw edls:", $scope.edls);
     console.log("Formatted eddata:", eddata);
     console.log("POST URL:", $scope.url);
-    // Publish CRUD event - workflows will react automatically
-    try { 
-      const traceId = $scope.publishCrudEvent('update', eddata); 
-      console.log(`[${traceId}] Update event published`);
-    } catch (e) { 
-      console.warn('publishCrudEvent update failed', e); 
-    }
 
     //post req start
     $http({
@@ -1675,14 +1579,28 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         console.log(response);
         // alert('Edited successfully');
         window.top.postMessage("success^Edited Successfully", "*");
+        try {
+          var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
+          var updAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'update'; });
+          if (updAction && updAction.event) $scope.dispatchModuleEvent(updAction.event, { response: response, module: mod });
+          var prevStored = {};
+          try { prevStored = JSON.parse(localStorage.getItem('editDto') || '{}'); } catch(e) { prevStored = {}; }
+          ($scope.moduleEvents.fields || []).forEach(function(f){
+            if (!f) return;
+            if (!f.editEvent) return;
+            var prevVal = prevStored.hasOwnProperty(f.name) ? prevStored[f.name] : (prevStored[$scope._normalizeFieldKey(f.name)] || null);
+            var newVal = ($scope.edls && typeof $scope.edls[f.name] !== 'undefined') ? $scope.edls[f.name] : null;
+            $scope.dispatchModuleEvent(f.editEvent, { field: f.name, prev: prevVal, value: newVal, module: mod });
+          });
+        } catch(e) { console.warn('emit edit events error', e); }
         // notie.alert({ type: 'success', text: 'Edited Successfully', stay: false })
-        window.location.reload();
+        // window.location.reload(); // temporarily disabled for in-page debugging
       })
       .catch(function onError(response) {
         // alert('Some error occured');
         window.top.postMessage("error^Some Error Occured", "*");
         // notie.alert({ type: 'error', text: 'Some error occured', stay: false })
-        window.location.reload();
+        // window.location.reload(); // temporarily disabled for in-page debugging
       });
     //post req ends
   };
@@ -1751,183 +1669,101 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     console.log("converted edit data", convertedData);
     
     $scope.edls = $scope.removeFromObject(convertedData, "role", "created_at");
+    try { $scope._ensureModuleFieldConfigs(Object.keys($scope.edls || {})); } catch(e) {}
     localStorage.setItem("editDto", JSON.stringify($scope.edls));
     $scope.edtid = convertedData.id;
 
     // Open modal first
     var modalPromise = emodalPopup();
 
-    // Helper to find value in convertedData using multiple key variants
-    var findValueInData = function(inputName, convertedData) {
-      // Try exact match first
-      if (convertedData.hasOwnProperty(inputName)) {
-        return { found: true, key: inputName, value: convertedData[inputName] };
-      }
-      
-      // Try lowercase
-      var lowerName = inputName.toLowerCase();
-      if (convertedData.hasOwnProperty(lowerName)) {
-        return { found: true, key: lowerName, value: convertedData[lowerName] };
-      }
-      
-      // Try with underscores instead of spaces
-      var underscoreName = inputName.replace(/\s+/g, '_');
-      if (convertedData.hasOwnProperty(underscoreName)) {
-        return { found: true, key: underscoreName, value: convertedData[underscoreName] };
-      }
-      
-      // Try lowercase with underscores
-      var lowerUnderscoreName = inputName.toLowerCase().replace(/\s+/g, '_');
-      if (convertedData.hasOwnProperty(lowerUnderscoreName)) {
-        return { found: true, key: lowerUnderscoreName, value: convertedData[lowerUnderscoreName] };
-      }
-      
-      // Try camelCase variant
-      var camelName = inputName.replace(/_([a-z])/g, function(g) { return g[1].toUpperCase(); });
-      if (convertedData.hasOwnProperty(camelName)) {
-        return { found: true, key: camelName, value: convertedData[camelName] };
-      }
-      
-      // Try case-insensitive search through all keys
-      var keys = Object.keys(convertedData);
-      for (var i = 0; i < keys.length; i++) {
-        if (keys[i].toLowerCase() === lowerName ||
-            keys[i].toLowerCase().replace(/\s+/g, '_') === lowerUnderscoreName ||
-            keys[i].replace(/\s+/g, '_').toLowerCase() === lowerUnderscoreName) {
-          return { found: true, key: keys[i], value: convertedData[keys[i]] };
-        }
-      }
-      
-      return { found: false, key: null, value: undefined };
-    };
-
-    // Wait for modal to be fully rendered
+    // Wait for modal to be fully rendered and attach delegated handlers + observer
     modalPromise.rendered.then(function () {
-      console.log('Edit modal rendered, populating fields...');
-      var populatedCount = 0;
-      var skippedCount = 0;
-      var missingCount = 0;
-      
-      $("#edtfrm")
-        .find("input, textarea, select")
-        .each(function () {
-          var rawName = $(this).attr("name") || '';
-          if (!rawName) {
-            console.warn('Skipping input with no name attribute');
-            skippedCount++;
-            return;
-          }
-          
-          // Try to find value using multiple key variants
-          var result = findValueInData(rawName, convertedData);
-          var val = result.value;
-          
-          if (!result.found) {
-            console.warn('Field "' + rawName + '" not found in convertedData. Available keys:', Object.keys(convertedData));
-            missingCount++;
-          }
-          
-          // determine effective type from fieldTypeMap or input attribute
-          var type = ($scope.fieldTypeMap && ($scope.fieldTypeMap[rawName] || $scope.fieldTypeMap[rawName.toLowerCase()] || $scope.fieldTypeMap[rawName.toLowerCase().replace(/\s+/g, '_')])) || $(this).attr('type') || $(this).prop('tagName').toLowerCase() === 'textarea' ? 'textarea' : $(this).prop('tagName').toLowerCase() === 'select' ? 'select' : 'text';
-          
-          console.log('Populating field:', rawName, 'Type:', type, 'Value:', val, 'Found as:', result.key);
-
-          // Set value in $scope.edls using the raw input name (the key used in the template)
-          if (result.found && typeof val !== 'undefined') {
-            $scope.edls[rawName] = val;
-          }
-
-          // Data is already converted by convertObjectFields, just set values appropriately
-          if (type === 'date' || type === 'datetime-local') {
-            // Date fields expect Date objects
-            if (val instanceof Date) {
-              try {
-                if (!$scope.$$phase) {
-                  $scope.$apply(function () { $scope.edls[rawName] = val; });
-                } else {
-                  $scope.edls[rawName] = val;
-                }
-                $(this).val(''); // Let Angular binding handle it
-                populatedCount++;
-              } catch (e) {
-                $(this).val(val);
-                populatedCount++;
-              }
-            } else if (val) {
-              $(this).val(val);
-              populatedCount++;
-            }
-          } else if (type === 'time' || type === 'month' || type === 'week') {
-            // Time/month/week fields expect strings
-            if (val !== null && typeof val !== 'undefined') {
-              $(this).val(val);
-              populatedCount++;
-              try {
-                if (!$scope.$$phase) {
-                  $scope.$apply(function () { $scope.edls[rawName] = val; });
-                } else {
-                  $scope.edls[rawName] = val;
-                }
-              } catch (e) {
-                // ignore
-              }
-            }
-          } else if (type === 'number' || type === 'range') {
-            // Number fields expect numbers
-            var numVal = (typeof val === 'number') ? val : Number(val);
-            if (!isNaN(numVal) && val !== null && val !== '') {
-              try {
-                if (!$scope.$$phase) {
-                  $scope.$apply(function () { $scope.edls[rawName] = numVal; });
-                } else {
-                  $scope.edls[rawName] = numVal;
-                }
-                $(this).val(numVal);
-                populatedCount++;
-              } catch (e) {
-                $(this).val(val);
-                populatedCount++;
-              }
-            } else if (val !== null && typeof val !== 'undefined') {
-              $(this).val(val);
-              populatedCount++;
-            }
-          } else if (type === 'select') {
-            // Select dropdowns
-            if (val !== null && typeof val !== 'undefined') {
-              $(this).val(val);
-              populatedCount++;
-            }
-          } else if (type === 'textarea') {
-            // Textareas
-            if (val !== null && typeof val !== 'undefined') {
-              $(this).val(val);
-              populatedCount++;
-            }
-          } else {
-            // All other fields (text, email, url, etc.) expect strings
-            if (val !== null && typeof val !== 'undefined') {
-              $(this).val(val);
-              populatedCount++;
-            }
-          }
-        });
-      
-      console.log('Field population complete. Populated:', populatedCount, 'Missing:', missingCount, 'Skipped:', skippedCount);
-      
-      // Force Angular digest to update any ng-model bindings
       try {
-        if (!$scope.$$phase) {
-          $scope.$apply();
-        }
-      } catch (e) {
-        console.log('$apply after population (ignore if already in digest):', e.message);
-      }
+        var $frm = $("#edtfrm");
+        // set values for existing controls
+        try {
+          var $controls = $frm.find('input,select,textarea');
+          $controls.each(function () {
+            var rawName = $(this).attr('name') || '';
+            var fieldName = rawName.toLowerCase().replace(/ /g, "_");
+            var val = convertedData[fieldName];
+            var type = ($scope.fieldTypeMap && ($scope.fieldTypeMap[rawName] || $scope.fieldTypeMap[rawName.toLowerCase()] || $scope.fieldTypeMap[fieldName])) || $(this).attr('type') || 'text';
+            if (type === 'date' || type === 'datetime-local') {
+              if (val instanceof Date) {
+                try { if (!$scope.$$phase) { $scope.$apply(function () { $scope.edls[rawName] = val; }); } else { $scope.edls[rawName] = val; } } catch(e){ $(this).val(val); }
+              } else { $(this).val(typeof val === 'undefined' ? '' : val); }
+            } else if (type === 'time' || type === 'month' || type === 'week') {
+              $(this).val(typeof val === 'undefined' ? '' : val);
+              try { if (!$scope.$$phase) { $scope.$apply(function () { $scope.edls[rawName] = val; }); } else { $scope.edls[rawName] = val; } } catch(e){}
+            } else if (type === 'number' || type === 'range') {
+              var numVal = (typeof val === 'number') ? val : Number(val);
+              if (!isNaN(numVal) && val !== null && val !== '') {
+                try { if (!$scope.$$phase) { $scope.$apply(function () { $scope.edls[rawName] = numVal; }); } else { $scope.edls[rawName] = numVal; } } catch(e){ $(this).val(val); }
+              } else { $(this).val(typeof val === 'undefined' ? '' : val); }
+            } else { $(this).val(typeof val === 'undefined' ? '' : val); }
+          });
+        } catch(e) { /* ignore */ }
+
+        // Ensure configs and listeners
+        try { $scope._ensureModuleFieldConfigs(Object.keys($scope.edls || {})); } catch(e) {}
+        try { $scope.registerModuleEventListeners(); } catch(e) {}
+
+        // Delegated handlers on edit form
+        try {
+          $frm.off('.fieldEvents');
+          $frm.on('input.fieldEvents change.fieldEvents', 'input,select,textarea', function(){
+            var $el = $(this);
+            var rawName = $el.attr('name') || '';
+            if (!rawName) return;
+            try {
+              var val;
+              if ($el.is(':checkbox')) { val = $scope.edls && $scope.edls[rawName]; }
+              else if ($el.is(':radio')) { val = $scope.edls && $scope.edls[rawName] || $el.val(); }
+              else { val = $el.val(); }
+              try { $scope.$apply(function(){ $scope._queueFieldChange('edit', rawName, val, ($scope._lastFieldValues.edit && $scope._lastFieldValues.edit[rawName]) || null); }); } catch(e){ $scope._queueFieldChange('edit', rawName, val, ($scope._lastFieldValues.edit && $scope._lastFieldValues.edit[rawName]) || null); }
+            } catch(e) {}
+          });
+
+          $frm.on('focusin.fieldEvents', 'input,select,textarea', function(){
+            try {
+              var rawName = $(this).attr('name') || '';
+              if (!rawName) return;
+              if ($scope._lastFocusedEdit && $scope._lastFocusedEdit !== rawName) {
+                $scope._flushFieldChange('edit', $scope._lastFocusedEdit);
+              }
+              $scope._lastFocusedEdit = rawName;
+            } catch(e){}
+          });
+
+          $frm.on('focusout.fieldEvents', 'input,select,textarea', function(){
+            try {
+              var rawName = $(this).attr('name') || '';
+              if (!rawName) return;
+              try { $scope.$apply(function(){ $scope._flushFieldChange('edit', rawName); }); } catch(e){ try { $scope._flushFieldChange('edit', rawName); } catch(e2){} }
+              if ($scope._lastFocusedEdit === rawName) $scope._lastFocusedEdit = null;
+            } catch(e){}
+          });
+        } catch(e) { console.warn('attach delegated edit handlers failed', e); }
+
+        // MutationObserver to handle dynamic changes in edit form as well
+        try {
+          if (window.MutationObserver) {
+            var editObserver = new MutationObserver(function() {
+              try { $scope._ensureModuleFieldConfigs(Object.keys($scope.edls || {})); } catch(e){}
+              try { $scope.registerModuleEventListeners(); } catch(e){}
+            });
+            editObserver.observe($frm[0], { childList: true, subtree: true });
+            $scope._editModalObserver = editObserver;
+          }
+        } catch(e) {}
+      } catch(e) { console.warn('edit modal rendered handler error', e); }
     });
 
     modalPromise.result
       .then(function (data) {})
       .then(null, function (reason) {
+        try { Object.keys($scope._pendingFieldChanges.edit||{}).forEach(function(k){ try{$scope._flushFieldChange('edit',k);}catch(e){} }); } catch(e) {}
+        try { if ($scope._editModalObserver) { $scope._editModalObserver.disconnect(); delete $scope._editModalObserver; } } catch(e) {}
         document.getElementById("mainsection").classList.remove("blurcontent");
       });
   };
@@ -1963,25 +1799,17 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   };
 
   $scope.delyes = function (id, vx) {
-    // Publish CRUD event - workflows will react automatically
-    try { 
-      const traceId = $scope.publishCrudEvent('delete', { id: id, role: $scope.userdata && $scope.userdata.role }); 
-      console.log(`[${traceId}] Delete event published for id: ${id}`);
-    } catch (e) { 
-      console.warn('publishCrudEvent delete failed', e); 
-    }
-
     var url = $scope.url + "?id=" + id + "&" + vx + "=true";
     // //post req start
-    $http({
-      method: "GET",
-      url: url,
-    }).success(function (response) {
+    $http({ method: "GET", url: url }).success(function (response) {
       console.log(response);
+      try {
+        var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
+        var delAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'delete'; });
+        if (delAction && delAction.event) $scope.dispatchModuleEvent(delAction.event, { response: response, module: mod, deletedId: id });
+      } catch(e) { console.warn('emit delete events error', e); }
       window.top.postMessage("success^Deleted Successfully", "*");
-      // notie.alert({ type: 'success', text: 'Deleted Successfully', stay: false })
-      // alert("Deleted Successfully")
-      window.location.reload();
+      // window.location.reload(); // temporarily disabled for in-page debugging
     });
     // //post req ends
   };
@@ -2012,6 +1840,214 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       $scope.imgr = response;
     });
   };
+
+  // Settings modal functions - global on scope
+    $scope._normalizeFieldKey = function(name) {
+      if (!name) return '';
+      return name.toString().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+    };
+
+    $scope._dedupeModuleFields = function() {
+      try {
+        var seen = {};
+        var uniq = [];
+        ($scope.moduleEvents.fields || []).forEach(function(f){
+          var k = $scope._normalizeFieldKey(f.name);
+          if (!k) return;
+          if (!seen[k]) { seen[k]=true; uniq.push(f); }
+          else {
+            var existing = uniq.find(function(x){ return $scope._normalizeFieldKey(x.name) === k; });
+            if (existing) {
+              existing.addEvent = existing.addEvent || f.addEvent;
+              existing.editEvent = existing.editEvent || f.editEvent;
+              existing.deleteEvent = existing.deleteEvent || f.deleteEvent;
+            }
+          }
+        });
+        $scope.moduleEvents.fields = uniq;
+      } catch (e) { console.warn('dedupe error', e); }
+    };
+
+    // find field config by normalized key in a structured object
+    $scope._findFieldConfig = function(structured, key) {
+      try {
+        if (!structured || !structured.fields) return null;
+        var nk = $scope._normalizeFieldKey(key);
+        var found = null;
+        Object.keys(structured.fields).forEach(function(fk){ if (found) return; if ($scope._normalizeFieldKey(fk) === nk) found = { name: fk, cfg: structured.fields[fk] }; });
+        return found;
+      } catch(e){ return null; }
+    };
+
+  $scope._normalizeFieldKey = function(name) {
+    if (!name) return '';
+    return name.toString().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+  };
+
+  $scope._dedupeModuleFields = function() {
+    try {
+      var seen = {};
+      var uniq = [];
+      ($scope.moduleEvents.fields || []).forEach(function(f){
+        var k = $scope._normalizeFieldKey(f.name);
+        if (!k) return;
+        if (!seen[k]) { seen[k]=true; uniq.push(f); }
+        else {
+          // merge non-empty values into existing entry
+          var existing = uniq.find(function(x){ return $scope._normalizeFieldKey(x.name) === k; });
+          if (existing) {
+            existing.addEvent = existing.addEvent || f.addEvent;
+            existing.editEvent = existing.editEvent || f.editEvent;
+            existing.deleteEvent = existing.deleteEvent || f.deleteEvent;
+          }
+        }
+      });
+      $scope.moduleEvents.fields = uniq;
+    } catch (e) { console.warn('dedupe error', e); }
+  };
+
+    // Ensure moduleEvents.fields contains configs for given raw field keys
+    $scope._ensureModuleFieldConfigs = function(keys) {
+      try {
+        if (!Array.isArray(keys)) return;
+        $scope.moduleEvents = $scope.moduleEvents || { module: (localStorage.getItem('headinfo')||'module'), actions: [], fields: [] };
+        var mod = ($scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
+        keys.forEach(function(k){
+          if (!k) return;
+          // skip system fields
+          if (['id','role','created_at','updated_at'].indexOf(k) !== -1) return;
+          var nk = $scope._normalizeFieldKey(k);
+          var exists = ($scope.moduleEvents.fields || []).some(function(f){ return $scope._normalizeFieldKey(f.name) === nk; });
+          if (!exists) {
+            var base = mod + ':field:' + nk;
+            ($scope.moduleEvents.fields = $scope.moduleEvents.fields || []).push({
+              name: k,
+              addEvent: base + ':added',
+              editEvent: base + ':edited',
+              deleteEvent: base + ':deleted'
+            });
+          }
+        });
+        $scope._dedupeModuleFields();
+        try { $scope.registerModuleEventListeners(); } catch(e) { /* ignore */ }
+      } catch(e) { console.warn('ensure field configs error', e); }
+    };
+
+    // pending per-field changes captured by watchers until blur/flush
+    $scope._pendingFieldChanges = { add: {}, edit: {} };
+    // No auto-flush timers: rely on focus-change and blur handlers to flush.
+    $scope._queueFieldChange = function(lifecycle, key, value, prev) {
+      try {
+        if (!key || (typeof key === 'string' && (key.indexOf('$$') === 0 || key[0] === '$'))) return;
+        lifecycle = lifecycle === 'edit' ? 'edit' : 'add';
+        $scope._pendingFieldChanges = $scope._pendingFieldChanges || { add: {}, edit: {} };
+        $scope._pendingFieldChanges[lifecycle] = $scope._pendingFieldChanges[lifecycle] || {};
+        var nk = $scope._normalizeFieldKey(key);
+        if (!nk) return;
+        $scope._pendingFieldChanges[lifecycle][nk] = { value: value, previous: prev, raw: key };
+        try { console.debug('QUEUED FIELD CHANGE', lifecycle, key, nk, value); } catch(e) {}
+      } catch(e) { console.warn('queueFieldChange error', e); }
+    };
+
+    $scope._flushFieldChange = function(lifecycle, key) {
+      try {
+        lifecycle = lifecycle === 'edit' ? 'edit' : 'add';
+        if (!key) return;
+        var nk = $scope._normalizeFieldKey(key);
+        if (!nk) return;
+        try { console.debug('FLUSH attempt', lifecycle, key, nk); } catch(e) {}
+        var pending = $scope._pendingFieldChanges && $scope._pendingFieldChanges[lifecycle] && $scope._pendingFieldChanges[lifecycle][nk];
+        if (!pending) { try { console.debug('FLUSH no pending for', nk); } catch(e) {} ; return; }
+        var rawKey = pending.raw || key;
+        try { console.debug('FLUSHING', lifecycle, rawKey, pending); } catch(e) {}
+        $scope._emitFieldChange(lifecycle, rawKey, pending.value, pending.previous);
+        delete $scope._pendingFieldChanges[lifecycle][nk];
+      } catch(e) { console.warn('flushFieldChange error', e); }
+    };
+
+  // Module event listener registry
+  $scope._moduleEventListeners = {};
+  $scope.registerModuleEventListeners = function() {
+    try {
+      // remove old listeners
+      Object.keys($scope._moduleEventListeners).forEach(function(ev){ window.removeEventListener(ev, $scope._moduleEventListeners[ev]); });
+      $scope._moduleEventListeners = {};
+
+      var register = function(eventName){
+        if (!eventName) return;
+        var listenerName = eventName + '-listener';
+        if ($scope._moduleEventListeners[listenerName]) return;
+        var cb = function(e){
+          console.log('====EVENT RECEIVED====', listenerName, e && e.detail ? e.detail : null);
+          try { window.top.postMessage('orchestrator_event^' + listenerName + '^' + JSON.stringify(e && e.detail ? e.detail : {}), '*'); } catch(err){ console.warn('postMessage failed', err); }
+          try { if (!$scope.$$phase) $scope.$apply(); } catch(e){}
+        };
+        window.addEventListener(listenerName, cb);
+        $scope._moduleEventListeners[listenerName] = cb;
+        console.log('====EVENT LISTENER REGISTERED====', listenerName);
+      };
+
+      // register for general actions
+      ($scope.moduleEvents.actions || []).forEach(function(a){ if (a && a.event) register(a.event); });
+      // register per-field events
+      ($scope.moduleEvents.fields || []).forEach(function(f){ if (!f) return; [f.addEvent, f.editEvent, f.deleteEvent].forEach(register); });
+      console.log('Registered module event listeners', Object.keys($scope._moduleEventListeners));
+    } catch(e){ console.warn('registerModuleEventListeners error', e); }
+  };
+
+  // Debounced dispatcher for module events
+  $scope._pendingDispatch = {};
+  $scope.dispatchModuleEvent = function(eventName, detail, delay) {
+    try {
+      if (!eventName) return;
+      delay = typeof delay === 'number' ? delay : 300;
+      if ($scope._pendingDispatch[eventName]) clearTimeout($scope._pendingDispatch[eventName]);
+      console.log('====EVENT SCHEDULED====', eventName, detail || {});
+      $scope._pendingDispatch[eventName] = setTimeout(function(){
+        try {
+          console.log('====EVENT FIRED====', eventName, detail || {});
+          window.dispatchEvent(new CustomEvent(eventName, { detail: detail || {} }));
+          try {
+            var listenerName = eventName + '-listener';
+            console.log('====EVENT FIRED==== (listener variant) ', listenerName, detail || {});
+            window.dispatchEvent(new CustomEvent(listenerName, { detail: detail || {} }));
+          } catch(e2) { }
+        } catch(e){
+          console.warn('dispatch failed', e);
+        }
+        delete $scope._pendingDispatch[eventName];
+      }, delay);
+    } catch(e){ console.warn('dispatchModuleEvent error', e); }
+  };
+
+  // Initialize module events with defaults and register listeners (no persistence)
+  $scope.initializeModuleEvents = function() {
+    try {
+      var defaultModule = (localStorage.getItem('headinfo') || 'module').toString().toLowerCase();
+      $scope.moduleEvents = { module: defaultModule, actions: [], fields: [] };
+      $scope.moduleEvents.actions = [
+        { key: 'add', label: 'Add Record', event: defaultModule + ':add' },
+        { key: 'update', label: 'Update Record', event: defaultModule + ':update' },
+        { key: 'delete', label: 'Delete Record', event: defaultModule + ':delete' }
+      ];
+      var names = [];
+      if ($scope.addingNew && Object.keys($scope.addingNew).length > 0) names = Object.keys($scope.addingNew);
+      else if ($scope.edls && Object.keys($scope.edls).length > 0) names = Object.keys($scope.edls);
+      else if ($scope.rawFields && $scope.rawFields.length > 0) names = $scope.rawFields;
+      $scope.moduleEvents.fields = [];
+      (names || []).forEach(function(fn){
+        if (!fn) return; if (['id','role','created_at','updated_at'].indexOf(fn) !== -1) return;
+        var safe = fn.toString();
+        $scope.moduleEvents.fields.push({ name: safe, addEvent: defaultModule + ':field:' + safe + ':added', editEvent: defaultModule + ':field:' + safe + ':edited', deleteEvent: defaultModule + ':field:' + safe + ':deleted' });
+      });
+      $scope._dedupeModuleFields();
+      $scope.registerModuleEventListeners();
+    } catch(e){ console.warn('initializeModuleEvents error', e); }
+  };
+
+  // Settings UI removed: provide safe no-op save/cancel functions
+  $scope.cancelSettings = function () { try { if ($scope.settingsModal) $scope.settingsModal.dismiss('cancel'); document.getElementById('mainsection').classList.remove('blurcontent'); } catch(e){} };
+  $scope.saveModuleEvents = function () { try { console.log('saveModuleEvents called but persistence is disabled; listeners re-registered'); $scope._dedupeModuleFields(); $scope.registerModuleEventListeners(); } catch(e){} };
 
   $scope.allowplugin = function (fieldName, source, event) {
     console.log("==== WEATHER1 ALLOWPLUGIN WITH MAPPING ====");
@@ -2353,4 +2389,121 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       console.error("Failed to create plugin sidebar elements");
     }
   };
+
+  // Initialize module events on controller load (no persistence)
+  // Preload dynamic fields for Add modal as early as possible to avoid ng-repeat delay
+  $scope._preloadAddFields = function() {
+    try {
+      var role = ($scope.userdata && $scope.userdata.role) ? $scope.userdata.role : (localStorage.getItem('userdat') ? (JSON.parse(localStorage.getItem('userdat')).role) : ($scope.userole || ''));
+      $http.get($scope.url + "?getfirstcontent=true&role=" + role)
+        .success(function(data) {
+          try {
+            var addObj = {};
+            if (Array.isArray(data)) {
+              data.forEach(function (col) {
+                var colLower = col.toLowerCase();
+                var colUnderscore = colLower.replace(/ /g, '_');
+                var fieldType = ($scope.fieldTypeMap && ($scope.fieldTypeMap[col] || $scope.fieldTypeMap[colLower] || $scope.fieldTypeMap[colUnderscore])) || 'text';
+                if (fieldType === 'number' || fieldType === 'range') addObj[col] = 0; else addObj[col] = '';
+              });
+            } else if (typeof data === 'object' && data !== null) {
+              Object.keys(data).forEach(function(col) {
+                var colLower = col.toLowerCase();
+                var colUnderscore = colLower.replace(/ /g, '_');
+                var fieldType = ($scope.fieldTypeMap && ($scope.fieldTypeMap[col] || $scope.fieldTypeMap[colLower] || $scope.fieldTypeMap[colUnderscore])) || 'text';
+                if (fieldType === 'number' || fieldType === 'range') addObj[col] = 0; else addObj[col] = '';
+              });
+            }
+            delete addObj.id; delete addObj.role; delete addObj.created_at; delete addObj.updated_at;
+            // Merge defaults into existing `addingNew` without overwriting any user-entered values
+            if (!$scope.addingNew || Object.keys($scope.addingNew).length === 0) {
+              $scope.addingNew = addObj;
+            } else {
+              Object.keys(addObj).forEach(function(k){
+                try {
+                  if (typeof $scope.addingNew[k] === 'undefined') {
+                    $scope.addingNew[k] = addObj[k];
+                  }
+                } catch(e){}
+              });
+            }
+            // also set rawFields if not present
+            try { if ((!$scope.rawFields || $scope.rawFields.length===0) && Array.isArray(data)) $scope.rawFields = data.slice(); } catch(e){}
+            try { $scope._ensureModuleFieldConfigs(Object.keys($scope.addingNew || {})); } catch(e){}
+            try { $scope.registerModuleEventListeners(); } catch(e){}
+            // hide loader element if present
+            try { $('.loadmodal, .loading').hide(); } catch(e){}
+            $scope._preloadDone = true;
+          } catch(e) { console.warn('preloadAddFields build error', e); }
+        })
+        .error(function(){ /* ignore preload errors */ });
+    } catch(e) { console.warn('preloadAddFields error', e); }
+  };
+
+  try { $scope._preloadAddFields(); } catch(e){}
+
+  try { $scope.initializeModuleEvents(); } catch(e) { console.warn('initializeModuleEvents call failed', e); }
+
+  // Watch for per-field changes in Add and Edit forms and emit field lifecycle events
+  $scope._lastFieldValues = { add: {}, edit: {} };
+  $scope._emitFieldChange = function(lifecycle, key, value, prev) {
+    try {
+      if (!key) return;
+      var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module : (localStorage.getItem('headinfo') || 'module');
+      var structured = { module: mod, actions: {}, fields: {} };
+      if ($scope.moduleEvents && $scope.moduleEvents.fields) {
+        ($scope.moduleEvents.fields || []).forEach(function(f){ if (!f || !f.name) return; structured.fields[f.name] = { addEvent: f.addEvent, editEvent: f.editEvent, deleteEvent: f.deleteEvent }; });
+      }
+      var found = $scope._findFieldConfig(structured, key) || null;
+      if (!found) {
+        var norm = $scope._normalizeFieldKey(key);
+        found = ($scope.moduleEvents.fields || []).find(function(f){ return $scope._normalizeFieldKey(f.name) === norm; }) || null;
+      }
+      if (!found || !found.cfg) return;
+      var ev = null;
+      if (lifecycle === 'add') ev = found.cfg.addEvent;
+      else if (lifecycle === 'edit') ev = found.cfg.editEvent;
+      if (!ev) return;
+      // if prev not provided, try to use tracked last value
+      try {
+        $scope._lastFieldValues = $scope._lastFieldValues || { add: {}, edit: {} };
+        var trackedPrev = (prev === undefined || prev === null) ? ($scope._lastFieldValues[lifecycle] ? $scope._lastFieldValues[lifecycle][found.name] : undefined) : prev;
+        $scope.dispatchModuleEvent(ev, { field: found.name, module: mod, value: value, previous: trackedPrev }, 300);
+        // update last seen value after dispatch
+        try { $scope._lastFieldValues[lifecycle][found.name] = value; } catch(e){}
+      } catch(e) { console.warn('emitFieldChange dispatch error', e); }
+    } catch(e){ console.warn('emitFieldChange error', e); }
+  };
+
+  $scope.$watch('addingNew', function(newV, oldV) {
+    try {
+      if (!newV || typeof newV !== 'object') return;
+      oldV = oldV || {};
+      Object.keys(newV).forEach(function(k){
+        var nv = newV[k];
+        var ov = oldV[k];
+        var changed = false;
+        try { changed = JSON.stringify(nv) !== JSON.stringify(ov); } catch(e){ changed = nv !== ov; }
+        if (changed) {
+          $scope._queueFieldChange('add', k, nv, ov);
+        }
+      });
+    } catch(e){ }
+  }, true);
+
+  $scope.$watch('edls', function(newV, oldV) {
+    try {
+      if (!newV || typeof newV !== 'object') return;
+      oldV = oldV || {};
+      Object.keys(newV).forEach(function(k){
+        var nv = newV[k];
+        var ov = oldV[k];
+        var changed = false;
+        try { changed = JSON.stringify(nv) !== JSON.stringify(ov); } catch(e){ changed = nv !== ov; }
+        if (changed) {
+          $scope._queueFieldChange('edit', k, nv, ov);
+        }
+      });
+    } catch(e){ }
+  }, true);
 });

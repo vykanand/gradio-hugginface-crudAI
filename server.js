@@ -60,6 +60,14 @@ let pool;
 app.use(express.json());
 app.use(cors());
 
+// Simple request logger to aid debugging (prints method + path)
+app.use((req, res, next) => {
+  try {
+    console.log(`[req] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+  } catch (e) {}
+  next();
+});
+
 // Provide a lightweight bindings read endpoint early so embedded clients
 // can discover bindings even if later route definitions are reordered.
 app.get('/orchestration/bindings', async (req, res) => {
@@ -75,6 +83,46 @@ app.get('/orchestration/bindings', async (req, res) => {
     }
   } catch (e) {
     console.error('early bindings read error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Discover modules available for CRUD binding: metadata files + schema tables
+app.get('/orchestration/modules', async (req, res) => {
+  try {
+    const metaDir = path.join(__dirname, 'metadata');
+    const files = await fs.readdir(metaDir).catch(() => []);
+    const modules = {};
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        const raw = await fs.readFile(path.join(metaDir, f), 'utf8');
+        const j = JSON.parse(raw || '{}');
+        const m = j.module || j.id || j.name || null;
+        if (m) modules[m] = modules[m] || { id: m, name: j.name || m, description: j.description || '', source: 'metadata' };
+      } catch (e) {}
+    }
+    // Also include DB tables from schema_store/tables
+    try {
+      const tablesDir = path.join(__dirname, 'config', 'schema_store', 'tables');
+      const tfiles = await fs.readdir(tablesDir).catch(() => []);
+      for (const tf of tfiles) {
+        if (!tf.endsWith('.json')) continue;
+        const raw = await fs.readFile(path.join(tablesDir, tf), 'utf8');
+        const j = JSON.parse(raw || '{}');
+        const name = j.tableName || tf.replace(/\.json$/, '');
+        modules[name] = modules[name] || { id: name, name: j.title || name, description: j.description || '', source: 'schema' };
+      }
+    } catch (e) {}
+
+    // Enrich modules with existing bindings (if any)
+    await ensureBindingsFile();
+    const rawBindings = await fs.readFile(BINDINGS_FILE, 'utf8');
+    const binds = JSON.parse(rawBindings || '{}');
+    const result = Object.keys(modules).map(k => ({ ...modules[k], bindings: binds[k] || {} }));
+    return res.json({ ok: true, modules: result });
+  } catch (e) {
+    console.error('orchestration/modules error', e && e.stack ? e.stack : e);
     return res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -356,6 +404,142 @@ app.get("/api/schema/:tableName", async (req, res) => {
       console.warn('Failed to load persisted table schema fallback:', e2 && e2.message ? e2.message : e2);
       res.status(500).json({ error: 'Failed to fetch table schema.', details: error && error.message ? error.message : String(error) });
     }
+  }
+});
+
+// Module mapping endpoints (JS equivalent of pluginmap.php)
+// GET /api/module-mapping?module=NAME[&action=fetch_values&table=..&column=..]
+// POST /api/module-mapping  { module, mappings, fieldTypes, fieldRequired, fieldOptions }
+app.get('/api/module-mapping', async (req, res) => {
+  try {
+    const module = req.query.module;
+    const action = req.query.action;
+    if (!module) return res.status(400).json({ ok: false, error: 'module query param required' });
+
+    // fetch distinct values if requested
+    if (action === 'fetch_values') {
+      const table = (req.query.table || '').replace(/[^a-zA-Z0-9_]/g, '');
+      const column = (req.query.column || '').replace(/[^a-zA-Z0-9_]/g, '');
+      if (!table || !column) return res.status(400).json({ success: false, message: 'Missing parameters' });
+      try {
+        const sql = `SELECT DISTINCT \`${column}\` AS val FROM \`${table}\` WHERE \`${column}\` IS NOT NULL AND \`${column}\` != '' ORDER BY \`${column}\` LIMIT 100`;
+        const [rows] = await pool.query(sql);
+        const values = (rows || []).map(r => r.val).filter(v => v !== null && v !== undefined && String(v) !== '');
+        return res.json({ success: true, values, count: values.length });
+      } catch (e) {
+        return res.status(500).json({ success: false, message: 'Query failed', details: e.message });
+      }
+    }
+
+    // regular module mapping load
+    // detect optional navigation columns
+    const optionalCols = ['field_types','field_required','field_options'];
+    const has = {};
+    for (const c of optionalCols) {
+      try {
+        const [rows] = await pool.query("SHOW COLUMNS FROM navigation LIKE ?", [c]);
+        has[c] = Array.isArray(rows) && rows.length > 0;
+      } catch (e) {
+        has[c] = false;
+      }
+    }
+
+    // build select list
+    const selectCols = ['nav','urn','plugin'];
+    if (has['field_types']) selectCols.push('field_types');
+    if (has['field_required']) selectCols.push('field_required');
+    if (has['field_options']) selectCols.push('field_options');
+
+    const sql = `SELECT ${selectCols.map(s => `\`${s}\``).join(', ')} FROM navigation WHERE nav = ? LIMIT 1`;
+    const [results] = await pool.query(sql, [module]);
+    const moduleData = (results && results[0]) || null;
+    if (!moduleData) return res.status(404).json({ ok: false, error: 'Module not found' });
+
+    // parse JSON fields
+    let pluginMappings = {};
+    let fieldTypeMappings = {};
+    let fieldRequiredMappings = {};
+    let fieldOptionsMappings = {};
+    try { pluginMappings = moduleData.plugin ? JSON.parse(moduleData.plugin) : {}; } catch (e) { pluginMappings = {}; }
+    if (has['field_types']) { try { fieldTypeMappings = moduleData.field_types ? JSON.parse(moduleData.field_types) : {}; } catch (e) { fieldTypeMappings = {}; } }
+    if (has['field_required']) { try { fieldRequiredMappings = moduleData.field_required ? JSON.parse(moduleData.field_required) : {}; } catch (e) { fieldRequiredMappings = {}; } }
+    if (has['field_options']) { try { fieldOptionsMappings = moduleData.field_options ? JSON.parse(moduleData.field_options) : {}; } catch (e) { fieldOptionsMappings = {}; } }
+
+    // derive table name from urn (first path segment)
+    const urn = moduleData.urn || '';
+    const tableName = (String(urn).split('/')[0]) || '';
+
+    // get table columns
+    let columns = [];
+    if (tableName) {
+      try {
+        const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``);
+        columns = (cols || []).map(r => r.Field).filter(f => !['id','role','created_at','updated_at'].includes(f));
+      } catch (e) {
+        columns = [];
+      }
+    }
+
+    // list plugins dir
+    let plugins = [];
+    try {
+      const pdir = path.join(__dirname, 'plugins');
+      const entries = await fs.readdir(pdir).catch(() => []);
+      for (const en of entries) {
+        try {
+          const st = await fs.stat(path.join(pdir, en));
+          if (st.isDirectory()) plugins.push(en);
+        } catch (e) {}
+      }
+      plugins.sort();
+    } catch (e) { plugins = []; }
+
+    return res.json({ ok: true, module: module, moduleData, pluginMappings, fieldTypeMappings, fieldRequiredMappings, fieldOptionsMappings, tableName, columns, plugins });
+  } catch (e) {
+    console.error('/api/module-mapping error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// POST save mappings
+app.post('/api/module-mapping', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const module = body.module;
+    if (!module) return res.status(400).json({ success: false, message: 'module required' });
+
+    const mappings = body.mappings || {};
+    const fieldTypes = body.fieldTypes || {};
+    const fieldRequired = body.fieldRequired || {};
+    const fieldOptions = body.fieldOptions || {};
+
+    // detect optional columns
+    const optionalCols = ['field_types','field_required','field_options'];
+    const has = {};
+    for (const c of optionalCols) {
+      try {
+        const [rows] = await pool.query("SHOW COLUMNS FROM navigation LIKE ?", [c]);
+        has[c] = Array.isArray(rows) && rows.length > 0;
+      } catch (e) { has[c] = false; }
+    }
+
+    const parts = ['plugin = ?'];
+    const params = [JSON.stringify(mappings)];
+    if (has['field_types']) { parts.push('field_types = ?'); params.push(JSON.stringify(fieldTypes)); }
+    if (has['field_required']) { parts.push('field_required = ?'); params.push(JSON.stringify(fieldRequired)); }
+    if (has['field_options']) { parts.push('field_options = ?'); params.push(JSON.stringify(fieldOptions)); }
+    const sql = `UPDATE navigation SET ${parts.join(', ')} WHERE nav = ?`;
+    params.push(module);
+
+    const [result] = await pool.query(sql, params);
+    // check affectedRows
+    if (result && (result.affectedRows === 0)) {
+      return res.json({ success: false, message: 'No row updated (module may not exist)' });
+    }
+    return res.json({ success: true, message: 'Field configurations saved successfully' });
+  } catch (e) {
+    console.error('/api/module-mapping save error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ success: false, message: 'Failed to save configurations', details: e.message });
   }
 });
 
@@ -748,19 +932,47 @@ async function fallbackDispatchEvent(subject, payload) {
   try {
     // payload expected to be object
     const evt = (typeof payload === 'string') ? JSON.parse(payload) : payload || {};
-    const workflows = await workflowEngine.getWorkflows();
-    for (const wf of workflows || []) {
-      const trigger = (wf.triggerEvent || '').toString();
-      const matches = [evt.eventType, evt.action, `${evt.eventType}:${evt.action}`, evt.module].map(v => v && v.toString());
-      if (!trigger) continue;
-      if (matches.includes(trigger) || matches.includes(trigger)) {
-        try {
-          await workflowEngine.startExecution(wf.id, { event: evt }, 'fallback_dispatch');
-          try { await auditLog.write({ action: 'fallback_dispatch', workflow: wf.id, subject, traceId: evt && evt.traceId }); } catch (e) {}
-        } catch (e) {
-          console.warn('[fallback] failed to start workflow', wf.id, e && e.message ? e.message : e);
+    // Central dispatch: trigger any orchestration bindings for module+action
+    try {
+      await ensureBindingsFile();
+      const raw = await fs.readFile(BINDINGS_FILE, 'utf8');
+      const bindingsMap = JSON.parse(raw || '{}');
+      const mod = evt.module;
+      const act = (evt.action || '').toString();
+      if (mod && bindingsMap[mod]) {
+        const modBindings = bindingsMap[mod] || {};
+        // Check CRUD-style bindings first (create/read/update/delete)
+        const candidate = modBindings[act] || modBindings[act.toLowerCase()] || modBindings[act.toUpperCase()];
+        if (candidate) {
+          try {
+            // candidate may be orchestrationId or object { orchestrationId, operation }
+            const orchId = (typeof candidate === 'string') ? candidate : (candidate.orchestrationId || null);
+            if (orchId) {
+              // start orchestration by id (async)
+              workflowEngine.startExecution(orchId, { event: evt }, 'binding_dispatch').catch(e => console.warn('binding startExecution failed', orchId, e && e.message ? e.message : e));
+              try { auditLog.write({ action: 'binding_dispatch', orchestration: orchId, subject, traceId: evt && evt.traceId }); } catch (e) {}
+            }
+          } catch (e) { console.warn('failed to dispatch binding for', mod, act, e && e.message ? e.message : e); }
         }
       }
+
+      // Also dispatch to any workflows whose triggerEvent matches the event
+      const workflows = await workflowEngine.getWorkflows();
+      for (const wf of workflows || []) {
+        const trigger = (wf.triggerEvent || '').toString();
+        if (!trigger) continue;
+        const matches = [evt.eventType, evt.action, `${evt.eventType}:${evt.action}`, evt.module].map(v => v && v.toString());
+        if (matches.includes(trigger)) {
+          try {
+            await workflowEngine.startExecution(wf.id, { event: evt }, 'fallback_dispatch');
+            try { await auditLog.write({ action: 'fallback_dispatch', workflow: wf.id, subject, traceId: evt && evt.traceId }); } catch (e) {}
+          } catch (e) {
+            console.warn('[fallback] failed to start workflow', wf.id, e && e.message ? e.message : e);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[fallbackDispatchEvent] dispatch error', e && e.message ? e.message : e);
     }
   } catch (e) {
     console.warn('[fallback] dispatch error', e && e.message ? e.message : e);
@@ -795,6 +1007,11 @@ async function startKafkaMonitor() {
           for (const res of sseClients) {
             try { res.write('data: ' + payload + '\n\n'); } catch (e) { /* ignore */ }
           }
+          // Also attempt to dispatch events to orchestrations/bindings
+          try {
+            // Do not await - fire-and-forget dispatch to avoid blocking consumer
+            fallbackDispatchEvent(subj, parsed).catch(e => console.warn('kafka dispatch failed', e && e.message ? e.message : e));
+          } catch (e) { console.warn('kafka dispatch trigger failed', e && e.message ? e.message : e); }
         } catch (e) {
           console.warn('[monitor:kafka] error processing message', e && e.message ? e.message : e);
         }
@@ -1685,6 +1902,28 @@ app.post('/api/taxonomy/events', async (req, res) => {
   }
 });
 
+// Update an existing event
+app.put('/api/taxonomy/events/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updates = req.body || {};
+    const updated = await taxonomyService.updateEvent(id, updates);
+    res.json({ ok: true, event: updated });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/taxonomy/events/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    await taxonomyService.deleteEvent(id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/api/taxonomy/actions', async (req, res) => {
   try {
     const actions = await taxonomyService.getActions();
@@ -1698,6 +1937,27 @@ app.post('/api/taxonomy/actions', async (req, res) => {
   try {
     const action = await taxonomyService.addAction(req.body);
     res.json({ ok: true, action });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.put('/api/taxonomy/actions/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updates = req.body || {};
+    const updated = await taxonomyService.updateAction(id, updates);
+    res.json({ ok: true, action: updated });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/taxonomy/actions/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    await taxonomyService.deleteAction(id);
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }

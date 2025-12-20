@@ -1,37 +1,136 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "notes": "Extended taxonomy model: properties carry DB source paths; states, events and actions include explicit transition and allowed-state metadata.",
   "concepts": {
     "Invoice": {
       "id": "Invoice",
       "name": "Invoice",
       "description": "A request for payment",
       "properties": [
-        "amount",
-        "vendorId",
-        "date",
-        "status"
+        {
+          "id": "amount",
+          "name": "Amount",
+          "dataType": "number",
+          "sources": [
+            {
+              "db": "app_db",
+              "table": "invoices",
+              "column": "amount",
+              "path": "app_db.invoices.amount"
+            }
+          ]
+        },
+        {
+          "id": "vendorId",
+          "name": "Vendor ID",
+          "dataType": "string",
+          "sources": [
+            {
+              "db": "app_db",
+              "table": "invoices",
+              "column": "vendor_id",
+              "path": "app_db.invoices.vendor_id"
+            }
+          ]
+        },
+        {
+          "id": "date",
+          "name": "Invoice Date",
+          "dataType": "datetime",
+          "sources": [
+            {
+              "db": "app_db",
+              "table": "invoices",
+              "column": "issued_at",
+              "path": "app_db.invoices.issued_at"
+            }
+          ]
+        },
+        {
+          "id": "status",
+          "name": "Status",
+          "dataType": "string",
+          "sources": [
+            {
+              "db": "app_db",
+              "table": "invoices",
+              "column": "status",
+              "path": "app_db.invoices.status"
+            }
+          ]
+        }
+      ],
+      "states": [
+        {
+          "id": "Draft",
+          "name": "Draft",
+          "allowedTransitions": [
+            "Submitted"
+          ]
+        },
+        {
+          "id": "Submitted",
+          "name": "Submitted",
+          "allowedTransitions": [
+            "Approved",
+            "Rejected"
+          ]
+        },
+        {
+          "id": "Approved",
+          "name": "Approved",
+          "allowedTransitions": [
+            "Paid"
+          ]
+        },
+        {
+          "id": "Paid",
+          "name": "Paid",
+          "allowedTransitions": []
+        }
       ],
       "relatedEvents": [
-        "InvoiceReceived",
+        "InvoiceCreated",
+        "InvoiceSubmitted",
         "InvoiceApproved",
-        "InvoiceRejected"
+        "InvoicePaid"
       ],
       "relatedActions": [
-        "ReconcileInvoice",
+        "SubmitInvoice",
         "ApproveInvoice",
-        "RejectInvoice"
+        "PayInvoice"
       ]
     },
     "PurchaseOrder": {
       "id": "PurchaseOrder",
-      "name": "Purchase Order",
+      "name": "PurchaseOrder",
       "description": "An order to purchase goods or services",
       "properties": [
-        "amount",
-        "vendorId",
-        "date",
-        "items",
-        "status"
+        "appsthink_crm.company_name",
+        "appsthink_crm.address",
+        "crimping_process.SAP_ID"
+      ],
+      "states": [
+        {
+          "id": "Created",
+          "name": "Created",
+          "allowedTransitions": [
+            "Approved",
+            "Cancelled"
+          ]
+        },
+        {
+          "id": "Approved",
+          "name": "Approved",
+          "allowedTransitions": [
+            "Fulfilled"
+          ]
+        },
+        {
+          "id": "Cancelled",
+          "name": "Cancelled",
+          "allowedTransitions": []
+        }
       ],
       "relatedEvents": [
         "PurchaseOrderCreated",
@@ -45,13 +144,84 @@
     },
     "InventoryItem": {
       "id": "InventoryItem",
-      "name": "Inventory Item",
+      "name": "InventoryItem",
       "description": "A physical or virtual item in inventory",
       "properties": [
-        "sku",
-        "quantity",
-        "location",
-        "cost"
+        {
+          "id": "sku",
+          "name": "SKU",
+          "dataType": "string",
+          "sources": [
+            {
+              "db": "app_db",
+              "table": "inventory",
+              "column": "sku",
+              "path": "app_db.inventory.sku"
+            }
+          ]
+        },
+        {
+          "id": "quantity",
+          "name": "Quantity",
+          "dataType": "number",
+          "sources": [
+            {
+              "db": "app_db",
+              "table": "inventory",
+              "column": "qty",
+              "path": "app_db.inventory.qty"
+            }
+          ]
+        },
+        {
+          "id": "location",
+          "name": "Location",
+          "dataType": "string",
+          "sources": [
+            {
+              "db": "app_db",
+              "table": "inventory",
+              "column": "location",
+              "path": "app_db.inventory.location"
+            }
+          ]
+        },
+        {
+          "id": "cost",
+          "name": "Cost",
+          "dataType": "number",
+          "sources": [
+            {
+              "db": "app_db",
+              "table": "inventory",
+              "column": "cost",
+              "path": "app_db.inventory.cost"
+            }
+          ]
+        }
+      ],
+      "states": [
+        {
+          "id": "InStock",
+          "name": "In Stock",
+          "allowedTransitions": [
+            "Reserved",
+            "OutOfStock"
+          ]
+        },
+        {
+          "id": "Reserved",
+          "name": "Reserved",
+          "allowedTransitions": [
+            "Picked",
+            "Returned"
+          ]
+        },
+        {
+          "id": "OutOfStock",
+          "name": "Out Of Stock",
+          "allowedTransitions": []
+        }
       ],
       "relatedEvents": [
         "InventoryAdjusted",
@@ -64,17 +234,66 @@
     }
   },
   "events": {
-    "InvoiceReceived": {
-      "id": "InvoiceReceived",
-      "name": "Invoice Received",
+    "InvoiceCreated": {
+      "id": "InvoiceCreated",
+      "name": "Invoice Created",
       "concept": "Invoice",
-      "description": "An invoice has been received from a vendor",
+      "description": "A new invoice was created",
       "properties": [
         "invoiceId",
         "amount",
         "vendorId",
-        "receivedAt"
-      ]
+        "createdAt"
+      ],
+      "stateTransition": {
+        "from": null,
+        "to": "Draft"
+      }
+    },
+    "InvoiceSubmitted": {
+      "id": "InvoiceSubmitted",
+      "name": "Invoice Submitted",
+      "concept": "Invoice",
+      "description": "An invoice was submitted for approval",
+      "properties": [
+        "invoiceId",
+        "submittedBy",
+        "submittedAt"
+      ],
+      "stateTransition": {
+        "from": "Draft",
+        "to": "Submitted"
+      }
+    },
+    "InvoiceApproved": {
+      "id": "InvoiceApproved",
+      "name": "Invoice Approved",
+      "concept": "Invoice",
+      "description": "An invoice was approved",
+      "properties": [
+        "invoiceId",
+        "approvedBy",
+        "approvedAt"
+      ],
+      "stateTransition": {
+        "from": "Submitted",
+        "to": "Approved"
+      }
+    },
+    "InvoicePaid": {
+      "id": "InvoicePaid",
+      "name": "Invoice Paid",
+      "concept": "Invoice",
+      "description": "An invoice was paid",
+      "properties": [
+        "invoiceId",
+        "paymentId",
+        "paidAt"
+      ],
+      "stateTransition": {
+        "from": "Approved",
+        "to": "Paid"
+      }
     },
     "PurchaseOrderCreated": {
       "id": "PurchaseOrderCreated",
@@ -104,16 +323,19 @@
     }
   },
   "actions": {
-    "ReconcileInvoice": {
-      "id": "ReconcileInvoice",
-      "name": "Reconcile Invoice",
+    "SubmitInvoice": {
+      "id": "SubmitInvoice",
+      "name": "Submit Invoice",
       "concept": "Invoice",
-      "description": "Reconcile invoice against purchase order",
+      "description": "Submit an invoice (Draft -> Submitted)",
       "parameters": [
         "invoiceId",
-        "poId"
+        "submittedBy"
       ],
-      "workerCapability": "InvoiceReconciliation"
+      "allowedStates": [
+        "Draft"
+      ],
+      "workerCapability": "InvoiceSubmission"
     },
     "ApproveInvoice": {
       "id": "ApproveInvoice",
@@ -124,7 +346,24 @@
         "invoiceId",
         "approverId"
       ],
+      "allowedStates": [
+        "Submitted"
+      ],
       "workerCapability": "ApprovalManagement"
+    },
+    "PayInvoice": {
+      "id": "PayInvoice",
+      "name": "Pay Invoice",
+      "concept": "Invoice",
+      "description": "Pay an approved invoice",
+      "parameters": [
+        "invoiceId",
+        "paymentMethod"
+      ],
+      "allowedStates": [
+        "Approved"
+      ],
+      "workerCapability": "Payments"
     },
     "AdjustInventory": {
       "id": "AdjustInventory",
@@ -135,6 +374,10 @@
         "sku",
         "quantityDelta",
         "reason"
+      ],
+      "allowedStates": [
+        "InStock",
+        "Reserved"
       ],
       "workerCapability": "InventoryManagement"
     }

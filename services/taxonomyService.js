@@ -224,12 +224,51 @@ class TaxonomyService {
     return event;
   }
 
+  async updateEvent(eventId, updates) {
+    await this.initialize();
+    if (!this.taxonomy.events || !this.taxonomy.events[eventId]) {
+      throw new Error('Event not found: ' + eventId);
+    }
+    this.taxonomy.events[eventId] = { ...this.taxonomy.events[eventId], ...updates };
+    // ensure id remains consistent
+    this.taxonomy.events[eventId].id = eventId;
+    await this.save();
+    return this.taxonomy.events[eventId];
+  }
+
+  async deleteEvent(eventId) {
+    await this.initialize();
+    if (!this.taxonomy.events) return false;
+    delete this.taxonomy.events[eventId];
+    await this.save();
+    return true;
+  }
+
   async addAction(action) {
     await this.initialize();
     if (!this.taxonomy.actions) this.taxonomy.actions = {};
     this.taxonomy.actions[action.id] = action;
     await this.save();
     return action;
+  }
+
+  async updateAction(actionId, updates) {
+    await this.initialize();
+    if (!this.taxonomy.actions || !this.taxonomy.actions[actionId]) {
+      throw new Error('Action not found: ' + actionId);
+    }
+    this.taxonomy.actions[actionId] = { ...this.taxonomy.actions[actionId], ...updates };
+    this.taxonomy.actions[actionId].id = actionId;
+    await this.save();
+    return this.taxonomy.actions[actionId];
+  }
+
+  async deleteAction(actionId) {
+    await this.initialize();
+    if (!this.taxonomy.actions) return false;
+    delete this.taxonomy.actions[actionId];
+    await this.save();
+    return true;
   }
 
   async addCapability(capability) {

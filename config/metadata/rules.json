@@ -76,26 +76,17 @@
           "outcome": {
             "action": "AutoReconcile",
             "requiresApproval": false
-          }
-        },
-        {
-          "id": "high-variance-manual",
-          "condition": {
-            "type": "comparison",
-            "field": "variance",
-            "operator": ">=",
-            "value": 0.01
           },
-          "outcome": {
-            "action": "ManualReconciliation",
-            "requiresApproval": true
-          }
+          "table": "appsthink_crm",
+          "column": "id",
+          "operator": "lt",
+          "action": "ReconcileInvoice"
         }
       ]
     },
     {
       "id": "purchase-order-routing",
-      "name": "Purchase Order Routing",
+      "name": "Purchase Order Policy",
       "description": "Routes purchase orders to appropriate approver",
       "concept": "PurchaseOrder",
       "rules": [
@@ -110,19 +101,6 @@
           "outcome": {
             "approver": "Director",
             "priority": "High"
-          }
-        },
-        {
-          "id": "po-under-5k-manager",
-          "condition": {
-            "type": "comparison",
-            "field": "amount",
-            "operator": "<=",
-            "value": 5000
-          },
-          "outcome": {
-            "approver": "Manager",
-            "priority": "Normal"
           }
         }
       ]
