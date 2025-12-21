@@ -50,103 +50,13 @@ class TaxonomyService {
   }
 
   getDefaultTaxonomy() {
+    // Return an empty taxonomy scaffold (no hard-coded sample items).
     return {
       version: '1.0.0',
-      concepts: {
-        'Invoice': {
-          id: 'Invoice',
-          name: 'Invoice',
-          description: 'A request for payment',
-          properties: ['amount', 'vendorId', 'date', 'status'],
-          relatedEvents: ['InvoiceReceived', 'InvoiceApproved', 'InvoiceRejected'],
-          relatedActions: ['ReconcileInvoice', 'ApproveInvoice', 'RejectInvoice']
-        },
-        'PurchaseOrder': {
-          id: 'PurchaseOrder',
-          name: 'Purchase Order',
-          description: 'An order to purchase goods or services',
-          properties: ['amount', 'vendorId', 'date', 'items', 'status'],
-          relatedEvents: ['PurchaseOrderCreated', 'PurchaseOrderApproved'],
-          relatedActions: ['CreatePO', 'ApprovePO', 'CancelPO']
-        },
-        'InventoryItem': {
-          id: 'InventoryItem',
-          name: 'Inventory Item',
-          description: 'A physical or virtual item in inventory',
-          properties: ['sku', 'quantity', 'location', 'cost'],
-          relatedEvents: ['InventoryAdjusted', 'InventoryReceived'],
-          relatedActions: ['AdjustInventory', 'TransferInventory']
-        }
-      },
-      events: {
-        'InvoiceReceived': {
-          id: 'InvoiceReceived',
-          name: 'Invoice Received',
-          concept: 'Invoice',
-          description: 'An invoice has been received from a vendor',
-          properties: ['invoiceId', 'amount', 'vendorId', 'receivedAt']
-        },
-        'PurchaseOrderCreated': {
-          id: 'PurchaseOrderCreated',
-          name: 'Purchase Order Created',
-          concept: 'PurchaseOrder',
-          description: 'A new purchase order has been created',
-          properties: ['poId', 'amount', 'vendorId', 'items', 'createdAt']
-        },
-        'InventoryAdjusted': {
-          id: 'InventoryAdjusted',
-          name: 'Inventory Adjusted',
-          concept: 'InventoryItem',
-          description: 'Inventory quantity has been adjusted',
-          properties: ['sku', 'oldQuantity', 'newQuantity', 'reason', 'adjustedAt']
-        }
-      },
-      actions: {
-        'ReconcileInvoice': {
-          id: 'ReconcileInvoice',
-          name: 'Reconcile Invoice',
-          concept: 'Invoice',
-          description: 'Reconcile invoice against purchase order',
-          parameters: ['invoiceId', 'poId'],
-          workerCapability: 'InvoiceReconciliation'
-        },
-        'ApproveInvoice': {
-          id: 'ApproveInvoice',
-          name: 'Approve Invoice',
-          concept: 'Invoice',
-          description: 'Approve invoice for payment',
-          parameters: ['invoiceId', 'approverId'],
-          workerCapability: 'ApprovalManagement'
-        },
-        'AdjustInventory': {
-          id: 'AdjustInventory',
-          name: 'Adjust Inventory',
-          concept: 'InventoryItem',
-          description: 'Adjust inventory quantity',
-          parameters: ['sku', 'quantityDelta', 'reason'],
-          workerCapability: 'InventoryManagement'
-        }
-      },
-      capabilities: {
-        'VendorManagement': {
-          id: 'VendorManagement',
-          name: 'Vendor Management',
-          description: 'Manage vendor relationships and transactions',
-          actions: ['ReconcileInvoice', 'ApproveInvoice']
-        },
-        'InventoryManagement': {
-          id: 'InventoryManagement',
-          name: 'Inventory Management',
-          description: 'Manage inventory levels and movements',
-          actions: ['AdjustInventory', 'TransferInventory']
-        },
-        'ApprovalManagement': {
-          id: 'ApprovalManagement',
-          name: 'Approval Management',
-          description: 'Manage approval workflows and decisions',
-          actions: ['ApproveInvoice', 'ApprovePO', 'RejectInvoice']
-        }
-      }
+      concepts: {},
+      events: {},
+      actions: {},
+      capabilities: {}
     };
   }
 

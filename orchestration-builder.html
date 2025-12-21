@@ -623,6 +623,10 @@
           Taxonomy
         </button>
         <button class="tab" onclick="switchTab('rules', event)">Rules</button>
+        <button class="tab" onclick="switchTab('events', event)">Events</button>
+        <button class="tab" onclick="switchTab('actions', event)">
+          Actions
+        </button>
         <button class="tab" onclick="switchTab('executions', event)">
           Executions
         </button>
@@ -768,14 +772,107 @@
             Business Taxonomy - The Language Layer
           </h2>
 
-          <h3 style="margin-bottom: 1rem; color: #667eea">Business Concepts</h3>
-          <div id="concepts-list" style="margin-bottom: 2rem"></div>
+          <div
+            style="
+              display: flex;
+              gap: 8px;
+              align-items: center;
+              margin-bottom: 12px;
+            "
+          >
+            <div style="font-weight: 700; font-size: 1.25rem">
+              Business Taxonomy
+            </div>
+            <div style="margin-left: 12px; color: #657786">
+              Choose a tab to view Concepts, Events or Actions
+            </div>
+          </div>
 
-          <h3 style="margin-bottom: 1rem; color: #667eea">Business Events</h3>
-          <div id="events-list" style="margin-bottom: 2rem"></div>
+          <div
+            class="taxonomy-tabs"
+            style="display: flex; gap: 8px; margin-bottom: 12px"
+          >
+            <button
+              id="taxTabConcepts"
+              class="btn btn-secondary"
+              onclick="switchTaxonomyTab('concepts')"
+            >
+              Concepts
+            </button>
+            <button
+              id="taxTabEvents"
+              class="btn btn-secondary"
+              onclick="switchTaxonomyTab('events')"
+            >
+              Events
+            </button>
+            <button
+              id="taxTabActions"
+              class="btn btn-secondary"
+              onclick="switchTaxonomyTab('actions')"
+            >
+              Actions
+            </button>
+          </div>
 
-          <h3 style="margin-bottom: 1rem; color: #667eea">Business Actions</h3>
-          <div id="actions-list"></div>
+          <div id="taxContent">
+            <div id="tax-concepts" style="display: none">
+              <h3 style="margin-bottom: 1rem; color: #667eea">
+                Business Concepts
+              </h3>
+              <div id="concepts-list" style="margin-bottom: 2rem"></div>
+            </div>
+
+            <div id="tax-events" style="display: none">
+              <h3 style="margin-bottom: 1rem; color: #667eea">
+                Business Events
+              </h3>
+              <div id="events-list" style="margin-bottom: 2rem"></div>
+            </div>
+
+            <div id="tax-actions" style="display: none">
+              <h3 style="margin-bottom: 1rem; color: #667eea">
+                Business Actions
+              </h3>
+              <div id="actions-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Events Tab -->
+    <div id="events-panel" class="tab-panel" style="display: none">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showAddEventDialog()">
+          ➕ Add Event
+        </button>
+        <button class="btn btn-secondary" onclick="loadEvents()">
+          🔄 Refresh
+        </button>
+      </div>
+      <div class="main">
+        <div class="content-area">
+          <h2 style="margin-bottom: 1rem">Business Events</h2>
+          <div id="events-main-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions Tab -->
+    <div id="actions-panel" class="tab-panel" style="display: none">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showAddActionDialog()">
+          ➕ Add Action
+        </button>
+        <button class="btn btn-secondary" onclick="loadActions()">
+          🔄 Refresh
+        </button>
+      </div>
+      <div class="main">
+        <div class="content-area">
+          <h2 style="margin-bottom: 1rem">Business Actions</h2>
+          <div id="actions-main-list"></div>
         </div>
       </div>
     </div>
@@ -2017,6 +2114,12 @@
           case "taxonomy":
             loadTaxonomy();
             break;
+          case "events":
+            loadEvents();
+            break;
+          case "actions":
+            loadActions();
+            break;
           case "rules":
             loadRules();
             break;
@@ -2048,6 +2151,104 @@
           }
         } catch (e) {
           console.error("Failed to load taxonomy:", e);
+        }
+      }
+
+      // Load events for the Events panel
+      async function loadEvents() {
+        try {
+          const res = await fetch("/api/taxonomy/events");
+          const data = await res.json();
+          if (!data || !data.ok) {
+            document.getElementById("events-main-list").innerHTML =
+              '<div class="muted">Failed to load events</div>';
+            return;
+          }
+          const events = Object.values(data.events || {}).sort((a, b) =>
+            (a.id || "").localeCompare(b.id || "")
+          );
+          if (!events.length) {
+            document.getElementById("events-main-list").innerHTML =
+              '<div class="muted">No business events defined.</div>';
+            return;
+          }
+          document.getElementById("events-main-list").innerHTML = events
+            .map(
+              (ev) => `
+            <div class="list-item type-event" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div class="list-item-title">${
+                    ev.name || ev.id
+                  } <span class="muted">${ev.id}</span></div>
+                  <div class="list-item-desc">${ev.description || ""}</div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn btn-secondary" onclick="editEvent('${
+                    ev.id
+                  }')">Edit</button>
+                  <button class="btn btn-danger" onclick="deleteEvent('${
+                    ev.id
+                  }')">Delete</button>
+                </div>
+              </div>
+            </div>
+          `
+            )
+            .join("");
+        } catch (e) {
+          console.error("loadEvents failed", e);
+          document.getElementById("events-main-list").innerHTML =
+            '<div class="muted">Error loading events</div>';
+        }
+      }
+
+      // Load actions for the Actions panel
+      async function loadActions() {
+        try {
+          const res = await fetch("/api/taxonomy/actions");
+          const data = await res.json();
+          if (!data || !data.ok) {
+            document.getElementById("actions-main-list").innerHTML =
+              '<div class="muted">Failed to load actions</div>';
+            return;
+          }
+          const actions = Object.values(data.actions || {}).sort((a, b) =>
+            (a.id || "").localeCompare(b.id || "")
+          );
+          if (!actions.length) {
+            document.getElementById("actions-main-list").innerHTML =
+              '<div class="muted">No business actions defined.</div>';
+            return;
+          }
+          document.getElementById("actions-main-list").innerHTML = actions
+            .map(
+              (act) => `
+            <div class="list-item type-action" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div class="list-item-title">${
+                    act.name || act.id
+                  } <span class="muted">${act.id}</span></div>
+                  <div class="list-item-desc">${act.description || ""}</div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn btn-secondary" onclick="editAction('${
+                    act.id
+                  }')">Edit</button>
+                  <button class="btn btn-danger" onclick="deleteAction('${
+                    act.id
+                  }')">Delete</button>
+                </div>
+              </div>
+            </div>
+          `
+            )
+            .join("");
+        } catch (e) {
+          console.error("loadActions failed", e);
+          document.getElementById("actions-main-list").innerHTML =
+            '<div class="muted">Error loading actions</div>';
         }
       }
 
@@ -2251,6 +2452,12 @@
           actionGroups,
           "action"
         );
+        // Ensure a default taxonomy tab is visible
+        try {
+          // prefer previously selected state, else default to 'events'
+          const prev = window.__lastTaxonomyTab || "events";
+          switchTaxonomyTab(prev);
+        } catch (e) {}
       }
 
       // Toggle collapsed state for a taxonomy group
@@ -2269,6 +2476,37 @@
           } catch (e) {}
         } catch (e) {
           console.warn("toggleGroup failed", e && e.message ? e.message : e);
+        }
+      }
+
+      // Taxonomy tab switcher (internal to Taxonomy panel)
+      function switchTaxonomyTab(name) {
+        try {
+          window.__lastTaxonomyTab = name;
+          document.getElementById("tax-concepts").style.display =
+            name === "concepts" ? "" : "none";
+          document.getElementById("tax-events").style.display =
+            name === "events" ? "" : "none";
+          document.getElementById("tax-actions").style.display =
+            name === "actions" ? "" : "none";
+          // update button active classes
+          ["taxTabConcepts", "taxTabEvents", "taxTabActions"].forEach((id) =>
+            document.getElementById(id).classList.remove("tab-selected")
+          );
+          if (name === "concepts")
+            document
+              .getElementById("taxTabConcepts")
+              .classList.add("tab-selected");
+          if (name === "events")
+            document
+              .getElementById("taxTabEvents")
+              .classList.add("tab-selected");
+          if (name === "actions")
+            document
+              .getElementById("taxTabActions")
+              .classList.add("tab-selected");
+        } catch (e) {
+          console.warn("switchTaxonomyTab err", e);
         }
       }
 
