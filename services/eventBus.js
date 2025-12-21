@@ -159,7 +159,12 @@ async function listAllEventRecords(filter) {
         if (key && key.indexOf('evt:') === 0) {
           const rec = value;
           if (modFilter && rec.module !== modFilter) return;
-          if (eventFilter && rec.event !== eventFilter) return;
+          if (eventFilter) {
+            // tolerant matching: match stored event OR canonicalEvent, or substring match
+            const ef = String(eventFilter);
+            const matches = (rec.event && rec.event === ef) || (rec.canonicalEvent && rec.canonicalEvent === ef) || (rec.event && String(rec.event).indexOf(ef) !== -1) || (rec.canonicalEvent && String(rec.canonicalEvent).indexOf(ef) !== -1);
+            if (!matches) return;
+          }
           out.push(rec);
         }
       } catch (e) {}
@@ -256,21 +261,63 @@ async function requeueDLQ(id) {
   } catch (e) { return false; }
 }
 
-async function publishEvent(obj) {
+async function publishEvent(obj, opts) {
   // New behavior: persist event first, update registry immediately for discovery,
   // enqueue for reliable Kafka delivery with retries and DLQ.
   try {
     const evt = (typeof obj === 'string') ? JSON.parse(obj) : (obj || {});
-    const id = uuidv4();
+    opts = opts || {};
+    const headers = opts.headers || {};
+
+    // prefer client-provided id when present (client canonical envelope)
+    const id = evt.id || uuidv4();
+
+    // derive canonical fields and enrich from headers when missing
+    const canonicalEvent = evt.event || evt.name || evt.type || null;
+    const moduleName = evt.domain || evt.module || (canonicalEvent ? String(canonicalEvent).split(':')[0] : 'unknown');
+    const version = evt.version || 1;
+    const ts = evt.ts || Date.now();
+    const producer = evt.producer || { service: 'orchestrator-server', instance: (process.env.HOSTNAME || 'server') };
+
+    // actor: prefer event.actor, then headers (X-User, X-User-Role, X-User-Group)
+    const actorFromEvt = evt.actor || null;
+    const actorFromHeaders = {
+      user: headers['x-user'] || headers['x-username'] || headers['x-actor'] || null,
+      role: headers['x-user-role'] || headers['x-role'] || null,
+      group: headers['x-user-group'] || headers['x-group'] || null
+    };
+    const actor = actorFromEvt || (actorFromHeaders.user || actorFromHeaders.role || actorFromHeaders.group ? actorFromHeaders : null);
+
     const rec = {
       id,
-      event: evt.event || evt.name || evt.type || null,
-      module: evt.module || (evt.event ? String(evt.event).split(':')[0] : 'unknown'),
+      event: canonicalEvent || (moduleName + ':event'),
+      module: moduleName,
+      domain: evt.domain || moduleName,
+      version: version,
       detail: evt.detail || evt || {},
-      ts: Date.now(),
+      ts: ts,
+      producer: producer,
+      actor: actor,
       status: 'pending',
       attempts: 0
     };
+
+    // Tag technical field-level events and derive a canonical event name
+    try {
+      if (rec.event && typeof rec.event === 'string') {
+        // match patterns like 'module:field:email:added' or 'module:field:phone:updated'
+        const m = rec.event.match(/^([^:]+):field:([^:]+):([^:]+)$/);
+        if (m) {
+          // m[1]=module, m[2]=field, m[3]=action
+          rec.level = 'technical';
+          rec.field = m[2];
+          rec.canonicalEvent = `${m[1]}:${m[2]}:${m[3]}`; // e.g. module:email:added
+        } else {
+          // default to domain level
+          rec.level = rec.level || 'domain';
+        }
+      }
+    } catch (e) { /* ignore enrichment failures */ }
 
     // persist durable event record
     try {
@@ -279,7 +326,7 @@ async function publishEvent(obj) {
       console.error('Failed to persist event to DB', e && e.message ? e.message : e);
       // If persistence fails, still update registry and broadcast (best-effort),
       // but return failure so caller can know.
-      try { _updateRegistryAndBroadcast(evt); } catch(e2){}
+      try { _updateRegistryAndBroadcast(rec); } catch(e2){}
       return { ok: false, error: 'persist_failed' };
     }
 
@@ -367,8 +414,9 @@ function _updateRegistryAndBroadcast(evt) {
       if (evt.id) seenEventMap.set(evt.id, Date.now());
     } catch (e) {}
 
-    const evName = evt.event || evt.name || evt.type || (evt.listener || null) || JSON.stringify(evt).slice(0,100);
-    const module = (evt.module || (typeof evName === 'string' && evName.split(':')[0]) || 'unknown');
+    // prefer canonicalEvent (normalized) when available, else fall back to raw event name
+    const evName = evt.canonicalEvent || evt.event || evt.name || evt.type || (evt.listener || null) || JSON.stringify(evt).slice(0,100);
+    const module = (evt.module || evt.domain || (typeof evName === 'string' && evName.split(':')[0]) || 'unknown');
     registry[module] = registry[module] || { events: {}, total: 0 };
     registry[module].events[evName] = (registry[module].events[evName] || 0) + 1;
     registry[module].total = Object.values(registry[module].events).reduce((s,v)=>s+v,0);
@@ -376,7 +424,7 @@ function _updateRegistryAndBroadcast(evt) {
     // persist module counts to local DB (best-effort)
     try { _persistModule(module).catch(()=>{}); } catch(e){}
 
-    const payload = JSON.stringify({ ts: Date.now(), module, event: evName, detail: evt });
+    const payload = JSON.stringify({ ts: Date.now(), module, event: evName, level: evt.level || 'domain', detail: evt });
     // broadcast to SSE clients
     for (const res of sseClients) {
       try {

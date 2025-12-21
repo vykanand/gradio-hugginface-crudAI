@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Orchestration Builder - Business Operating System</title>
+    <link rel="stylesheet" href="assets/css/theme.css" />
     <style>
       * {
         margin: 0;
@@ -15,7 +16,7 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           Oxygen, Ubuntu, Cantarell, sans-serif;
         background: #f5f7fa;
-        color: #2c3e50;
+        color: var(--body-text);
         overflow: auto;
       }
 
@@ -27,8 +28,8 @@
       }
 
       .header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        background: var(--brand-gradient);
+        color: var(--brand-text);
         padding: 1rem 2rem;
         display: flex;
         justify-content: space-between;
@@ -69,7 +70,7 @@
 
       .tab.active {
         background: white;
-        color: #667eea;
+        color: var(--active-tab-text);
         font-weight: 600;
       }
 
@@ -111,7 +112,7 @@
 
       .node-type:hover {
         background: #eef2f7;
-        border-color: #667eea;
+        border-color: var(--hover-border);
         transform: translateX(4px);
       }
 

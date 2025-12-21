@@ -2111,14 +2111,58 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                         $scope._forwardLastTime[forwardEvent] = now;
                         $scope._forwardPayloadCache[payloadKey] = now;
                         if (typeof orchestratorBase === 'string' && orchestratorBase) {
-                          fetch((orchestratorBase.replace(/\/$/, '') + '/api/orchestrator/event'), {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(forwardPayload)
-                          }).then(function(resp){
-                            try { console.log('Forwarded event response status', resp && resp.status); } catch(e){}
-                            return resp.json().catch(function(){ try { return resp.text ? resp.text() : null; } catch(e){ return null; } });
-                          }).then(function(j){ try { console.log('Forwarded event body', j); } catch(e){} if (j && j.ok) { try{ showToast && showToast('Event forwarded', 'success'); }catch(e){} } }).catch(function(err){ try{ console.warn('forward event failed', err); }catch(e){} });
+                              // build envelope with controlled vocabulary and audit
+                              function uuidv4(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0,v=c=='x'?r:(r&0x3|0x8);return v.toString(16);}); }
+                              var envelope = (function(){
+                                var now = Date.now();
+                                var id = uuidv4();
+                                var domain = forwardPayload.module || (localStorage.getItem('headinfo')||'module');
+                                var entity = (forwardPayload && forwardPayload.detail && forwardPayload.detail.entity) ? String(forwardPayload.detail.entity) : null;
+                                var entityId = (forwardPayload && forwardPayload.detail && (forwardPayload.detail.entityId || forwardPayload.detail.id)) ? (forwardPayload.detail.entityId || forwardPayload.detail.id) : null;
+                                // canonical event (already normalized earlier), ensure lowercase domain
+                                var eventName = (forwardPayload && forwardPayload.event) ? String(forwardPayload.event) : (domain + ':event');
+                                return {
+                                  id: id,
+                                  event: eventName,
+                                  version: 1,
+                                  domain: String(domain),
+                                  entity: entity || null,
+                                  entityId: entityId || null,
+                                  ts: now,
+                                  producer: { service: 'crud-ui', instance: (location.hostname + ':' + (location.port||'')) },
+                                  actor: (function(){ try {
+                                    var a = null;
+                                    var ud = localStorage.getItem('userdat');
+                                    if (ud) {
+                                      try { var uj = JSON.parse(ud); a = { user: uj.username || uj.user || uj.name || uj.id || null, role: uj.role || null, group: uj.group || uj.org || null }; } catch(e) { a = null; }
+                                    }
+                                    if (!a) {
+                                      a = { user: localStorage.getItem('username') || null, role: localStorage.getItem('user_role') || localStorage.getItem('role') || null, group: localStorage.getItem('user_group') || null };
+                                    }
+                                    return a;
+                                  } catch(e){ return null; } })(),
+                                  detail: forwardPayload.detail || {}
+                                };
+                              })();
+
+                              // include user role headers when available so server can populate actor fields
+                              var hdrs = { 'Content-Type': 'application/json' };
+                              try {
+                                if (envelope && envelope.actor) {
+                                  if (envelope.actor.user) hdrs['X-User'] = envelope.actor.user;
+                                  if (envelope.actor.role) hdrs['X-User-Role'] = envelope.actor.role;
+                                  if (envelope.actor.group) hdrs['X-User-Group'] = envelope.actor.group;
+                                }
+                              } catch(e){}
+
+                              fetch((orchestratorBase.replace(/\/$/, '') + '/api/orchestrator/event'), {
+                                method: 'POST',
+                                headers: hdrs,
+                                body: JSON.stringify(envelope)
+                              }).then(function(resp){
+                                try { console.log('Forwarded event response status', resp && resp.status); } catch(e){}
+                                return resp.json().catch(function(){ try { return resp.text ? resp.text() : null; } catch(e){ return null; } });
+                              }).then(function(j){ try { console.log('Forwarded event body', j); } catch(e){} if (j && j.ok) { try{ showToast && showToast('Event forwarded', 'success'); }catch(e){} } }).catch(function(err){ try{ console.warn('forward event failed', err); }catch(e){} });
                         }
                       }
                     }

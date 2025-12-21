@@ -426,7 +426,8 @@ app.post('/api/orchestrator/event', async (req, res) => {
   try {
     const body = req.body || {};
     // Accept either { event, module, detail } or arbitrary payload
-    const result = await eventBus.publishEvent(body);
+    // Pass request headers so server can enrich envelope (actor role/group) when available
+    const result = await eventBus.publishEvent(body, { headers: req.headers, ip: req.ip });
     if (result && result.ok) {
       // Persisted and enqueued
       return res.status(202).json({ ok: true, id: result.id, status: 'accepted' });
