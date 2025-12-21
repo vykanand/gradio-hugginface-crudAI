@@ -643,6 +643,13 @@
         <button class="btn btn-primary" onclick="showTestRunModal()">
           ▶️ Test Run
         </button>
+        <button
+          class="btn btn-secondary"
+          onclick="window.location.href='/event-registry.html'"
+          title="Open Event Registry"
+        >
+          📚 Event Registry
+        </button>
         <!-- Auto-connect removed: connections are explicit by user or bindings -->
         <select
           id="workflow-selector"
@@ -864,6 +871,8 @@
           .toast.info { border-left-color: #667eea; }
         `;
         document.head.appendChild(style);
+        // Event registry moved to a dedicated page: /event-registry.html
+        // Builder will no longer render the floating registry panel. Use the separate page to view and interact with the event registry.
       })();
 
       // Global group color registry to produce non-repeating, random palettes
@@ -871,6 +880,147 @@
         keys: {},
         usedHues: [],
       };
+
+      // Listen for orchestrator events posted by embedded CRUD UI and forward to server
+      function _ensureBuilderToastContainer() {
+        if (document.getElementById("builder-toast-container"))
+          return document.getElementById("builder-toast-container");
+        const c = document.createElement("div");
+        c.id = "builder-toast-container";
+        c.style.position = "fixed";
+        c.style.top = "12px";
+        c.style.right = "12px";
+        c.style.zIndex = "99999";
+        document.body.appendChild(c);
+        return c;
+      }
+      function showBuilderToast(msg, type, timeout) {
+        try {
+          const container = _ensureBuilderToastContainer();
+          const el = document.createElement("div");
+          el.textContent = msg;
+          el.style.padding = "8px 12px";
+          el.style.marginTop = "8px";
+          el.style.borderRadius = "4px";
+          el.style.color = "#fff";
+          el.style.fontFamily = "sans-serif";
+          el.style.fontSize = "13px";
+          el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.2)";
+          el.style.background =
+            type === "success"
+              ? "#2ecc71"
+              : type === "error"
+              ? "#e74c3c"
+              : "#333";
+          container.appendChild(el);
+          setTimeout(() => {
+            try {
+              el.style.opacity = "0";
+              el.style.transition = "opacity 300ms";
+              setTimeout(() => {
+                try {
+                  container.removeChild(el);
+                } catch (e) {}
+              }, 350);
+            } catch (e) {}
+          }, timeout || 4000);
+        } catch (e) {
+          console.warn("showBuilderToast failed", e);
+        }
+      }
+
+      window.addEventListener("message", async function (ev) {
+        try {
+          const d = ev.data;
+          if (typeof d === "string" && d.indexOf("orchestrator_event^") === 0) {
+            const parts = d.split("^");
+            const listener = parts[1] || null;
+            const detail = parts[2] ? JSON.parse(parts[2]) : {};
+            const eventName =
+              listener && listener.endsWith("-listener")
+                ? listener.replace(/-listener$/, "")
+                : listener;
+            const payload = {
+              event: eventName,
+              listener: listener,
+              module: (eventName && String(eventName).split(":")[0]) || null,
+              detail,
+            };
+            try {
+              try {
+                const r = await fetch("/api/orchestrator/event", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload),
+                });
+                const js = await r.json().catch(() => ({ ok: false }));
+                if (js && js.ok)
+                  showBuilderToast(
+                    "Event accepted (" + (js.id || "") + ")",
+                    "success"
+                  );
+                else showBuilderToast("Event ingest failed", "error");
+              } catch (fe) {
+                showBuilderToast("Event send error", "error");
+              }
+            } catch (e) {
+              /* dont block UI */
+            }
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      });
+
+      // Subscribe to SSE event stream from server (discovered events via Kafka)
+      try {
+        const __runtimeCfg2 = window.__RUNTIME_CONFIG__ || null;
+        const __orchestratorBase2 = (function () {
+          if (window.__ORCHESTRATOR_URL__) return window.__ORCHESTRATOR_URL__;
+          if (__runtimeCfg2 && __runtimeCfg2.port)
+            return (
+              location.protocol +
+              "//" +
+              location.hostname +
+              ":" +
+              __runtimeCfg2.port
+            );
+          if (
+            location.hostname === "localhost" &&
+            location.port &&
+            location.port !== "5050"
+          )
+            return location.protocol + "//" + location.hostname + ":5050";
+          return (
+            location.protocol +
+            "//" +
+            location.hostname +
+            (location.port ? ":" + location.port : "")
+          );
+        })();
+        const __es_endpoint =
+          __orchestratorBase2.replace(/\/$/, "") + "/events/stream";
+        const es = new EventSource(__es_endpoint);
+        es.onmessage = function (m) {
+          try {
+            const obj = JSON.parse(m.data || "{}");
+            if (!taxonomy) return;
+            taxonomy.events = taxonomy.events || {};
+            if (!taxonomy.events[obj.event]) {
+              taxonomy.events = taxonomy.events || {};
+              taxonomy.events[obj.event] = {
+                id: obj.event,
+                name: obj.event,
+                description: "",
+                target: obj.module || "",
+              };
+              renderTaxonomy();
+            }
+          } catch (e) {}
+        };
+      } catch (e) {
+        console.warn("Failed to open event stream", e);
+      }
       function getDistinctGroupColors(key) {
         key = key || "grp";
         if (window.__groupColorRegistry.keys[key])
@@ -1900,77 +2050,32 @@
         }
       }
 
-      // Enrich taxonomy actions/concepts with module mapping metadata from server
+      // Enrich taxonomy using discovered events registry instead of deprecated module-mapping
       async function enrichTaxonomyWithMappings() {
         if (!taxonomy) return;
-        // fetch available modules to help matching
-        let modules = [];
         try {
-          const r = await fetch("/orchestration/modules");
+          const r = await fetch("/api/event-registry");
+          if (!r.ok) return;
           const d = await r.json();
-          modules = (d.modules || []).map((m) => m.id);
+          const reg = (d && d.registry) || {};
+          taxonomy.events = taxonomy.events || {};
+          // add discovered events into taxonomy.events
+          Object.keys(reg || {}).forEach((mod) => {
+            const m = reg[mod] || {};
+            Object.keys(m.events || {}).forEach((evName) => {
+              if (!taxonomy.events[evName]) {
+                taxonomy.events[evName] = {
+                  id: evName,
+                  name: evName,
+                  description: "",
+                  target: mod,
+                };
+              }
+            });
+          });
+          renderTaxonomy();
         } catch (e) {
-          modules = [];
-        }
-
-        // Enrich actions: use action.target or action.module or action id to query module-mapping
-        const acts = taxonomy.actions || {};
-        for (const key of Object.keys(acts)) {
-          try {
-            const a = acts[key];
-            const candidate = (a.target || a.module || key || "").trim();
-            if (!candidate) continue;
-            // prefer exact module matches from discovered modules, otherwise try candidate as-is
-            const moduleName = modules.includes(candidate)
-              ? candidate
-              : candidate;
-            const q = new URLSearchParams({ module: moduleName });
-            const resp = await fetch("/api/module-mapping?" + q.toString());
-            if (!resp.ok) continue;
-            const md = await resp.json();
-            if (md && md.ok) {
-              a.mapping = md; // attach mapping object (columns, plugins, pluginMappings...)
-            }
-          } catch (e) {
-            // non-fatal
-          }
-        }
-
-        // Enrich concepts if they reference a table name (convention: concept.table or concept.target)
-        const concepts = taxonomy.concepts || {};
-        for (const cid of Object.keys(concepts)) {
-          try {
-            const c = concepts[cid];
-            const candidate = (
-              c.table ||
-              c.target ||
-              c.name ||
-              cid ||
-              ""
-            ).trim();
-            if (!candidate) continue;
-            const q = new URLSearchParams({ module: candidate });
-            const resp = await fetch("/api/module-mapping?" + q.toString());
-            if (!resp.ok) continue;
-            const md = await resp.json();
-            if (md && md.ok) {
-              c.mapping = md;
-              // auto-create property entries from columns if not present
-              c.properties = c.properties || [];
-              (md.columns || []).forEach((col) => {
-                const exists = (c.properties || []).some(
-                  (p) => (p.column || p.id) === col
-                );
-                if (!exists)
-                  c.properties.push({
-                    id: col,
-                    name: col,
-                    column: (md.tableName ? md.tableName + "." : "") + col,
-                    type: "inferred",
-                  });
-              });
-            }
-          } catch (e) {}
+          // non-fatal
         }
       }
 
@@ -2292,6 +2397,17 @@
 
         canvas.addEventListener("drop", (e) => {
           e.preventDefault();
+          // support event payloads dropped from Event Registry
+          const eventPayload = e.dataTransfer.getData("eventPayload");
+          if (eventPayload) {
+            try {
+              const p = JSON.parse(eventPayload);
+              addNode("event", e.offsetX, e.offsetY, p);
+              return;
+            } catch (err) {
+              /* fallthrough */
+            }
+          }
           const nodeType = e.dataTransfer.getData("nodeType");
           if (nodeType) {
             addNode(nodeType, e.offsetX, e.offsetY);
@@ -2299,19 +2415,30 @@
         });
       }
 
-      function addNode(type, x, y) {
+      function addNode(type, x, y, payload) {
         const nodeId = "node_" + nextNodeId++;
         const node = {
           id: nodeId,
           type,
-          name: type.charAt(0).toUpperCase() + type.slice(1) + " " + nextNodeId,
-          data: {
-            id: nodeId,
-            type,
-            name:
-              type.charAt(0).toUpperCase() + type.slice(1) + " " + nextNodeId,
-            next: null,
-          },
+          name:
+            payload && payload.event
+              ? payload.event
+              : type.charAt(0).toUpperCase() + type.slice(1) + " " + nextNodeId,
+          data: Object.assign(
+            {
+              id: nodeId,
+              type,
+              name:
+                payload && payload.event
+                  ? payload.event
+                  : type.charAt(0).toUpperCase() +
+                    type.slice(1) +
+                    " " +
+                    nextNodeId,
+              next: null,
+            },
+            (payload && { event: payload.event, module: payload.module }) || {}
+          ),
           x,
           y,
         };
@@ -4967,56 +5094,11 @@
           confirmText: "Save",
           cancelText: "Close",
           onConfirm: async () => {
-            // gather form data from DOM and POST to /api/module-mapping
-            const moduleName = input.value && input.value.trim();
-            if (!moduleName) {
-              showToast("Module name required", "error");
-              return null;
-            }
-            const mappings = {};
-            const fieldTypes = {};
-            const fieldOptions = {};
-            // iterate rows
-            const rows = container.querySelectorAll(".mapping-row");
-            rows.forEach((r) => {
-              const col = r.getAttribute("data-col");
-              const plug = r.querySelector(".plug-select")?.value || "";
-              const ftype = r.querySelector(".ftype-select")?.value || "";
-              const freq = !!r.querySelector(".freq-checkbox")?.checked;
-              const fopts = r.querySelector(".fopts-input")?.value || "";
-              if (plug) mappings[col] = plug;
-              if (ftype) fieldTypes[col] = ftype;
-              if (freq) fieldRequired[col] = true;
-              if (fopts) fieldOptions[col] = fopts;
-            });
-
-            try {
-              const resp = await fetch("/api/module-mapping", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  module: moduleName,
-                  mappings,
-                  fieldTypes,
-                  fieldRequired,
-                  fieldOptions,
-                }),
-              });
-              const d = await resp.json();
-              if (d && d.success) {
-                showToast("Module mapping saved", "success");
-                return true;
-              } else {
-                showToast(
-                  "Save failed: " + (d && d.message ? d.message : "unknown"),
-                  "error"
-                );
-                return null;
-              }
-            } catch (e) {
-              showToast("Save failed: " + e.message, "error");
-              return null;
-            }
+            showToast(
+              "Module mapping persistence is deprecated and disabled",
+              "error"
+            );
+            return null;
           },
         });
 
@@ -5025,130 +5107,90 @@
           container.innerHTML = "";
           info.textContent = "Loading mapping for " + name + " ...";
           try {
-            const q = new URLSearchParams({ module: name });
-            const r = await fetch("/api/module-mapping?" + q.toString());
-            const d = await r.json();
-            if (!d || !d.ok) {
-              info.textContent = "Module not found or error";
-              return;
-            }
-            info.textContent = "";
-            // show table name
-            const tn = document.createElement("div");
-            tn.style.fontWeight = "600";
-            tn.textContent = "Table: " + (d.tableName || "(none)");
-            container.appendChild(tn);
+            // module-mapping is deprecated; loading persisted mappings removed
+            info.textContent = "Module mapping is deprecated and disabled.";
+            return;
+          } catch (e) {}
+          const mr = document.createElement("div");
+          mr.className = "mapping-row";
+          mr.setAttribute("data-col", col);
+          mr.style.display = "flex";
+          mr.style.gap = "8px";
+          mr.style.alignItems = "center";
+          mr.style.padding = "6px 0";
+          const lbl = document.createElement("div");
+          lbl.textContent = col;
+          lbl.style.minWidth = "140px";
+          lbl.style.fontWeight = "600";
+          const plug = document.createElement("select");
+          plug.className = "plug-select form-select";
+          plug.style.minWidth = "150px";
+          const emptyOpt = document.createElement("option");
+          emptyOpt.value = "";
+          emptyOpt.textContent = "(none)";
+          plug.appendChild(emptyOpt);
+          (d.plugins || []).forEach((pn) => {
+            const o = document.createElement("option");
+            o.value = pn;
+            o.textContent = pn;
+            if (d.pluginMappings && d.pluginMappings[col] === pn)
+              o.selected = true;
+            plug.appendChild(o);
+          });
+          const ftype = document.createElement("select");
+          ftype.className = "ftype-select form-select";
+          ftype.style.minWidth = "150px";
+          [
+            "text",
+            "number",
+            "select",
+            "textarea",
+            "date",
+            "datetime-local",
+          ].forEach((t) => {
+            const o = document.createElement("option");
+            o.value = t;
+            o.textContent = t;
+            if (d.fieldTypeMappings && d.fieldTypeMappings[col] === t)
+              o.selected = true;
+            ftype.appendChild(o);
+          });
+          const freqWrap = document.createElement("label");
+          freqWrap.style.display = "flex";
+          freqWrap.style.alignItems = "center";
+          freqWrap.style.gap = "6px";
+          const freq = document.createElement("input");
+          freq.type = "checkbox";
+          freq.className = "freq-checkbox";
+          if (d.fieldRequiredMappings && d.fieldRequiredMappings[col])
+            freq.checked = true;
+          const freqLbl = document.createElement("span");
+          freqLbl.textContent = "Required";
+          freqWrap.appendChild(freq);
+          freqWrap.appendChild(freqLbl);
+          const fopts = document.createElement("input");
+          fopts.className = "fopts-input form-input";
+          fopts.placeholder = "opt1,opt2";
+          fopts.style.minWidth = "160px";
+          if (d.fieldOptionsMappings && d.fieldOptionsMappings[col])
+            fopts.value = d.fieldOptionsMappings[col];
+          const fetchBtn = document.createElement("button");
+          fetchBtn.className = "btn btn-secondary";
+          fetchBtn.textContent = "Fetch DB Values";
+          fetchBtn.addEventListener("click", async () => {
+            showToast(
+              "Fetching DB values via module-mapping is deprecated",
+              "info"
+            );
+          });
 
-            // build rows for columns
-            const cols = d.columns || [];
-            if (!cols.length) {
-              const p = document.createElement("div");
-              p.textContent = "No columns discovered for table.";
-              container.appendChild(p);
-              return;
-            }
-            cols.forEach((col) => {
-              const mr = document.createElement("div");
-              mr.className = "mapping-row";
-              mr.setAttribute("data-col", col);
-              mr.style.display = "flex";
-              mr.style.gap = "8px";
-              mr.style.alignItems = "center";
-              mr.style.padding = "6px 0";
-              const lbl = document.createElement("div");
-              lbl.textContent = col;
-              lbl.style.minWidth = "140px";
-              lbl.style.fontWeight = "600";
-              const plug = document.createElement("select");
-              plug.className = "plug-select form-select";
-              plug.style.minWidth = "150px";
-              const emptyOpt = document.createElement("option");
-              emptyOpt.value = "";
-              emptyOpt.textContent = "(none)";
-              plug.appendChild(emptyOpt);
-              (d.plugins || []).forEach((pn) => {
-                const o = document.createElement("option");
-                o.value = pn;
-                o.textContent = pn;
-                if (d.pluginMappings && d.pluginMappings[col] === pn)
-                  o.selected = true;
-                plug.appendChild(o);
-              });
-              const ftype = document.createElement("select");
-              ftype.className = "ftype-select form-select";
-              ftype.style.minWidth = "150px";
-              [
-                "text",
-                "number",
-                "select",
-                "textarea",
-                "date",
-                "datetime-local",
-              ].forEach((t) => {
-                const o = document.createElement("option");
-                o.value = t;
-                o.textContent = t;
-                if (d.fieldTypeMappings && d.fieldTypeMappings[col] === t)
-                  o.selected = true;
-                ftype.appendChild(o);
-              });
-              const freqWrap = document.createElement("label");
-              freqWrap.style.display = "flex";
-              freqWrap.style.alignItems = "center";
-              freqWrap.style.gap = "6px";
-              const freq = document.createElement("input");
-              freq.type = "checkbox";
-              freq.className = "freq-checkbox";
-              if (d.fieldRequiredMappings && d.fieldRequiredMappings[col])
-                freq.checked = true;
-              const freqLbl = document.createElement("span");
-              freqLbl.textContent = "Required";
-              freqWrap.appendChild(freq);
-              freqWrap.appendChild(freqLbl);
-              const fopts = document.createElement("input");
-              fopts.className = "fopts-input form-input";
-              fopts.placeholder = "opt1,opt2";
-              fopts.style.minWidth = "160px";
-              if (d.fieldOptionsMappings && d.fieldOptionsMappings[col])
-                fopts.value = d.fieldOptionsMappings[col];
-              const fetchBtn = document.createElement("button");
-              fetchBtn.className = "btn btn-secondary";
-              fetchBtn.textContent = "Fetch DB Values";
-              fetchBtn.addEventListener("click", async () => {
-                fetchBtn.disabled = true;
-                fetchBtn.textContent = "Loading...";
-                try {
-                  const q2 = new URLSearchParams({
-                    action: "fetch_values",
-                    table: d.tableName || "",
-                    column: col,
-                  });
-                  const r2 = await fetch(
-                    "/api/module-mapping?" + q2.toString()
-                  );
-                  const dd = await r2.json();
-                  if (dd && dd.success && dd.values && dd.values.length) {
-                    fopts.value = dd.values.join(",");
-                    showToast("Values loaded", "success");
-                  } else showToast("No values found", "info");
-                } catch (e) {
-                  showToast("Fetch failed: " + e.message, "error");
-                }
-                fetchBtn.disabled = false;
-                fetchBtn.textContent = "Fetch DB Values";
-              });
-
-              mr.appendChild(lbl);
-              mr.appendChild(plug);
-              mr.appendChild(ftype);
-              mr.appendChild(freqWrap);
-              mr.appendChild(fopts);
-              mr.appendChild(fetchBtn);
-              container.appendChild(mr);
-            });
-          } catch (e) {
-            info.textContent = "Error loading mapping: " + e.message;
-          }
+          mr.appendChild(lbl);
+          mr.appendChild(plug);
+          mr.appendChild(ftype);
+          mr.appendChild(freqWrap);
+          mr.appendChild(fopts);
+          mr.appendChild(fetchBtn);
+          container.appendChild(mr);
         }
 
         // initial load

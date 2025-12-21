@@ -14,6 +14,7 @@ const taxonomyService = require('./services/taxonomyService');
 const rulesEngine = require('./services/rulesEngine');
 const workflowEngine = require('./services/workflowEngine');
 const executionOrchestrator = require('./services/executionOrchestrator');
+const eventBus = require('./services/eventBus');
 const { v4: uuidv4 } = require('uuid');
 const TransactionManager = require('./services/transactionManager');
 
@@ -67,6 +68,9 @@ app.use((req, res, next) => {
   } catch (e) {}
   next();
 });
+
+// initialize event bus (Kafka producer + consumer)
+try { eventBus.init().catch(e => console.warn('eventBus.init failed', e)); } catch(e) { /* ignore */ }
 
 // Provide a lightweight bindings read endpoint early so embedded clients
 // can discover bindings even if later route definitions are reordered.
@@ -407,140 +411,120 @@ app.get("/api/schema/:tableName", async (req, res) => {
   }
 });
 
-// Module mapping endpoints (JS equivalent of pluginmap.php)
-// GET /api/module-mapping?module=NAME[&action=fetch_values&table=..&column=..]
-// POST /api/module-mapping  { module, mappings, fieldTypes, fieldRequired, fieldOptions }
+// Module mapping endpoints are deprecated. We now discover events from the UI and Kafka.
 app.get('/api/module-mapping', async (req, res) => {
-  try {
-    const module = req.query.module;
-    const action = req.query.action;
-    if (!module) return res.status(400).json({ ok: false, error: 'module query param required' });
-
-    // fetch distinct values if requested
-    if (action === 'fetch_values') {
-      const table = (req.query.table || '').replace(/[^a-zA-Z0-9_]/g, '');
-      const column = (req.query.column || '').replace(/[^a-zA-Z0-9_]/g, '');
-      if (!table || !column) return res.status(400).json({ success: false, message: 'Missing parameters' });
-      try {
-        const sql = `SELECT DISTINCT \`${column}\` AS val FROM \`${table}\` WHERE \`${column}\` IS NOT NULL AND \`${column}\` != '' ORDER BY \`${column}\` LIMIT 100`;
-        const [rows] = await pool.query(sql);
-        const values = (rows || []).map(r => r.val).filter(v => v !== null && v !== undefined && String(v) !== '');
-        return res.json({ success: true, values, count: values.length });
-      } catch (e) {
-        return res.status(500).json({ success: false, message: 'Query failed', details: e.message });
-      }
-    }
-
-    // regular module mapping load
-    // detect optional navigation columns
-    const optionalCols = ['field_types','field_required','field_options'];
-    const has = {};
-    for (const c of optionalCols) {
-      try {
-        const [rows] = await pool.query("SHOW COLUMNS FROM navigation LIKE ?", [c]);
-        has[c] = Array.isArray(rows) && rows.length > 0;
-      } catch (e) {
-        has[c] = false;
-      }
-    }
-
-    // build select list
-    const selectCols = ['nav','urn','plugin'];
-    if (has['field_types']) selectCols.push('field_types');
-    if (has['field_required']) selectCols.push('field_required');
-    if (has['field_options']) selectCols.push('field_options');
-
-    const sql = `SELECT ${selectCols.map(s => `\`${s}\``).join(', ')} FROM navigation WHERE nav = ? LIMIT 1`;
-    const [results] = await pool.query(sql, [module]);
-    const moduleData = (results && results[0]) || null;
-    if (!moduleData) return res.status(404).json({ ok: false, error: 'Module not found' });
-
-    // parse JSON fields
-    let pluginMappings = {};
-    let fieldTypeMappings = {};
-    let fieldRequiredMappings = {};
-    let fieldOptionsMappings = {};
-    try { pluginMappings = moduleData.plugin ? JSON.parse(moduleData.plugin) : {}; } catch (e) { pluginMappings = {}; }
-    if (has['field_types']) { try { fieldTypeMappings = moduleData.field_types ? JSON.parse(moduleData.field_types) : {}; } catch (e) { fieldTypeMappings = {}; } }
-    if (has['field_required']) { try { fieldRequiredMappings = moduleData.field_required ? JSON.parse(moduleData.field_required) : {}; } catch (e) { fieldRequiredMappings = {}; } }
-    if (has['field_options']) { try { fieldOptionsMappings = moduleData.field_options ? JSON.parse(moduleData.field_options) : {}; } catch (e) { fieldOptionsMappings = {}; } }
-
-    // derive table name from urn (first path segment)
-    const urn = moduleData.urn || '';
-    const tableName = (String(urn).split('/')[0]) || '';
-
-    // get table columns
-    let columns = [];
-    if (tableName) {
-      try {
-        const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``);
-        columns = (cols || []).map(r => r.Field).filter(f => !['id','role','created_at','updated_at'].includes(f));
-      } catch (e) {
-        columns = [];
-      }
-    }
-
-    // list plugins dir
-    let plugins = [];
-    try {
-      const pdir = path.join(__dirname, 'plugins');
-      const entries = await fs.readdir(pdir).catch(() => []);
-      for (const en of entries) {
-        try {
-          const st = await fs.stat(path.join(pdir, en));
-          if (st.isDirectory()) plugins.push(en);
-        } catch (e) {}
-      }
-      plugins.sort();
-    } catch (e) { plugins = []; }
-
-    return res.json({ ok: true, module: module, moduleData, pluginMappings, fieldTypeMappings, fieldRequiredMappings, fieldOptionsMappings, tableName, columns, plugins });
-  } catch (e) {
-    console.error('/api/module-mapping error', e && e.stack ? e.stack : e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
+  return res.status(410).json({ ok: false, error: 'module-mapping deprecated; use /api/event-registry or event stream' });
 });
 
 // POST save mappings
 app.post('/api/module-mapping', async (req, res) => {
+  return res.status(410).json({ success: false, message: 'module-mapping deprecated; persistence removed' });
+});
+
+// Receive orchestrator events from front-end and publish to Kafka
+app.post('/api/orchestrator/event', async (req, res) => {
   try {
     const body = req.body || {};
-    const module = body.module;
-    if (!module) return res.status(400).json({ success: false, message: 'module required' });
-
-    const mappings = body.mappings || {};
-    const fieldTypes = body.fieldTypes || {};
-    const fieldRequired = body.fieldRequired || {};
-    const fieldOptions = body.fieldOptions || {};
-
-    // detect optional columns
-    const optionalCols = ['field_types','field_required','field_options'];
-    const has = {};
-    for (const c of optionalCols) {
-      try {
-        const [rows] = await pool.query("SHOW COLUMNS FROM navigation LIKE ?", [c]);
-        has[c] = Array.isArray(rows) && rows.length > 0;
-      } catch (e) { has[c] = false; }
+    // Accept either { event, module, detail } or arbitrary payload
+    const result = await eventBus.publishEvent(body);
+    if (result && result.ok) {
+      // Persisted and enqueued
+      return res.status(202).json({ ok: true, id: result.id, status: 'accepted' });
+    } else {
+      return res.status(500).json({ ok: false, error: result && result.error ? result.error : 'publish_failed' });
     }
-
-    const parts = ['plugin = ?'];
-    const params = [JSON.stringify(mappings)];
-    if (has['field_types']) { parts.push('field_types = ?'); params.push(JSON.stringify(fieldTypes)); }
-    if (has['field_required']) { parts.push('field_required = ?'); params.push(JSON.stringify(fieldRequired)); }
-    if (has['field_options']) { parts.push('field_options = ?'); params.push(JSON.stringify(fieldOptions)); }
-    const sql = `UPDATE navigation SET ${parts.join(', ')} WHERE nav = ?`;
-    params.push(module);
-
-    const [result] = await pool.query(sql, params);
-    // check affectedRows
-    if (result && (result.affectedRows === 0)) {
-      return res.json({ success: false, message: 'No row updated (module may not exist)' });
-    }
-    return res.json({ success: true, message: 'Field configurations saved successfully' });
   } catch (e) {
-    console.error('/api/module-mapping save error', e && e.stack ? e.stack : e);
-    return res.status(500).json({ success: false, message: 'Failed to save configurations', details: e.message });
+    console.error('/api/orchestrator/event error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// SSE endpoint for streaming discovered events to UI
+app.get('/events/stream', async (req, res) => {
+  // Allow cross-origin EventSource connections (restrict in prod via env)
+  const allowOrigin = process.env.EVENTS_ALLOW_ORIGIN || '*';
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders && res.flushHeaders();
+  // send a comment to keep connection
+  res.write(': connected\n\n');
+  eventBus.addSSEClient(res);
+  req.on('close', () => { try { eventBus.removeSSEClient(res); } catch(e){} });
+});
+
+// Admin endpoints: pending events and DLQ
+app.get('/api/events/pending', async (req, res) => {
+  try {
+    const list = await eventBus.listPendingEvents();
+    res.json({ ok: true, pending: list });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get('/api/events/dlq', async (req, res) => {
+  try {
+    const list = await eventBus.listDLQEvents();
+    res.json({ ok: true, dlq: list });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/events/requeue/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const ok = await eventBus.requeueDLQ(id);
+    if (ok) return res.json({ ok: true });
+    return res.status(404).json({ ok: false, error: 'not_found' });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Simple registry API that returns discovered events grouped by module
+app.get('/api/event-registry', async (req, res) => {
+  try {
+    const reg = eventBus.getRegistry();
+    res.json({ ok: true, registry: reg });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// List persisted event records (optional query: module, event)
+app.get('/api/event-records', async (req, res) => {
+  try {
+    const q = { module: req.query.module || null, event: req.query.event || null };
+    const list = await eventBus.listAllEventRecords(q);
+    res.json({ ok: true, records: list });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Delete a single persisted event record by id
+app.delete('/api/event-records/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const ok = await eventBus.deleteEventRecord(id);
+    if (ok) return res.json({ ok: true });
+    return res.status(404).json({ ok: false, error: 'not_found' });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Purge persisted events by filter (body: { module?, event? })
+app.post('/api/events/purge', async (req, res) => {
+  try {
+    const { module, event } = req.body || {};
+    const removed = await eventBus.deleteEventsByFilter({ module, event });
+    return res.json({ ok: true, removed });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Clear module registry counts (in-memory + persisted module key)
+app.post('/api/event-registry/clear-module', async (req, res) => {
+  try {
+    const { module } = req.body || {};
+    if (!module) return res.status(400).json({ ok: false, error: 'module_required' });
+    const ok = await eventBus.clearModuleRegistry(module);
+    return res.json({ ok: !!ok });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 // Get database-wide metadata
@@ -885,6 +869,11 @@ app.get('/builder', (req, res) => {
 // Also serve legacy/explicit orchestration-builder filename
 app.get('/orchestration-builder.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'orchestration-builder.html'));
+});
+
+// Event Registry UI
+app.get('/event-registry.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'event-registry.html'));
 });
 
 // Orchestration Monitor UI

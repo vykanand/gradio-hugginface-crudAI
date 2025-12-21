@@ -1,0 +1,7 @@
+- Move selectedEvents to global scope
+- Remove duplicate renderRegistry code from renderRecordPanel
+- Fix unterminated template literal in meta.textContent
+- Add notification div to HTML
+- Implement green notifications for received events in SSE
+- Implement red notifications for errors
+- Test the fixes

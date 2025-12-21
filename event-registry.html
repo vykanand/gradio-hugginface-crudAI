@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Event Registry</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Arial;
+        margin: 0;
+        background: #f5f7fa;
+        color: #223344;
+      }
+
+      async function purgeAndClear(module) {
+        try {
+          if (!confirm('Purge all persisted events for module ' + module + ' and reset counters? This cannot be undone.')) return;
+          statusEl.textContent = 'Purging persisted events for ' + module + '...';
+          const rr = await fetch(base + "/api/events/purge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ module }),
+          });
+          const jd = await rr.json().catch(() => ({}));
+          if (!(rr.ok && jd && jd.ok)) {
+            showNotification('Purge failed for ' + module, 'error');
+            statusEl.textContent = 'Purge failed';
+            return;
+          }
+          statusEl.textContent = 'Clearing module registry for ' + module + '...';
+          const cr = await fetch(base + "/api/event-registry/clear-module", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ module }),
+          });
+          const cj = await cr.json().catch(() => ({}));
+          if (cr.ok && cj && cj.ok) {
+            showNotification('Purged and cleared ' + module, 'success');
+            await fetchRegistry();
+          } else {
+            showNotification('Clear after purge failed for ' + module, 'error');
+          }
+        } catch (e) {
+          console.error('purgeAndClear error', e);
+          showNotification('Purge & Clear failed: ' + (e && e.message ? e.message : e), 'error');
+        }
+      }
+      .header {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: #fff;
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .container {
+        padding: 16px;
+      }
+      .notifications {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: 400px;
+      }
+      .notification {
+        padding: 12px 16px;
+        border-radius: 8px;
+        color: #fff;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        animation: slideIn 0.3s ease-out;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .notification.success {
+        background: #10b981;
+      }
+      .notification.error {
+        background: #ef4444;
+      }
+      .notification .close {
+        margin-left: auto;
+        cursor: pointer;
+        font-size: 18px;
+        opacity: 0.8;
+      }
+      .notification .close:hover {
+        opacity: 1;
+      }
+      @keyframes slideIn {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      .help {
+        background: #ffffff;
+        border: 1px solid #e9eef8;
+        padding: 10px 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        color: #394a5a;
+      }
+      .controls-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .ev-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 6px;
+        border-radius: 6px;
+        background: #fbfdff;
+      }
+      .ev-checkbox {
+        width: 18px;
+        height: 18px;
+      }
+      .ev-name {
+        cursor: pointer;
+        padding: 4px 6px;
+        border-radius: 4px;
+      }
+      .ev-name:hover {
+        background: rgba(102, 126, 234, 0.06);
+      }
+      .muted {
+        color: #657786;
+        font-size: 0.9rem;
+      }
+      .module {
+        background: #fff;
+        border: 1px solid #e6eef6;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+      }
+      .module h3 {
+        margin: 0 0 6px 0;
+      }
+      .events {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .ev.clickable {
+        cursor: pointer;
+        background: #e8f0ff;
+      }
+      .controls {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #e6eef6;
+        padding: 12px;
+        border-radius: 8px;
+        margin-top: 12px;
+      }
+      .record {
+        background: #f9fbff;
+        padding: 8px;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        font-family: monospace;
+        white-space: pre-wrap;
+      }
+      .ev {
+        background: #f3f6fb;
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 0.9rem;
+      }
+      .toolbar {
+        margin-left: auto;
+      }
+      .btn {
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+      }
+      .btn-primary {
+        background: #667eea;
+        color: #fff;
+      }
+      .tab-selected { box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
+      .node-card { background:#fff; border:1px solid #e6eef6; padding:8px; border-radius:6px; margin-bottom:8px }
+      .node-row { display:flex; gap:8px; align-items:center }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div style="font-weight: 700">📚 Event Registry</div>
+      <div style="margin-left: 12px; color: rgba(255, 255, 255, 0.9)">
+        Discovered events from frontends and Kafka
+      </div>
+      <div class="toolbar">
+        <button id="refreshBtn" class="btn btn-primary">🔄 Refresh</button>
+      </div>
+    </div>
+    <div class="container">
+      <div id="status" style="margin-bottom: 10px; color: #657786">
+        Loading...
+      </div>
+
+      <div class="help">
+        <div style="font-weight: 600">What is this page?</div>
+        <div class="muted">
+          This shows discovered events grouped by module. You can inspect
+          persisted records for an event, delete persisted event data, and reset
+          module counters. Use the checkboxes to select events and run bulk
+          operations. Hover buttons for short hints.
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <label style="display: flex; align-items: center; gap: 8px"
+          ><input id="globalSelect" type="checkbox" />
+          <span class="muted">Select all events on screen</span></label
+        >
+        <button
+          id="btnDeleteSelected"
+          class="btn"
+          title="Delete persisted event records for selected events"
+        >
+          Delete Persisted for Selected
+        </button>
+        <button
+          id="btnPurgeSelected"
+          class="btn"
+          title="Purge persisted events for selected events (same as delete)"
+        >
+          Purge Persisted for Selected
+        </button>
+        <button
+          id="btnResetModules"
+          class="btn"
+          title="Reset counters for modules that contain selected events (does NOT delete persisted data)"
+        >
+          Reset Module Counters
+        </button>
+        <div style="margin-left: auto" class="muted">
+          Tip: click an event name to browse individual persisted records.
+        </div>
+      </div>
+
+      <!-- Tabs: Events / Actions / Event Node -->
+      <div class="tabs" style="margin-top: 12px; display: flex; gap: 8px">
+        <button id="tabEvents" class="btn btn-primary">Events</button>
+        <button id="tabActions" class="btn">Actions</button>
+        <button id="tabNode" class="btn">Event Node</button>
+      </div>
+
+      <div id="eventsTab">
+        <div id="modules"></div>
+      </div>
+
+      <div id="actionsTab" style="display: none; margin-top: 12px">
+        <div class="help">
+          Actions view: integrations, automations and actions will appear here.
+          (placeholder)
+        </div>
+      </div>
+
+      <div id="eventNodeTab" style="display: none; margin-top: 12px">
+        <div class="help">
+          Event Node: choose a module event and create an event node to connect
+          to other nodes.
+        </div>
+        <div id="eventNodeContainer" style="margin-top: 8px"></div>
+      </div>
+    </div>
+
+    <!-- Notification container -->
+    <div id="notifications" class="notifications"></div>
+
+    <script>
+      function computeOrchestratorBase() {
+        const __runtimeCfg = window.__RUNTIME_CONFIG__ || null;
+        if (window.__ORCHESTRATOR_URL__) return window.__ORCHESTRATOR_URL__;
+        if (__runtimeCfg && __runtimeCfg.port) {
+          return (
+            location.protocol +
+            "//" +
+            location.hostname +
+            ":" +
+            __runtimeCfg.port
+          );
+        }
+        // If current origin is likely the app host (e.g., :8001), default to 5050 for orchestrator
+        if (
+          location.hostname === "localhost" &&
+          location.port &&
+          location.port !== "5050"
+        ) {
+          return location.protocol + "//" + location.hostname + ":5050";
+        }
+        return location.origin;
+      }
+
+      const base = computeOrchestratorBase().replace(/\/$/, "");
+      const registryEndpoint = base + "/api/event-registry";
+      const sseEndpoint = base + "/events/stream";
+
+      // Debug: log endpoints so developers can verify correct base
+      console.debug("Event registry endpoint:", registryEndpoint);
+      console.debug("SSE endpoint:", sseEndpoint);
+
+      const statusEl = document.getElementById("status");
+      const modulesEl = document.getElementById("modules");
+      const selectedEvents = new Set();
+      const notificationLast = {};
+
+      // Notification system
+      function showNotification(message, type = "success") {
+        const notificationsEl = document.getElementById("notifications");
+        const notification = document.createElement("div");
+        notification.className = `notification ${type}`;
+
+        const icon = type === "success" ? "✅" : "❌";
+        notification.innerHTML = `
+          <span>${icon}</span>
+          <span>${message}</span>
+          <span class="close" onclick="this.parentElement.remove()">×</span>
+        `;
+
+        notificationsEl.appendChild(notification);
+
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+          if (notification.parentElement) {
+            notification.remove();
+          }
+        }, 5000);
+      }
+
+      async function fetchRegistry() {
+        try {
+          statusEl.textContent = "Fetching registry...";
+          const r = await fetch(registryEndpoint, { cache: "no-store" });
+          if (!r.ok) {
+            statusEl.textContent = "Failed to fetch registry";
+            showNotification("Failed to fetch event registry", "error");
+            return;
+          }
+          const d = await r.json();
+          renderRegistry(d && d.registry ? d.registry : {});
+          statusEl.textContent = "Last updated: " + new Date().toLocaleString();
+        } catch (e) {
+          statusEl.textContent = "Error fetching registry";
+          showNotification("Error fetching registry: " + e.message, "error");
+          console.warn(e);
+        }
+      }
+
+      function renderRegistry(reg) {
+        modulesEl.innerHTML = "";
+        const keys = Object.keys(reg || {})
+          .filter(function (k) {
+            if (!k) return false;
+            if (
+              typeof k === "string" &&
+              (k.indexOf("evt:") === 0 || k.indexOf("dlq:") === 0)
+            )
+              return false;
+            return true;
+          })
+          .sort((a, b) => (reg[b].total || 0) - (reg[a].total || 0));
+        if (!keys.length) {
+          modulesEl.innerHTML =
+            '<div style="color:#657786">No events discovered yet.</div>';
+          return;
+        }
+        for (const m of keys) {
+          const info = reg[m] || { events: {}, total: 0 };
+          const div = document.createElement("div");
+          div.className = "module";
+          const h = document.createElement("h3");
+          h.textContent = m + " — " + (info.total || 0) + " events";
+          div.appendChild(h);
+          const evs = document.createElement("div");
+          evs.className = "events";
+
+          // create grouped event rows with checkbox + clickable name
+          for (const e of Object.keys(info.events || {})) {
+            const row = document.createElement("div");
+            row.className = "ev-row";
+
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.className = "ev-checkbox";
+            cb.dataset.module = m;
+            cb.dataset.event = e;
+            cb.addEventListener("change", (evt) => {
+              const key = cb.dataset.module + "|" + cb.dataset.event;
+              if (cb.checked) selectedEvents.add(key);
+              else selectedEvents.delete(key);
+            });
+
+            const name = document.createElement("div");
+            name.className = "ev-name";
+            name.textContent =
+              e + (info.events[e] ? " (" + info.events[e] + ")" : "");
+            name.dataset.module = m;
+            name.dataset.event = e;
+            name.title = "Click to inspect persisted records for this event";
+            name.addEventListener("click", onEventClick);
+
+            row.appendChild(cb);
+            row.appendChild(name);
+            evs.appendChild(row);
+          }
+
+          div.appendChild(evs);
+          const ctrl = document.createElement("div");
+          ctrl.className = "controls";
+          const btnReset = document.createElement("button");
+          btnReset.className = "btn";
+          btnReset.textContent = "Reset Module Counters";
+          btnReset.title =
+            "Reset the displayed counts for this module (does not delete persisted data)";
+          btnReset.addEventListener("click", () => clearModule(m));
+          const btnDelete = document.createElement("button");
+          btnDelete.className = "btn";
+          btnDelete.textContent = "Delete Persisted Events";
+          btnDelete.title =
+            "Delete persisted records for this module (destructive)";
+          btnDelete.addEventListener("click", () => purgeModule(m));
+          const btnPurgeClear = document.createElement("button");
+          btnPurgeClear.className = "btn";
+          btnPurgeClear.textContent = "Purge & Clear";
+          btnPurgeClear.title =
+            "Purge persisted events for this module, then reset counters";
+          btnPurgeClear.addEventListener("click", () => purgeAndClear(m));
+
+          ctrl.appendChild(btnReset);
+          ctrl.appendChild(btnDelete);
+          ctrl.appendChild(btnPurgeClear);
+          div.appendChild(ctrl);
+          modulesEl.appendChild(div);
+        }
+      }
+
+      document
+        .getElementById("refreshBtn")
+        .addEventListener("click", fetchRegistry);
+
+      // initial load
+      fetchRegistry();
+
+      // Tabs wiring
+      const tabEvents = document.getElementById("tabEvents");
+      const tabActions = document.getElementById("tabActions");
+      const tabNode = document.getElementById("tabNode");
+      const eventsTab = document.getElementById("eventsTab");
+      const actionsTab = document.getElementById("actionsTab");
+      const eventNodeTab = document.getElementById("eventNodeTab");
+
+      function switchTab(name) {
+        tabEvents.classList.remove("tab-selected");
+        tabActions.classList.remove("tab-selected");
+        tabNode.classList.remove("tab-selected");
+        eventsTab.style.display = "none";
+        actionsTab.style.display = "none";
+        eventNodeTab.style.display = "none";
+        if (name === "events") {
+          tabEvents.classList.add("tab-selected");
+          eventsTab.style.display = "";
+        }
+        if (name === "actions") {
+          tabActions.classList.add("tab-selected");
+          actionsTab.style.display = "";
+        }
+        if (name === "node") {
+          tabNode.classList.add("tab-selected");
+          eventNodeTab.style.display = "";
+          renderEventNode();
+        }
+      }
+      tabEvents.addEventListener("click", () => switchTab("events"));
+      tabActions.addEventListener("click", () => switchTab("actions"));
+      tabNode.addEventListener("click", () => switchTab("node"));
+      // default
+      switchTab("events");
+
+      // Render Event Node panel: list modules & events with simple connect UI
+      function renderEventNode() {
+        const container = document.getElementById("eventNodeContainer");
+        container.innerHTML = "";
+        try {
+          const reg = window.__lastRegistry || {};
+          const modules = Object.keys(reg)
+            .filter(
+              (k) => k && !(k.indexOf("evt:") === 0 || k.indexOf("dlq:") === 0)
+            )
+            .sort();
+          if (!modules.length) {
+            container.innerHTML =
+              '<div class="muted">No modules discovered yet.</div>';
+            return;
+          }
+          for (const m of modules) {
+            const card = document.createElement("div");
+            card.className = "node-card";
+            const title = document.createElement("div");
+            title.style.fontWeight = "700";
+            title.textContent = m;
+            card.appendChild(title);
+            const evs =
+              reg[m] && reg[m].events ? Object.keys(reg[m].events) : [];
+            for (const e of evs) {
+              const row = document.createElement("div");
+              row.className = "node-row";
+              const lbl = document.createElement("div");
+              lbl.textContent =
+                e + (reg[m].events[e] ? " (" + reg[m].events[e] + ")" : "");
+              lbl.style.flex = "1";
+              const inp = document.createElement("button");
+              inp.className = "btn";
+              inp.textContent = "Add Node";
+              inp.addEventListener("click", () => {
+                alert("Create node for " + e);
+              });
+              row.appendChild(lbl);
+              row.appendChild(inp);
+              card.appendChild(row);
+            }
+            container.appendChild(card);
+          }
+        } catch (e) {
+          console.warn("renderEventNode err", e);
+          container.innerHTML =
+            '<div class="muted">Error rendering nodes</div>';
+        }
+      }
+
+      // SSE live updates
+      try {
+        const es = new EventSource(sseEndpoint);
+        es.onmessage = function (m) {
+          try {
+            const obj = JSON.parse(m.data || "{}");
+            // Prefer explicit module, else try to derive from event name (events are usually namespaced: "module:...")
+            const eventName =
+              obj.event || obj.name || (obj && obj.type) || "unknown";
+            const mod =
+              obj.module ||
+              (typeof eventName === "string" && eventName.indexOf(":") !== -1
+                ? String(eventName).split(":")[0]
+                : "unknown");
+
+            // Throttle notifications per module+event to avoid floods
+            try {
+              const nkey = mod + "|" + eventName;
+              const last = notificationLast[nkey] || 0;
+              if (Date.now() - last > 800) {
+                notificationLast[nkey] = Date.now();
+                showNotification(
+                  `Event received - Module: ${mod}, Event: ${eventName}`,
+                  "success"
+                );
+              }
+            } catch (e) {}
+
+            // Keep a lightweight in-memory live registry for immediate UX, then refresh canonical registry from server
+            const reg = (window.__liveReg = window.__liveReg || {});
+            reg[mod] = reg[mod] || { events: {}, total: 0 };
+            reg[mod].events = reg[mod].events || {};
+            reg[mod].events[eventName] = (reg[mod].events[eventName] || 0) + 1;
+            reg[mod].total = Object.values(reg[mod].events).reduce(
+              (s, v) => s + v,
+              0
+            );
+            // Refresh server-backed registry (keeps counts authoritative and groups by module dynamically)
+            fetchRegistry();
+          } catch (e) {
+            console.warn("sse err", e);
+            showNotification(
+              "Error processing SSE event: " + e.message,
+              "error"
+            );
+          }
+        };
+        es.onerror = function (e) {
+          console.warn("SSE error", e);
+          showNotification("SSE connection error", "error");
+        };
+      } catch (e) {
+        console.warn("Failed to open SSE", e);
+        showNotification("Failed to establish SSE connection", "error");
+      }
+
+      // Event detail browsing UI
+      let currentRecords = [];
+      let currentIndex = 0;
+      function onEventClick(ev) {
+        const module = ev.currentTarget.dataset.module;
+        const event = ev.currentTarget.dataset.event;
+        fetchEventRecords(module, event);
+      }
+
+      // Bulk action handlers
+      document
+        .getElementById("btnDeleteSelected")
+        .addEventListener("click", async () => {
+          if (!selectedEvents.size) return alert("No events selected");
+          if (
+            !confirm(
+              "Delete persisted records for " +
+                selectedEvents.size +
+                " selected events?"
+            )
+          )
+            return;
+          statusEl.textContent = "Deleting selected...";
+          let removedTotal = 0;
+          for (const k of Array.from(selectedEvents)) {
+            const [module, event] = k.split("|");
+            try {
+              const rr = await fetch(base + "/api/events/purge", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ module, event }),
+              });
+              const jd = await rr.json().catch(() => ({}));
+              if (jd && jd.ok && jd.removed) removedTotal += jd.removed;
+            } catch (e) {
+              console.warn("purge err", e);
+            }
+          }
+          statusEl.textContent =
+            "Deleted (purged) " +
+            removedTotal +
+            " records across selected events";
+          showNotification(
+            `Deleted ${removedTotal} records across ${selectedEvents.size} events`,
+            "success"
+          );
+          fetchRegistry();
+        });
+
+      document
+        .getElementById("btnPurgeSelected")
+        .addEventListener("click", async () => {
+          // alias for delete to keep compatibility with user language
+          document.getElementById("btnDeleteSelected").click();
+        });
+
+      document
+        .getElementById("btnResetModules")
+        .addEventListener("click", async () => {
+          if (!selectedEvents.size) return alert("No events selected");
+          const modules = new Set(
+            Array.from(selectedEvents).map((k) => k.split("|")[0])
+          );
+          if (
+            !confirm(
+              "Reset counters for " +
+                modules.size +
+                " module(s)? This does not delete persisted records."
+            )
+          )
+            return;
+          let cleared = 0;
+          for (const m of modules) {
+            try {
+              const rr = await fetch(
+                base + "/api/event-registry/clear-module",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ module: m }),
+                }
+              );
+              const jd = await rr.json().catch(() => ({}));
+              if (jd && jd.ok) cleared++;
+            } catch (e) {
+              console.warn("clear err", e);
+            }
+          }
+          statusEl.textContent = "Reset counters for " + cleared + " module(s)";
+          showNotification(
+            `Reset counters for ${cleared} module(s)`,
+            "success"
+          );
+          fetchRegistry();
+        });
+
+      async function fetchEventRecords(module, event) {
+        try {
+          statusEl.textContent = `Loading records for ${module}:${event}...`;
+          const r = await fetch(
+            base +
+              "/api/event-records?module=" +
+              encodeURIComponent(module) +
+              "&event=" +
+              encodeURIComponent(event)
+          );
+          const d = await r.json();
+          if (!d || !d.records) {
+            statusEl.textContent = "No records";
+            showNotification(
+              `No records found for ${module}:${event}`,
+              "error"
+            );
+            return;
+          }
+          currentRecords = d.records || [];
+          currentIndex = 0;
+          renderRecordPanel(module, event);
+          statusEl.textContent = "Loaded " + currentRecords.length + " records";
+          showNotification(
+            `Loaded ${currentRecords.length} records for ${module}:${event}`,
+            "success"
+          );
+        } catch (e) {
+          statusEl.textContent = "Failed to load records";
+          showNotification("Failed to load records: " + e.message, "error");
+        }
+      }
+
+      function renderRecordPanel(module, event) {
+        // remove existing panel
+        const existing = document.getElementById("record-panel");
+        if (existing) existing.remove();
+        const p = document.createElement("div");
+        p.id = "record-panel";
+        p.className = "panel";
+        const title = document.createElement("div");
+        title.style.fontWeight = "700";
+        title.textContent = `${module} : ${event} — ${currentRecords.length} record(s)`;
+        p.appendChild(title);
+
+        const nav = document.createElement("div");
+        nav.style.marginTop = "8px";
+        const prev = document.createElement("button");
+        prev.className = "btn";
+        prev.textContent = "◀ Prev";
+        const next = document.createElement("button");
+        next.className = "btn";
+        next.textContent = "Next ▶";
+        const btnDelete = document.createElement("button");
+        btnDelete.className = "btn";
+        btnDelete.textContent = "Delete This Record";
+        const btnPurge = document.createElement("button");
+        btnPurge.className = "btn";
+        btnPurge.textContent = "Purge All This Event";
+        const btnFlash = document.createElement("button");
+        btnFlash.className = "btn";
+        btnFlash.textContent = "Flash UI";
+
+        prev.addEventListener("click", () => {
+          if (currentIndex > 0) {
+            currentIndex--;
+            updateRecordView();
+          }
+        });
+        next.addEventListener("click", () => {
+          if (currentIndex < currentRecords.length - 1) {
+            currentIndex++;
+            updateRecordView();
+          }
+        });
+        btnDelete.addEventListener("click", async () => {
+          const rec = currentRecords[currentIndex];
+          if (!rec || !rec.id) return alert("No record id");
+          if (!confirm("Delete record " + rec.id + "?")) return;
+          const rr = await fetch(
+            base + "/api/event-records/" + encodeURIComponent(rec.id),
+            { method: "DELETE" }
+          );
+          const jd = await rr.json().catch(() => ({}));
+          if (jd && jd.ok) {
+            currentRecords.splice(currentIndex, 1);
+            if (currentIndex >= currentRecords.length)
+              currentIndex = Math.max(0, currentRecords.length - 1);
+            updateRecordView();
+            statusEl.textContent = "Record deleted";
+            showNotification(
+              `Record ${rec.id} deleted successfully`,
+              "success"
+            );
+          } else {
+            statusEl.textContent = "Delete failed";
+            showNotification("Failed to delete record", "error");
+          }
+        });
+        btnPurge.addEventListener("click", async () => {
+          if (
+            !confirm(
+              "Purge all persisted records for this event? This cannot be undone."
+            )
+          )
+            return;
+          const rr = await fetch(base + "/api/events/purge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ module, event }),
+          });
+          const jd = await rr.json().catch(() => ({}));
+          if (jd && jd.ok) {
+            currentRecords = [];
+            updateRecordView();
+            statusEl.textContent = "Purged " + (jd.removed || 0) + " records";
+            showNotification(
+              `Purged ${jd.removed || 0} records for ${module}:${event}`,
+              "success"
+            );
+            fetchRegistry();
+          } else {
+            statusEl.textContent = "Purge failed";
+            showNotification("Failed to purge records", "error");
+          }
+        });
+        btnFlash.addEventListener("click", () => {
+          // simple UI flash: highlight corresponding event chips briefly
+          document.querySelectorAll(".ev").forEach((el) => {
+            if (el.dataset.module === module && el.dataset.event === event) {
+              el.style.transition = "box-shadow 200ms, transform 200ms";
+              el.style.boxShadow = "0 0 0 8px rgba(102,126,234,0.12)";
+              el.style.transform = "scale(1.03)";
+              setTimeout(() => {
+                el.style.boxShadow = "";
+                el.style.transform = "";
+              }, 600);
+            }
+          });
+          showNotification(`UI flashed for ${module}:${event}`, "success");
+        });
+
+        nav.appendChild(prev);
+        nav.appendChild(next);
+        nav.appendChild(btnDelete);
+        nav.appendChild(btnPurge);
+        nav.appendChild(btnFlash);
+        p.appendChild(nav);
+
+        const recordView = document.createElement("div");
+        recordView.id = "record-view";
+        recordView.style.marginTop = "10px";
+        p.appendChild(recordView);
+
+        document.querySelector(".container").appendChild(p);
+        updateRecordView();
+      }
+
+      function updateRecordView() {
+        const rv = document.getElementById("record-view");
+        if (!rv) return;
+        rv.innerHTML = "";
+        if (!currentRecords || !currentRecords.length) {
+          rv.innerHTML = '<div style="color:#657786">No records</div>';
+          return;
+        }
+        const rec = currentRecords[currentIndex];
+        const meta = document.createElement("div");
+        meta.style.fontSize = "12px";
+        meta.style.color = "#657786";
+        meta.textContent = `Record ${currentIndex + 1}/${
+          currentRecords.length
+        } — id:${rec.id} status:${rec.status || ""} attempts:${
+          rec.attempts || 0
+        }`;
+        rv.appendChild(meta);
+        const blob = document.createElement("div");
+        blob.className = "record";
+        blob.textContent = JSON.stringify(rec, null, 2);
+        rv.appendChild(blob);
+      }
+
+      async function clearModule(module) {
+        try {
+          console.debug("clearModule called for", module);
+          statusEl.textContent =
+            "Clearing module registry for " + module + "...";
+          const rr = await fetch(base + "/api/event-registry/clear-module", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ module }),
+          });
+          const jd = await rr.json().catch(() => ({}));
+          if (rr.ok && jd && jd.ok) {
+            statusEl.textContent = "Cleared module registry for " + module;
+            showNotification(
+              `Cleared registry for module ${module}`,
+              "success"
+            );
+            console.debug("clearModule success", module, jd);
+            await fetchRegistry();
+          } else {
+            statusEl.textContent = "Clear failed";
+            showNotification(`Failed to clear module ${module}`, "error");
+            console.warn("clearModule failed", rr.status, jd);
+          }
+        } catch (e) {
+          statusEl.textContent = "Clear failed";
+          showNotification(
+            `Clear failed: ${e && e.message ? e.message : e}`,
+            "error"
+          );
+          console.error("clearModule error", e);
+        }
+      }
+
+      async function purgeModule(module) {
+        try {
+          if (
+            !confirm(
+              "Purge all persisted events for module " +
+                module +
+                "? This cannot be undone."
+            )
+          )
+            return;
+          console.debug("purgeModule called for", module);
+          statusEl.textContent =
+            "Purging persisted events for " + module + "...";
+          // server exposes a generic purge endpoint: POST /api/events/purge with { module?, event? }
+          const rr = await fetch(base + "/api/events/purge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ module }),
+          });
+          const jd = await rr.json().catch(() => ({}));
+          if (rr.ok && jd && jd.ok) {
+            statusEl.textContent = "Purged module events for " + module;
+            showNotification(
+              `Purged ${jd.removed || 0} events for module ${module}`,
+              "success"
+            );
+            console.debug("purgeModule success", module, jd);
+            // After purging persisted events, optionally refresh server-backed registry
+            await fetchRegistry();
+          } else {
+            statusEl.textContent = "Purge failed";
+            showNotification(`Failed to purge module ${module}`, "error");
+            console.warn("purgeModule failed", rr.status, jd);
+          }
+        } catch (e) {
+          statusEl.textContent = "Purge failed";
+          showNotification(
+            `Purge failed: ${e && e.message ? e.message : e}`,
+            "error"
+          );
+          console.error("purgeModule error", e);
+        }
+      }
+
+      // wire up global select
+      document.getElementById("globalSelect").onchange = function () {
+        const checked = !!this.checked;
+        modulesEl.querySelectorAll(".ev-checkbox").forEach((cb) => {
+          cb.checked = checked;
+          const key = cb.dataset.module + "|" + cb.dataset.event;
+          if (checked) selectedEvents.add(key);
+          else selectedEvents.delete(key);
+        });
+      };
+    </script>
+  </body>
+</html>
