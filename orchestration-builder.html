@@ -2219,9 +2219,26 @@
           "concept"
         );
 
-        // Render events grouped by first word
+        // Render events grouped by module (derive module from event name before ':')
+        function groupEventsByModule(list) {
+          const g = {};
+          (list || []).forEach((it) => {
+            const name = (it && (it.name || it.id)) || "";
+            let mod = "misc";
+            if (typeof name === "string" && name.indexOf(":") !== -1) {
+              mod = String(name).split(":")[0] || "misc";
+            } else {
+              // fallback to first whitespace token
+              mod = (name.split(/\s+/)[0] || "misc").trim() || "misc";
+            }
+            g[mod] = g[mod] || [];
+            g[mod].push(it);
+          });
+          return g;
+        }
+
         const events = Object.values(taxonomy.events || {});
-        const eventGroups = groupByFirstWord(events);
+        const eventGroups = groupEventsByModule(events);
         document.getElementById("events-list").innerHTML = buildGroupHtml(
           eventGroups,
           "event"

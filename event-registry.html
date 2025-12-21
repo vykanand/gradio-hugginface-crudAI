@@ -124,6 +124,27 @@
         border-radius: 8px;
         margin-bottom: 8px;
       }
+      .module-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+      }
+      /* Right-pointing triangle caret that rotates to point down when open */
+      .caret {
+        width: 0;
+        height: 0;
+        border-top: 6px solid transparent;
+        border-bottom: 6px solid transparent;
+        border-left: 8px solid rgba(34, 58, 120, 0.9);
+        transition: transform 160ms ease-in-out, border-color 160ms;
+        margin-right: 8px;
+        flex-shrink: 0;
+      }
+      .caret.open {
+        transform: rotate(90deg);
+        border-left-color: var(--brand-accent);
+      }
       .module h3 {
         margin: 0 0 6px 0;
       }
@@ -359,34 +380,86 @@
 
       function renderRegistry(reg) {
         modulesEl.innerHTML = "";
-        const keys = Object.keys(reg || {})
-          .filter(function (k) {
-            if (!k) return false;
-            if (
-              typeof k === "string" &&
-              (k.indexOf("evt:") === 0 || k.indexOf("dlq:") === 0)
-            )
-              return false;
-            return true;
-          })
-          .sort((a, b) => (reg[b].total || 0) - (reg[a].total || 0));
-        if (!keys.length) {
+        // Normalize registry into modules -> events map.
+        const modulesMap = {};
+        const rawKeys = Object.keys(reg || {});
+        for (const k of rawKeys) {
+          if (!k) continue;
+          if (
+            typeof k === "string" &&
+            (k.indexOf("evt:") === 0 || k.indexOf("dlq:") === 0)
+          )
+            continue;
+          const val = reg[k];
+          // If value looks like a module (has .events), use directly
+          if (val && typeof val === "object" && val.events) {
+            modulesMap[k] = {
+              events: Object.assign({}, val.events),
+              total:
+                val.total ||
+                Object.values(val.events).reduce((s, v) => s + v, 0),
+            };
+            continue;
+          }
+          // Otherwise treat key as an event name and derive module from first token
+          const eventName = k;
+          const moduleName =
+            typeof eventName === "string" && eventName.indexOf(":") !== -1
+              ? String(eventName).split(":")[0]
+              : "misc";
+          modulesMap[moduleName] = modulesMap[moduleName] || {
+            events: {},
+            total: 0,
+          };
+          // Determine count: val.total, val.count or numeric
+          let cnt = 0;
+          if (val && typeof val === "object" && (val.total || val.count))
+            cnt = val.total || val.count;
+          else if (typeof val === "number") cnt = val;
+          else cnt = 1;
+          modulesMap[moduleName].events[eventName] =
+            (modulesMap[moduleName].events[eventName] || 0) + cnt;
+          modulesMap[moduleName].total =
+            (modulesMap[moduleName].total || 0) + cnt;
+        }
+
+        const moduleNames = Object.keys(modulesMap).sort(
+          (a, b) => (modulesMap[b].total || 0) - (modulesMap[a].total || 0)
+        );
+        if (!moduleNames.length) {
           modulesEl.innerHTML =
             '<div style="color:#657786">No events discovered yet.</div>';
           return;
         }
-        for (const m of keys) {
-          const info = reg[m] || { events: {}, total: 0 };
+
+        for (const m of moduleNames) {
+          const info = modulesMap[m] || { events: {}, total: 0 };
           const div = document.createElement("div");
           div.className = "module";
+          const header = document.createElement("div");
+          header.className = "module-header";
+          const caret = document.createElement("span");
+          caret.className = "caret";
+          header.appendChild(caret);
           const h = document.createElement("h3");
+          h.style.margin = "0";
           h.textContent = m + " — " + (info.total || 0) + " events";
-          div.appendChild(h);
+          header.appendChild(h);
+          header.addEventListener("click", () => {
+            const evs = div.querySelector(".events");
+            if (!evs) return;
+            const isHidden = evs.style.display === "none";
+            evs.style.display = isHidden ? "" : "none";
+            caret.classList.toggle("open", isHidden);
+          });
+          div.appendChild(header);
           const evs = document.createElement("div");
           evs.className = "events";
+          // collapsed by default
+          evs.style.display = "none";
 
           // create grouped event rows with checkbox + clickable name
-          for (const e of Object.keys(info.events || {})) {
+          for (const e of Object.keys(info.events || {}).sort()) {
             const row = document.createElement("div");
             row.className = "ev-row";
 

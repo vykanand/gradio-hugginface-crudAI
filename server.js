@@ -61,6 +61,9 @@ let pool;
 app.use(express.json());
 app.use(cors());
 
+// Serve static assets (CSS, JS, images) from /assets
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
+
 // Simple request logger to aid debugging (prints method + path)
 app.use((req, res, next) => {
   try {
