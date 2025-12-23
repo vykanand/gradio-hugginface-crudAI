@@ -523,17 +523,6 @@
         padding-right: 8px;
       }
       .group-header {
-        cursor: pointer;
-      }
-      .group-header .chev {
-        font-size: 0.95rem;
-        margin-right: 8px;
-        display: inline-block;
-        width: 18px;
-        text-align: center;
-      }
-
-      .group-header {
         padding: 0.5rem 0.75rem;
         font-weight: 700;
         font-size: 0.9rem;
@@ -541,6 +530,15 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        cursor: pointer;
+      }
+
+      .group-header .chev {
+        font-size: 0.95rem;
+        margin-right: 8px;
+        display: inline-block;
+        width: 18px;
+        text-align: center;
       }
 
       .group-items {
@@ -681,7 +679,7 @@
         <div class="sidebar">
           <h3>Workflow Nodes</h3>
           <div class="node-type" draggable="true" data-node-type="action">
-            <div class="node-icon" style="background: #e3f2fd; color: #1976d2">
+            <div class="node-icon" style="background: #e3f2fd; color: #0d47a1">
               ⚡
             </div>
             <div class="node-info">
@@ -691,7 +689,7 @@
           </div>
 
           <div class="node-type" draggable="true" data-node-type="decision">
-            <div class="node-icon" style="background: #fff3e0; color: #f57c00">
+            <div class="node-icon" style="background: #fff3e0; color: #bf360c">
               🔀
             </div>
             <div class="node-info">
@@ -700,7 +698,7 @@
             </div>
           </div>
           <div class="node-type" draggable="true" data-node-type="human-task">
-            <div class="node-icon" style="background: #fce4ec; color: #c2185b">
+            <div class="node-icon" style="background: #fce4ec; color: #880e4f">
               👤
             </div>
             <div class="node-info">
@@ -709,7 +707,7 @@
             </div>
           </div>
           <div class="node-type" draggable="true" data-node-type="parallel">
-            <div class="node-icon" style="background: #f3e5f5; color: #7b1fa2">
+            <div class="node-icon" style="background: #f3e5f5; color: #4a148c">
               ⫿
             </div>
             <div class="node-info">
@@ -718,7 +716,7 @@
             </div>
           </div>
           <div class="node-type" draggable="true" data-node-type="loop">
-            <div class="node-icon" style="background: #e8f5e9; color: #388e3c">
+            <div class="node-icon" style="background: #e8f5e9; color: #1b5e20">
               🔄
             </div>
             <div class="node-info">
@@ -910,18 +908,136 @@
                 <input id="action-name" class="form-input" />
               </div>
               <div class="form-group">
-                <label class="form-label"
-                  >DB Target (table or table.column)</label
+                <label class="form-label">DB Target (tables)</label>
+                <div
+                  id="action-target-container"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                    padding: 6px;
+                    border: 1px solid #e6eef6;
+                    border-radius: 6px;
+                    min-height: 38px;
+                  "
                 >
-                <input
-                  id="action-target"
-                  class="form-input"
-                  placeholder="table or table.column"
-                />
+                  <div
+                    id="action-target-pills"
+                    style="
+                      display: flex;
+                      gap: 6px;
+                      flex-wrap: wrap;
+                      align-items: center;
+                    "
+                  ></div>
+                  <input
+                    id="action-target-input"
+                    class="form-input"
+                    style="
+                      border: none;
+                      box-shadow: none;
+                      min-width: 80px;
+                      flex: 1;
+                      padding: 6px;
+                    "
+                    placeholder="add table and press Enter"
+                  />
+                </div>
+                <div
+                  style="
+                    margin-top: 8px;
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
+                  "
+                >
+                  <button class="btn btn-secondary" id="action-target-choose">
+                    Choose from DB
+                  </button>
+                  <div style="color: #657786; font-size: 0.85rem">
+                    Or type a table and press Enter
+                  </div>
+                </div>
+                <input type="hidden" id="action-target" />
+                <div
+                  style="margin-top: 6px; color: #657786; font-size: 0.85rem"
+                >
+                  Select tables (no columns). Multiple tables allowed.
+                </div>
               </div>
               <div class="form-group">
                 <label class="form-label">Description</label>
-                <textarea id="action-desc" class="form-textarea"></textarea>
+                <textarea
+                  id="action-desc"
+                  class="form-textarea"
+                  placeholder="Describe your business use case..."
+                ></textarea>
+                <div
+                  style="
+                    margin-top: 8px;
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
+                  "
+                >
+                  <button
+                    class="btn btn-secondary"
+                    id="generate-query-btn"
+                    type="button"
+                  >
+                    🤖 Generate Query from Description
+                  </button>
+                  <div
+                    id="generate-query-status"
+                    style="color: #657786; font-size: 0.85rem"
+                  ></div>
+                </div>
+                <div
+                  id="query-preview-section"
+                  style="
+                    display: none;
+                    margin-top: 12px;
+                    padding: 12px;
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                    border: 1px solid #e1e8ed;
+                  "
+                >
+                  <div
+                    style="font-weight: 600; margin-bottom: 8px; color: #2c3e50"
+                  >
+                    📊 Query Preview
+                  </div>
+                  <div
+                    id="query-preview-content"
+                    style="
+                      background: white;
+                      padding: 10px;
+                      border-radius: 6px;
+                      font-family: monospace;
+                      font-size: 0.9rem;
+                      overflow-x: auto;
+                    "
+                  ></div>
+                  <div style="margin-top: 8px; display: flex; gap: 8px">
+                    <button
+                      class="btn btn-primary"
+                      id="use-generated-query"
+                      type="button"
+                    >
+                      Use This Query
+                    </button>
+                    <button
+                      class="btn btn-secondary"
+                      id="test-generated-query"
+                      type="button"
+                    >
+                      Test Query
+                    </button>
+                  </div>
+                  <div id="test-results" style="margin-top: 12px"></div>
+                </div>
               </div>
             </div>
             <div style="flex: 1">
@@ -965,9 +1081,451 @@
       </div>
 
       <script>
+        // Runtime config for AI integration
+        async function ensureRuntimeConfig() {
+          if (window.__RUNTIME_CONFIG__) {
+            window.RUNTIME_CONFIG = window.__RUNTIME_CONFIG__;
+            return window.RUNTIME_CONFIG;
+          }
+          try {
+            const res = await fetch("/runtime-config");
+            const cfg = await res.json();
+            window.RUNTIME_CONFIG = cfg;
+            return cfg;
+          } catch (e) {
+            console.warn("Could not load runtime config, using defaults", e);
+            window.RUNTIME_CONFIG = {
+              ai: { mode: "proxy", directUrl: "/large" },
+            };
+            return window.RUNTIME_CONFIG;
+          }
+        }
+
+        // Load all schema metadata for AI context
+        let cachedSchemaMetadata = null;
+        async function loadSchemaMetadata() {
+          if (cachedSchemaMetadata) return cachedSchemaMetadata;
+
+          try {
+            // Try to load from schema store first
+            const idx = await fetch("/schema-store");
+            if (idx.ok) {
+              const indexData = await idx.json();
+              if (
+                indexData &&
+                indexData.index &&
+                indexData.index.tables &&
+                indexData.index.tables.length > 0
+              ) {
+                const metadata = {
+                  tables: {},
+                  tablesList: indexData.index.tables,
+                };
+
+                // Load each table's schema
+                for (const tableName of indexData.index.tables) {
+                  try {
+                    const tableRes = await fetch(
+                      `/schema-store/table/${tableName}`
+                    );
+                    if (tableRes.ok) {
+                      const tableData = await tableRes.json();
+                      if (tableData.table && tableData.table.schema) {
+                        metadata.tables[tableName] = tableData.table.schema;
+                      }
+                    }
+                  } catch (e) {
+                    console.warn(`Could not load table ${tableName}:`, e);
+                  }
+                }
+
+                cachedSchemaMetadata = metadata;
+                return metadata;
+              }
+            }
+          } catch (e) {
+            console.warn("Schema store not available, trying API:", e);
+          }
+
+          // Fallback to /api/db/schema
+          try {
+            const r = await fetch("/api/db/schema");
+            if (r.ok) {
+              const data = await r.json();
+              if (data && data.tables) {
+                const metadata = {
+                  tables: data.tables,
+                  tablesList: Object.keys(data.tables),
+                };
+                cachedSchemaMetadata = metadata;
+                return metadata;
+              }
+            }
+          } catch (e) {
+            console.warn("API schema not available, trying config file:", e);
+          }
+
+          // Final fallback to config/database.json
+          try {
+            const r2 = await fetch("/config/database.json");
+            if (r2.ok) {
+              const meta = await r2.json();
+              let tables = {};
+              if (meta && meta.tables) {
+                tables = meta.tables;
+              } else if (Array.isArray(meta)) {
+                meta.forEach((t) => {
+                  if (t && t.name) tables[t.name] = t.columns || t.fields || [];
+                });
+              } else if (typeof meta === "object") {
+                Object.keys(meta).forEach((k) => {
+                  const v = meta[k];
+                  if (Array.isArray(v)) tables[k] = v;
+                  else if (v && v.columns) tables[k] = v.columns;
+                });
+              }
+              const metadata = {
+                tables: tables,
+                tablesList: Object.keys(tables),
+              };
+              cachedSchemaMetadata = metadata;
+              return metadata;
+            }
+          } catch (e) {
+            console.error("Could not load any schema metadata:", e);
+          }
+
+          return { tables: {}, tablesList: [] };
+        }
+
         (function () {
           let autosaveTimer = null;
           let currentAction = null; // object being edited
+
+          // Initialize AI and event handlers on load
+          (async function initAI() {
+            await ensureRuntimeConfig();
+
+            // Setup Generate Query button
+            const generateBtn = document.getElementById("generate-query-btn");
+            if (generateBtn) {
+              generateBtn.addEventListener(
+                "click",
+                generateQueryFromDescription
+              );
+            }
+
+            // Setup Use Generated Query button
+            const useQueryBtn = document.getElementById("use-generated-query");
+            if (useQueryBtn) {
+              useQueryBtn.addEventListener("click", () => {
+                const previewContent = document.getElementById(
+                  "query-preview-content"
+                );
+                const queryTextarea = document.getElementById("action-query");
+                if (previewContent && queryTextarea) {
+                  queryTextarea.value = previewContent.textContent;
+                  showToast("Query copied to SQL field", "success");
+                }
+              });
+            }
+
+            // Setup Test Query button
+            const testQueryBtn = document.getElementById(
+              "test-generated-query"
+            );
+            if (testQueryBtn) {
+              testQueryBtn.addEventListener("click", testGeneratedQuery);
+            }
+          })();
+
+          async function generateQueryFromDescription() {
+            const descTextarea = document.getElementById("action-desc");
+            const statusDiv = document.getElementById("generate-query-status");
+            const previewSection = document.getElementById(
+              "query-preview-section"
+            );
+            const previewContent = document.getElementById(
+              "query-preview-content"
+            );
+
+            const businessUseCase = descTextarea.value.trim();
+
+            if (!businessUseCase) {
+              showToast(
+                "Please enter a business use case in the Description field",
+                "error"
+              );
+              return;
+            }
+
+            try {
+              statusDiv.textContent = "Loading schema metadata...";
+              const schema = await loadSchemaMetadata();
+
+              if (!schema.tablesList || schema.tablesList.length === 0) {
+                showToast(
+                  "No database schema available. Please ensure the schema is loaded.",
+                  "error"
+                );
+                statusDiv.textContent = "";
+                return;
+              }
+
+              statusDiv.textContent = "Generating query with AI...";
+
+              // Build context similar to db-explorer
+              let context = `Available tables: ${schema.tablesList.join(
+                ", "
+              )}\n\n`;
+              context += "Schema information:\n";
+
+              schema.tablesList.forEach((tableName) => {
+                const tableSchema = schema.tables[tableName];
+                context += `\nTable: ${tableName}\n`;
+
+                if (tableSchema && tableSchema.columns) {
+                  const columns = Array.isArray(tableSchema.columns)
+                    ? tableSchema.columns
+                    : Object.values(tableSchema.columns);
+                  context += `Columns: ${columns
+                    .map((c) => {
+                      const colName =
+                        typeof c === "string"
+                          ? c
+                          : c.Field || c.name || c.COLUMN_NAME || "";
+                      const colType =
+                        typeof c === "string" ? "" : c.Type || c.type || "";
+                      return colType ? `${colName} (${colType})` : colName;
+                    })
+                    .join(", ")}\n`;
+
+                  if (tableSchema.rowCount) {
+                    context += `Row count: ${tableSchema.rowCount}\n`;
+                  }
+                } else if (Array.isArray(tableSchema)) {
+                  context += `Columns: ${tableSchema
+                    .map((c) => {
+                      const colName =
+                        typeof c === "string"
+                          ? c
+                          : c.Field || c.name || c.COLUMN_NAME || "";
+                      const colType =
+                        typeof c === "string" ? "" : c.Type || c.type || "";
+                      return colType ? `${colName} (${colType})` : colName;
+                    })
+                    .join(", ")}\n`;
+                }
+              });
+
+              const prompt = `${context}\n\nBusiness Use Case: ${businessUseCase}\n\nGenerate a SQL query for this business use case. Return ONLY the SQL query without any explanation, markdown formatting, or code blocks.`;
+
+              const aiTarget =
+                window.RUNTIME_CONFIG &&
+                window.RUNTIME_CONFIG.ai &&
+                window.RUNTIME_CONFIG.ai.mode === "direct"
+                  ? window.RUNTIME_CONFIG.ai.directUrl
+                  : "/ai/send";
+
+              const response = await fetch(aiTarget, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  sessionId: "orchestration-builder-" + Date.now(),
+                  aiquestion: prompt,
+                }),
+                timeout: 120000,
+              });
+
+              if (!response.ok) {
+                throw new Error(
+                  `AI request failed: ${response.status} ${response.statusText}`
+                );
+              }
+
+              const result = await response.json();
+
+              // Parse the AI response
+              let sqlQuery = "";
+              if (result && typeof result === "object") {
+                if (result.ok === false) {
+                  const errText =
+                    result.error ||
+                    (result.diagnostics && result.diagnostics.message) ||
+                    `AI request failed (HTTP ${result.statusCode})`;
+                  showToast(`AI Error: ${errText}`, "error");
+                  statusDiv.textContent = "";
+                  return;
+                }
+
+                const payload = result.data || result;
+                if (typeof payload === "string") {
+                  try {
+                    const parsed = JSON.parse(payload);
+                    sqlQuery = parsed.response || payload;
+                  } catch (e) {
+                    sqlQuery = payload;
+                  }
+                } else if (typeof payload === "object") {
+                  sqlQuery = payload.response || payload;
+                } else {
+                  sqlQuery = String(payload);
+                }
+              } else if (typeof result === "string") {
+                try {
+                  const parsed = JSON.parse(result);
+                  sqlQuery = parsed.response || parsed.data || result;
+                } catch (e) {
+                  sqlQuery = result;
+                }
+              }
+
+              // Clean up the SQL query - remove markdown code blocks
+              sqlQuery = sqlQuery
+                .replace(/```sql\n?/gi, "")
+                .replace(/```\n?/g, "")
+                .trim();
+
+              if (!sqlQuery) {
+                showToast("AI did not return a valid SQL query", "error");
+                statusDiv.textContent = "";
+                return;
+              }
+
+              // Display in preview
+              previewContent.textContent = sqlQuery;
+              previewSection.style.display = "block";
+              statusDiv.textContent = "Query generated successfully!";
+
+              setTimeout(() => {
+                statusDiv.textContent = "";
+              }, 3000);
+            } catch (error) {
+              console.error("Generate query error:", error);
+              showToast(`Error generating query: ${error.message}`, "error");
+              statusDiv.textContent = "";
+            }
+          }
+
+          async function testGeneratedQuery() {
+            const previewContent = document.getElementById(
+              "query-preview-content"
+            );
+            const testResults = document.getElementById("test-results");
+            const targetInput = document.getElementById("action-target");
+
+            const query = previewContent.textContent.trim();
+
+            if (!query) {
+              showToast("No query to test", "error");
+              return;
+            }
+
+            // Extract table name from target or query
+            let table = targetInput.value;
+            if (!table) {
+              // Try to extract from query (simple heuristic)
+              const fromMatch = query.match(/FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)/i);
+              if (fromMatch) {
+                table = fromMatch[1];
+              }
+            }
+
+            if (!table) {
+              showToast("Please select a target table first", "error");
+              return;
+            }
+
+            try {
+              testResults.innerHTML =
+                '<div style="color: #657786;">⏳ Executing query...</div>';
+
+              const response = await fetch(`/${table}`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ prompt: query }),
+                timeout: 30000,
+              });
+
+              if (!response.ok) {
+                throw new Error(
+                  `Query execution failed: ${response.status} ${response.statusText}`
+                );
+              }
+
+              const result = await response.json();
+
+              if (!result.data || !Array.isArray(result.data)) {
+                testResults.innerHTML = `
+                  <div style="padding: 10px; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
+                    <strong style="color: #28a745;">✓ Query executed successfully</strong><br>
+                    <code style="color: #657786;">${
+                      result.query || query
+                    }</code><br><br>
+                    No rows returned.
+                  </div>
+                `;
+                return;
+              }
+
+              const data = result.data;
+              const columns = Object.keys(data[0] || {});
+
+              let html = `
+                <div style="padding: 10px; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
+                  <strong style="color: #28a745;">✓ Query executed successfully</strong><br>
+                  <code style="color: #657786;">${result.query || query}</code>
+                </div>
+                <div style="margin-top: 10px; max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                    <thead>
+                      <tr style="background: #f8f9fa;">
+                        ${columns
+                          .map(
+                            (col) =>
+                              `<th style="padding: 8px; text-align: left; border-bottom: 2px solid #e1e8ed;">${col}</th>`
+                          )
+                          .join("")}
+                      </tr>
+                    </thead>
+                    <tbody>
+              `;
+
+              data.slice(0, 100).forEach((row) => {
+                html += "<tr>";
+                columns.forEach((col) => {
+                  html += `<td style="padding: 8px; border-bottom: 1px solid #eef2f7;">${
+                    row[col] !== null
+                      ? row[col]
+                      : "<em style='color: #999;'>NULL</em>"
+                  }</td>`;
+                });
+                html += "</tr>";
+              });
+
+              html += "</tbody></table></div>";
+
+              if (data.length > 100) {
+                html += `<p style="margin-top: 8px; color: #657786; font-size: 0.85rem;">Showing first 100 rows of ${data.length} total rows.</p>`;
+              }
+
+              testResults.innerHTML = html;
+              showToast("Query test successful!", "success");
+            } catch (error) {
+              console.error("Test query error:", error);
+              testResults.innerHTML = `
+                <div style="padding: 10px; background: #fff3cd; border-radius: 6px; border: 1px solid #ffc107; color: #856404;">
+                  <strong>⚠ Query Execution Failed</strong><br>
+                  ${error.message}
+                </div>
+              `;
+              showToast(`Query test failed: ${error.message}`, "error");
+            }
+          }
 
           async function fetchActions() {
             const el = document.getElementById("actions-panel-list");
@@ -1186,6 +1744,128 @@
             };
           }
 
+          // --- Action target (tables) tag/pill helpers ---
+          function _getTargetState() {
+            try {
+              const v = (
+                document.getElementById("action-target").value || ""
+              ).trim();
+              return v ? v.split(/\s*,\s*/).filter(Boolean) : [];
+            } catch (e) {
+              return [];
+            }
+          }
+
+          function _syncHiddenTarget(tables) {
+            const uniq = (tables || []).filter(Boolean);
+            document.getElementById("action-target").value = uniq.join(",");
+          }
+
+          function renderTargetPills() {
+            const container = document.getElementById("action-target-pills");
+            const hidden = document.getElementById("action-target");
+            if (!container || !hidden) return;
+            container.innerHTML = "";
+            const tables = _getTargetState();
+            tables.forEach((t) => {
+              const pill = document.createElement("div");
+              pill.style.display = "inline-flex";
+              pill.style.alignItems = "center";
+              pill.style.gap = "6px";
+              pill.style.background = "#eef6ff";
+              pill.style.padding = "6px 8px";
+              pill.style.borderRadius = "999px";
+              pill.style.fontSize = "0.9rem";
+              const name = document.createElement("div");
+              name.textContent = t;
+              const removeBtn = document.createElement("button");
+              removeBtn.className = "btn btn-ghost";
+              removeBtn.style.padding = "4px 6px";
+              removeBtn.textContent = "✕";
+              removeBtn.title = "Remove";
+              removeBtn.addEventListener("click", (ev) => {
+                ev.stopPropagation();
+                removeTargetTable(t);
+              });
+              pill.appendChild(name);
+              pill.appendChild(removeBtn);
+              container.appendChild(pill);
+            });
+          }
+
+          function addTargetTable(table) {
+            if (!table) return;
+            const cur = _getTargetState();
+            if (cur.includes(table)) return;
+            cur.push(table);
+            _syncHiddenTarget(cur);
+            renderTargetPills();
+            triggerAutosave();
+          }
+
+          function removeTargetTable(table) {
+            if (!table) return;
+            const cur = _getTargetState().filter((t) => t !== table);
+            _syncHiddenTarget(cur);
+            renderTargetPills();
+            triggerAutosave();
+          }
+
+          function setTargetTablesFromArray(arr) {
+            const list = Array.isArray(arr) ? arr.filter(Boolean) : [];
+            _syncHiddenTarget(list);
+            renderTargetPills();
+          }
+
+          // wire up input for typing table names
+          (function () {
+            const ti = document.getElementById("action-target-input");
+            if (ti) {
+              ti.addEventListener("keydown", (ev) => {
+                if (ev.key === "Enter" || ev.key === ",") {
+                  ev.preventDefault();
+                  const v = (ti.value || "").trim().replace(/,$/, "");
+                  if (v) addTargetTable(v);
+                  ti.value = "";
+                } else if (ev.key === "Backspace" && !ti.value) {
+                  const cur = _getTargetState();
+                  if (cur.length) removeTargetTable(cur[cur.length - 1]);
+                }
+              });
+            }
+            const chooserBtn = document.getElementById("action-target-choose");
+            if (chooserBtn) {
+              chooserBtn.addEventListener("click", async (ev) => {
+                ev.preventDefault();
+                // require action name before choosing DB target
+                const nameEl = document.getElementById("action-name");
+                if (!nameEl || !(nameEl.value || "").trim()) {
+                  showToast("Enter name first", "error");
+                  try {
+                    if (nameEl) nameEl.focus();
+                  } catch (e) {}
+                  return;
+                }
+                const sel = await showDBExplorer("Choose tables");
+                if (!sel) return;
+                if (sel.type === "tables" && Array.isArray(sel.tables)) {
+                  // sel.tables may be array of strings
+                  setTargetTablesFromArray(
+                    sel.tables.map((t) =>
+                      typeof t === "string" ? t : t.table || ""
+                    )
+                  );
+                } else if (sel.table) {
+                  setTargetTablesFromArray([sel.table]);
+                } else if (sel.type && sel.item) {
+                  // for taxonomy/rules selections, populate with id/name
+                  const v = sel.item.id || sel.item.name;
+                  if (v) setTargetTablesFromArray([v]);
+                }
+              });
+            }
+          })();
+
           async function saveAction(now) {
             const status = document.getElementById("action-status");
             const data = collectEditor();
@@ -1277,6 +1957,9 @@
             document.getElementById("action-name").value = "";
             document.getElementById("action-desc").value = "";
             document.getElementById("action-target").value = "";
+            try {
+              renderTargetPills();
+            } catch (e) {}
             document.getElementById("action-query").value = "";
             document.getElementById("action-status").textContent = "Idle";
             document.getElementById("action-editor-title").textContent =
@@ -1308,6 +1991,9 @@
               document.getElementById("action-desc").value =
                 a.description || "";
               document.getElementById("action-target").value = a.target || "";
+              try {
+                renderTargetPills();
+              } catch (e) {}
               document.getElementById("action-query").value =
                 a.query || a.sql || "";
               document.getElementById("action-editor-title").textContent =
@@ -1739,14 +2425,31 @@
             btn.textContent = "Choose from DB";
             btn.addEventListener("click", async (ev) => {
               ev.preventDefault();
+              // require Name to be set before choosing DB
+              if (inputs["name"] && !(inputs["name"].value || "").trim()) {
+                showToast("Enter name first", "error");
+                try {
+                  inputs["name"].focus();
+                } catch (e) {}
+                return;
+              }
               const sel = await showDBExplorer("Choose table/columns");
               if (sel) {
-                // if selection contains a single table and columns, populate input
-                if (sel.table && sel.columns) {
-                  // default populate as table.column1,column2
+                // tables-only selection (new shape): populate as CSV of table names
+                if (sel.type === "tables" && Array.isArray(sel.tables)) {
+                  input.value = sel.tables.join(",");
+                }
+                // legacy single table + columns
+                else if (sel.table && sel.columns) {
                   input.value = sel.table + "." + sel.columns.join(",");
-                } else if (sel.table) {
+                }
+                // legacy single table
+                else if (sel.table) {
                   input.value = sel.table;
+                }
+                // taxonomy/rules selection: try to use id or name
+                else if (sel.type && sel.item) {
+                  input.value = sel.item.id || sel.item.name || "";
                 }
               }
             });
@@ -1898,7 +2601,8 @@
         statusChips.style.marginTop = "8px";
         statusArea.appendChild(statusRow);
         statusArea.appendChild(statusChips);
-        propRow.appendChild(statusArea);
+        // append status area to middle column in the DB Explorer modal
+        middle.appendChild(statusArea);
 
         let selectedTables = [];
         let selectedTaxItem = null;
@@ -1955,6 +2659,7 @@
             selectAll.appendChild(selAllBtn);
             left.appendChild(selectAll);
 
+            // list tables with checkboxes
             tableKeys.forEach((t) => {
               const row = document.createElement("div");
               row.style.display = "flex";
@@ -1962,191 +2667,112 @@
               row.style.justifyContent = "space-between";
               row.style.padding = "6px 8px";
               row.style.cursor = "pointer";
-              // highlight if this table is selected in the multi-select list
-              if (selectedTables.includes(t)) {
-                row.style.background = "#eef6ff";
-                row.style.borderRadius = "6px";
-              }
+
+              const leftPart = document.createElement("div");
+              leftPart.style.display = "flex";
+              leftPart.style.alignItems = "center";
+              leftPart.style.gap = "8px";
+
+              const chk = document.createElement("input");
+              chk.type = "checkbox";
+              chk.checked = selectedTables.includes(t);
+              chk.addEventListener("change", (ev) => {
+                ev.stopPropagation();
+                if (chk.checked) {
+                  if (!selectedTables.includes(t)) selectedTables.push(t);
+                } else {
+                  selectedTables = selectedTables.filter((x) => x !== t);
+                }
+                render();
+              });
+
               const name = document.createElement("div");
               name.textContent = t;
               name.style.flex = "1";
               name.addEventListener("click", (ev) => {
-                // single-select behavior: select this table exclusively
                 ev.stopPropagation();
-                selectedTables = [t];
-                selectedTable = t;
-                selectedColumns = [];
+                // toggle checkbox
+                chk.checked = !chk.checked;
+                if (chk.checked) {
+                  if (!selectedTables.includes(t)) selectedTables.push(t);
+                } else {
+                  selectedTables = selectedTables.filter((x) => x !== t);
+                }
                 render();
               });
-              row.appendChild(name);
+
+              leftPart.appendChild(chk);
+              leftPart.appendChild(name);
+              row.appendChild(leftPart);
+
+              // add small column-count badge
+              const colCount =
+                tables[t] && (tables[t].columns || tables[t])
+                  ? (tables[t].columns || tables[t]).length
+                  : 0;
+              const badge = document.createElement("div");
+              badge.textContent = colCount ? `${colCount} cols` : "";
+              badge.style.color = "#657786";
+              badge.style.fontSize = "0.85rem";
+              row.appendChild(badge);
+
+              if (selectedTables.includes(t)) {
+                row.style.background = "#eef6ff";
+                row.style.borderRadius = "6px";
+              }
+
               left.appendChild(row);
             });
-            if (selectedTable) {
-              const cols =
-                (tables[selectedTable] && tables[selectedTable].columns) || [];
-              // Load events for the Events panel — use discovered registry + live SSE
-              async function loadEvents() {
-                const container = document.getElementById("events-main-list");
-                container.innerHTML =
-                  '<div class="muted">Loading events...</div>';
-                try {
-                  // initial load from runtime registry
-                  const r = await fetch("/api/event-registry");
-                  if (!r.ok) {
-                    container.innerHTML =
-                      '<div class="muted">Failed to load discovered events</div>';
-                    return;
-                  }
-                  const dr = await r.json();
-                  const reg = dr && dr.registry ? dr.registry : {};
-                  const discovered = [];
-                  Object.keys(reg).forEach((mod) => {
-                    const m = reg[mod] || {};
-                    Object.keys(m.events || {}).forEach((evName) => {
-                      discovered.push({
-                        id: evName,
-                        name: evName,
-                        description: "(discovered)",
-                        target: mod,
-                      });
-                    });
-                  });
 
-                  if (!discovered.length) {
-                    container.innerHTML =
-                      '<div class="muted">No discovered runtime events.</div>';
-                  } else {
-                    // group by module derived from event id (token before ':')
-                    function groupByModule(list) {
-                      const g = {};
-                      (list || []).forEach((it) => {
-                        const name = (it && (it.id || it.name)) || "";
-                        let mod = "misc";
-                        if (
-                          typeof name === "string" &&
-                          name.indexOf(":") !== -1
-                        ) {
-                          mod = String(name).split(":")[0] || "misc";
-                        } else {
-                          mod =
-                            (name.split(/\s+/)[0] || "misc").trim() || "misc";
-                        }
-                        g[mod] = g[mod] || [];
-                        g[mod].push(it);
-                      });
-                      return g;
-                    }
-
-                    const groups = groupByModule(discovered);
-                    // render grouped HTML with collapsible headers
-                    container.innerHTML = Object.keys(groups)
-                      .sort()
-                      .map((gk) => {
-                        const items = (groups[gk] || [])
-                          .map(
-                            (ev) =>
-                              `\n                  <div class="list-item type-event" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">\n                    <div style="display:flex; justify-content:space-between; align-items:center;">\n                      <div>\n                        <div class="list-item-title">${
-                                ev.name
-                              } <span class="muted">${
-                                ev.id
-                              }</span></div>\n                        <div class="list-item-desc">${
-                                ev.description || ""
-                              }</div>\n                      </div>\n                      <div style="display:flex; gap:8px;">\n                        <button class="btn btn-secondary" disabled>Read-only</button>\n                      </div>\n                    </div>\n                  </div>\n                `
-                          )
-                          .join("");
-                        const gid = `group-events-${encodeURIComponent(gk)}`;
-                        const isCollapsed =
-                          window.__eventsGroupStates &&
-                          window.__eventsGroupStates[gid] !== undefined
-                            ? window.__eventsGroupStates[gid]
-                            : true;
-                        const chev = isCollapsed ? "▸" : "▾";
-                        return `\n                <div id="${gid}" class="group-container event-group ${
-                          isCollapsed ? "collapsed" : ""
-                        }">\n                  <div class="group-header" onclick="toggleGroup('${gid}')">\n                    <span class="chev">${chev}</span>\n                    <span style="font-weight:700">${gk}</span>\n                    <span style="margin-left:8px; color: #657786; font-size:0.85rem">(${
-                          groups[gk].length
-                        })</span>\n                  </div>\n                  <div class="group-items">${items}</div>\n                </div>\n              `;
-                      })
-                      .join("");
-                  }
-
-                  // subscribe to SSE for live discovered events
-                  try {
-                    const sseUrl =
-                      (location.origin.replace(/:\d+$/, "") ||
-                        location.origin) + "/events/stream";
-                    const es = new EventSource("/events/stream");
-                    es.onmessage = (ev) => {
-                      try {
-                        const d = JSON.parse(ev.data || "{}");
-                        if (d && d.type === "registry-update") {
-                          // refresh list quickly
-                          loadEvents();
-                        }
-                      } catch (e) {}
-                    };
-                    es.onerror = () => {
-                      es.close && es.close();
-                    };
-                  } catch (e) {
-                    console.warn("SSE subscribe failed", e);
-                  }
-                } catch (e) {
-                  console.error("loadEvents failed", e);
-                  container.innerHTML =
-                    '<div class="muted">Error loading events</div>';
-                }
-              }
-              selectionBox.style.flexWrap = "wrap";
-              selectionBox.style.gap = "6px";
-              selectionBox.style.marginTop = "6px";
-
-              if (!selectedColumns || !selectedColumns.length) {
-                const none = document.createElement("div");
-                none.style.color = "#657786";
-                none.textContent = "No columns selected";
-                selectionBox.appendChild(none);
-              } else {
-                selectedColumns.forEach((col) => {
-                  const pill = document.createElement("div");
-                  pill.style.display = "inline-flex";
-                  pill.style.alignItems = "center";
-                  pill.style.gap = "6px";
-                  pill.style.background = "#eef6ff";
-                  pill.style.padding = "6px 8px";
-                  pill.style.borderRadius = "999px";
-                  pill.style.fontSize = "0.9rem";
-                  const name = document.createElement("div");
-                  name.textContent = col;
-                  const removeBtn = document.createElement("button");
-                  removeBtn.className = "btn btn-ghost";
-                  removeBtn.style.padding = "4px 6px";
-                  removeBtn.textContent = "✕";
-                  removeBtn.title = "Remove";
-                  removeBtn.addEventListener("click", (ev) => {
-                    ev.stopPropagation();
-                    selectedColumns = selectedColumns.filter((x) => x !== col);
-                    render();
-                  });
-                  pill.appendChild(name);
-                  pill.appendChild(removeBtn);
-                  selectionBox.appendChild(pill);
+            // right: show selected tables as pills
+            const selectionBox = document.createElement("div");
+            selectionBox.style.display = "flex";
+            selectionBox.style.flexWrap = "wrap";
+            selectionBox.style.gap = "6px";
+            selectionBox.style.marginTop = "6px";
+            if (!selectedTables || !selectedTables.length) {
+              const none = document.createElement("div");
+              none.style.color = "#657786";
+              none.textContent = "No tables selected";
+              selectionBox.appendChild(none);
+            } else {
+              selectedTables.forEach((tbl) => {
+                const pill = document.createElement("div");
+                pill.style.display = "inline-flex";
+                pill.style.alignItems = "center";
+                pill.style.gap = "6px";
+                pill.style.background = "#eef6ff";
+                pill.style.padding = "6px 8px";
+                pill.style.borderRadius = "999px";
+                pill.style.fontSize = "0.9rem";
+                const name = document.createElement("div");
+                name.textContent = tbl;
+                const removeBtn = document.createElement("button");
+                removeBtn.className = "btn btn-ghost";
+                removeBtn.style.padding = "4px 6px";
+                removeBtn.textContent = "✕";
+                removeBtn.title = "Remove";
+                removeBtn.addEventListener("click", (ev) => {
+                  ev.stopPropagation();
+                  selectedTables = selectedTables.filter((x) => x !== tbl);
+                  render();
                 });
-              }
-
-              right.appendChild(selectionBox);
-
-              // add a clear selected columns button
-              const clearCols = document.createElement("button");
-              clearCols.className = "btn btn-secondary";
-              clearCols.style.marginTop = "8px";
-              clearCols.textContent = "Clear Selected";
-              clearCols.addEventListener("click", () => {
-                selectedColumns = [];
-                render();
+                pill.appendChild(name);
+                pill.appendChild(removeBtn);
+                selectionBox.appendChild(pill);
               });
-              right.appendChild(clearCols);
             }
+            right.appendChild(selectionBox);
+
+            const clearBtn = document.createElement("button");
+            clearBtn.className = "btn btn-secondary";
+            clearBtn.style.marginTop = "8px";
+            clearBtn.textContent = "Clear Selected";
+            clearBtn.addEventListener("click", () => {
+              selectedTables = [];
+              render();
+            });
+            right.appendChild(clearBtn);
           } else if (activeTab === "taxonomy") {
             taxonomyList = taxonomy || {
               concepts: {},
@@ -2315,28 +2941,9 @@
           bodyEl: root,
           onConfirm: () => {
             if (activeTab === "tables") {
-              // prefer single-table shape using `selectedTable` and `selectedColumns`
-              if (selectedTable) {
-                return {
-                  type: "table",
-                  table: selectedTable,
-                  columns: selectedColumns || [],
-                };
-              }
-              // fallback to any selectedTables array (legacy)
+              // return simple selected table names (no columns)
               if (!selectedTables || !selectedTables.length) return null;
-              const out = selectedTables.map((tn) => ({
-                table: tn,
-                columns:
-                  tables[tn] && tables[tn].columns
-                    ? (tables[tn].columns || []).map((c) =>
-                        QUALIFIED_TABLES.includes(tn)
-                          ? `${tn}.${(c && c.name) || c}`
-                          : (c && c.name) || c
-                      )
-                    : [],
-              }));
-              return { type: "tables", tables: out };
+              return { type: "tables", tables: selectedTables.slice() };
             }
             if (activeTab === "taxonomy") {
               if (!selectedTaxItem) return null;
@@ -3770,11 +4377,17 @@
           nd.data.db.table = sel.table;
           nd.data.db.columns = sel.columns || [];
         } else if (sel.type === "tables" && Array.isArray(sel.tables)) {
-          // multi-table selection
-          nd.data.db.tables = sel.tables.map((t) => ({
-            table: t.table,
-            columns: t.columns || [],
-          }));
+          // multi-table selection (sel.tables may be array of strings or objects)
+          nd.data.db.tables = sel.tables
+            .map((t) => {
+              if (!t) return null;
+              if (typeof t === "string") return { table: t, columns: [] };
+              return {
+                table: t.table || "",
+                columns: Array.isArray(t.columns) ? t.columns : [],
+              };
+            })
+            .filter((x) => x && x.table);
         } else if (sel.type === "concept") {
           nd.data.taxonomy = sel.item;
         } else if (sel.type === "rules") {

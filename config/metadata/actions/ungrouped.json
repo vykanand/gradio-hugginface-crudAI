@@ -1,0 +1,9 @@
+{
+  "355f379e-8efd-4599-a076-489525383e4d": {
+    "id": "355f379e-8efd-4599-a076-489525383e4d",
+    "name": "crm to delivery",
+    "description": "I want to search CRM company name matching the delivery partner values",
+    "target": "",
+    "query": "SELECT * FROM appsthink_crm WHERE company_name IN (SELECT partner FROM delivery)"
+  }
+}
