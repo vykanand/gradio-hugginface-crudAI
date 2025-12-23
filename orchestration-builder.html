@@ -913,6 +913,7 @@
                   id="action-desc"
                   class="form-textarea"
                   placeholder="Describe your business use case..."
+                  disabled
                 ></textarea>
                 <div
                   style="
@@ -927,6 +928,7 @@
                     id="generate-query-btn"
                     type="button"
                     aria-label="Generate query from description"
+                    disabled
                   >
                     <svg
                       width="16"
@@ -1030,11 +1032,14 @@
                   id="action-query"
                   class="form-textarea"
                   placeholder="SELECT * FROM table WHERE ..."
+                  disabled
                 ></textarea>
               </div>
               <div style="display: flex; gap: 8px; align-items: center">
-                <button class="btn btn-primary" id="action-save">Save</button>
-                <button class="btn btn-secondary" id="action-delete">
+                <button class="btn btn-primary" id="action-save" disabled>
+                  Save
+                </button>
+                <button class="btn btn-secondary" id="action-delete" disabled>
                   Delete
                 </button>
                 <div
@@ -1521,6 +1526,8 @@
                   '<div class="muted">Failed to load actions</div>';
                 return;
               }
+              // Cache all actions for duplicate checking
+              allActionsCache = data.actions || {};
               const items = Object.values(data.actions || {}).sort((a, b) =>
                 (a.name || a.id).localeCompare(b.name || b.id)
               );
@@ -1538,9 +1545,7 @@
                     a.id
                   }">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <div><div class="list-item-title">${
-                    a.name || a.id
-                  } <span class="muted">${a.id}</span></div>
+                  <div><div class="list-item-title">${a.name || a.id}</div>
                   <div class="list-item-desc">${(a.description || "").slice(
                     0,
                     120
@@ -1686,9 +1691,9 @@
                   ev.stopPropagation();
                   const table = colEl.dataset.table;
                   const column = colEl.dataset.column;
-                  // insert table.column into query at cursor
-                  const q = document.getElementById("action-query");
-                  if (q) insertAtCursor(q, `${table}.${column}`);
+                  // insert table.column into description at cursor
+                  const desc = document.getElementById("action-desc");
+                  if (desc) insertAtCursor(desc, `${table}.${column}`);
                 });
               });
             } catch (e) {
@@ -1714,19 +1719,103 @@
           }
 
           function collectEditor() {
+            const name = (
+              document.getElementById("action-name").value || ""
+            ).trim();
             return {
               id: (document.getElementById("action-id").value || "").trim(),
-              name: document.getElementById("action-name").value || "",
+              name: name,
               description: document.getElementById("action-desc").value || "",
               query: document.getElementById("action-query").value || "",
             };
           }
 
+          // Global cache of all actions for duplicate checking
+          let allActionsCache = {};
+
+          async function checkNameExists(name) {
+            if (!name || !name.trim()) return false;
+            const trimmed = name.trim();
+            // Check cache
+            return Object.values(allActionsCache).some(
+              (action) =>
+                (action.name || "").trim().toLowerCase() ===
+                trimmed.toLowerCase()
+            );
+          }
+
+          function validateAndHighlightName() {
+            const nameInput = document.getElementById("action-name");
+            const name = (nameInput.value || "").trim();
+
+            if (!name) {
+              nameInput.style.borderColor = "";
+              nameInput.style.boxShadow = "";
+              disableFormFields();
+              return false;
+            }
+
+            // Check if editing existing action - allow same name
+            const isEditing = currentAction && currentAction.name === name;
+
+            if (!isEditing) {
+              const exists = Object.values(allActionsCache).some(
+                (action) =>
+                  (action.name || "").trim().toLowerCase() ===
+                  name.toLowerCase()
+              );
+
+              if (exists) {
+                nameInput.style.borderColor = "#e74c3c";
+                nameInput.style.boxShadow = "0 0 0 3px rgba(231, 76, 60, 0.2)";
+                disableFormFields();
+                showToast("Action name already exists", "error");
+                return false;
+              }
+            }
+
+            // Name is valid and unique
+            nameInput.style.borderColor = "#28a745";
+            nameInput.style.boxShadow = "0 0 0 3px rgba(40, 167, 69, 0.2)";
+            enableFormFields();
+            return true;
+          }
+
+          function disableFormFields() {
+            document.getElementById("action-desc").disabled = true;
+            document.getElementById("action-query").disabled = true;
+            document.getElementById("generate-query-btn").disabled = true;
+            document.getElementById("action-save").disabled = true;
+            document.getElementById("use-generated-query").disabled = true;
+            document.getElementById("test-generated-query").disabled = true;
+          }
+
+          function enableFormFields() {
+            document.getElementById("action-desc").disabled = false;
+            document.getElementById("action-query").disabled = false;
+            document.getElementById("generate-query-btn").disabled = false;
+            document.getElementById("action-save").disabled = false;
+            document.getElementById("use-generated-query").disabled = false;
+            document.getElementById("test-generated-query").disabled = false;
+          }
+
           async function saveAction(now) {
             const status = document.getElementById("action-status");
             const data = collectEditor();
+
+            if (!data.name || !data.name.trim()) {
+              showToast("Name is required", "error");
+              document.getElementById("action-name").focus();
+              return;
+            }
+
             if (!data.id) {
               showToast("ID is required", "error");
+              return;
+            }
+
+            // Validate name doesn't exist (unless editing same action)
+            if (!validateAndHighlightName()) {
               return;
             }
             try {
@@ -1810,12 +1899,17 @@
             idEl.value = genId;
             idEl.setAttribute("disabled", "disabled");
             idEl.title = "Auto-generated id (immutable)";
-            document.getElementById("action-name").value = "";
+            const nameInput = document.getElementById("action-name");
+            nameInput.value = "";
+            nameInput.style.borderColor = "";
+            nameInput.style.boxShadow = "";
             document.getElementById("action-desc").value = "";
             document.getElementById("action-query").value = "";
             document.getElementById("action-status").textContent = "Idle";
             document.getElementById("action-editor-title").textContent =
               "Action Editor";
+            // Disable all fields until name is entered
+            disableFormFields();
           }
 
           async function openForEdit(id) {
@@ -1839,13 +1933,18 @@
               // id must not be editable once created
               idEl.setAttribute("disabled", "disabled");
               idEl.title = "Action id is immutable";
-              document.getElementById("action-name").value = a.name || "";
+              const nameInput = document.getElementById("action-name");
+              nameInput.value = a.name || "";
+              nameInput.style.borderColor = "#28a745";
+              nameInput.style.boxShadow = "0 0 0 3px rgba(40, 167, 69, 0.2)";
               document.getElementById("action-desc").value =
                 a.description || "";
               document.getElementById("action-query").value =
                 a.query || a.sql || "";
               document.getElementById("action-editor-title").textContent =
                 "Editing: " + (a.name || a.id);
+              // Enable fields when editing
+              enableFormFields();
             } catch (e) {
               console.error(e);
               showToast("Load error", "error");
@@ -1864,7 +1963,15 @@
               clearEditor();
               document.getElementById("action-editor-title").textContent =
                 "New Action";
-              document.getElementById("action-id").focus();
+              document.getElementById("action-name").focus();
+            });
+
+          // Add name validation on input
+          document
+            .getElementById("action-name")
+            .addEventListener("input", () => {
+              validateAndHighlightName();
+              triggerAutosave();
             });
           document
             .getElementById("action-save")
