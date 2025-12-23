@@ -1,0 +1,25 @@
+<div id="actions-panel" class="tab-panel">
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="showAddActionDialog()">
+      ➕ Add Action
+    </button>
+    <button class="btn btn-secondary" onclick="loadActions()">
+      🔄 Refresh
+    </button>
+  </div>
+  <div class="main">
+    <div class="content-area">
+      <h2 style="margin-bottom: 1rem">Business Actions</h2>
+      <div id="actions-main-list"></div>
+    </div>
+  </div>
+</div>
+<script>
+  window.initActionsTab = async function () {
+    try {
+      if (typeof loadActions === "function") await loadActions();
+    } catch (e) {
+      console.warn("initActionsTab error", e);
+    }
+  };
+</script>

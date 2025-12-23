@@ -1,0 +1,29 @@
+<div id="events-panel" class="tab-panel">
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="showAddEventDialog()">
+      ➕ Add Event
+    </button>
+    <button class="btn btn-secondary" onclick="loadEvents()">🔄 Refresh</button>
+    <input
+      id="events-search"
+      placeholder="Search events..."
+      style="margin-left: 8px; padding: 6px 8px; min-width: 220px"
+      oninput="scheduleLoadEvents()"
+    />
+  </div>
+  <div class="main">
+    <div class="content-area">
+      <h2 style="margin-bottom: 1rem">Business Events</h2>
+      <div id="events-main-list"></div>
+    </div>
+  </div>
+</div>
+<script>
+  window.initEventsTab = async function () {
+    try {
+      if (typeof loadEvents === "function") await loadEvents();
+    } catch (e) {
+      console.warn("initEventsTab error", e);
+    }
+  };
+</script>

@@ -16,6 +16,7 @@ const fs = require('fs').promises;
 const path = require('path');
 
 const TAXONOMY_FILE = path.join(__dirname, '..', 'config', 'metadata', 'taxonomy.json');
+const ACTIONS_DIR = path.join(__dirname, '..', 'config', 'metadata', 'actions');
 
 class TaxonomyService {
   constructor() {
@@ -27,6 +28,7 @@ class TaxonomyService {
     if (this.initialized) return;
     try {
       await this.ensureFile();
+      await this.ensureActionsDir();
       const raw = await fs.readFile(TAXONOMY_FILE, 'utf8');
       this.taxonomy = JSON.parse(raw);
       this.initialized = true;
@@ -47,6 +49,28 @@ class TaxonomyService {
     } catch (e) {
       await fs.writeFile(TAXONOMY_FILE, JSON.stringify(this.getDefaultTaxonomy(), null, 2));
     }
+  }
+
+  async ensureActionsDir(){
+    try{
+      await fs.mkdir(ACTIONS_DIR, { recursive: true });
+    }catch(e){ /* ignore */ }
+  }
+
+  async readTableActions(table){
+    const file = path.join(ACTIONS_DIR, `${table}.json`);
+    try{
+      const raw = await fs.readFile(file, 'utf8');
+      return JSON.parse(raw) || {};
+    }catch(e){ return {}; }
+  }
+
+  async writeTableActions(table, actionsObj){
+    const file = path.join(ACTIONS_DIR, `${table}.json`);
+    try{
+      await fs.writeFile(file, JSON.stringify(actionsObj || {}, null, 2));
+      return true;
+    }catch(e){ console.warn('[taxonomy] writeTableActions failed', e); return false; }
   }
 
   getDefaultTaxonomy() {
@@ -87,7 +111,21 @@ class TaxonomyService {
 
   async getActions() {
     await this.initialize();
-    return this.taxonomy.actions || {};
+    // merge taxonomy.actions with per-table action files
+    const out = Object.assign({}, this.taxonomy.actions || {});
+    try{
+      const files = await fs.readdir(ACTIONS_DIR);
+      for(const f of files){
+        if(!f.endsWith('.json')) continue;
+        const tbl = f.replace(/\.json$/,'');
+        try{
+          const raw = await fs.readFile(path.join(ACTIONS_DIR,f),'utf8');
+          const obj = JSON.parse(raw || '{}');
+          Object.keys(obj).forEach(id => { out[id] = obj[id]; });
+        }catch(e){/* ignore file read errors */}
+      }
+    }catch(e){ /* no actions dir etc */ }
+    return out;
   }
 
   async getAction(actionId) {
@@ -158,6 +196,13 @@ class TaxonomyService {
     await this.initialize();
     if (!this.taxonomy.actions) this.taxonomy.actions = {};
     this.taxonomy.actions[action.id] = action;
+    // also persist into per-table file (grouping by target table)
+    const table = (action.target || '').split('.')[0] || 'ungrouped';
+    try{
+      const existing = await this.readTableActions(table);
+      existing[action.id] = action;
+      await this.writeTableActions(table, existing);
+    }catch(e){ console.warn('[taxonomy] addAction writeTable failed', e); }
     await this.save();
     return action;
   }
@@ -167,8 +212,24 @@ class TaxonomyService {
     if (!this.taxonomy.actions || !this.taxonomy.actions[actionId]) {
       throw new Error('Action not found: ' + actionId);
     }
-    this.taxonomy.actions[actionId] = { ...this.taxonomy.actions[actionId], ...updates };
-    this.taxonomy.actions[actionId].id = actionId;
+    const prev = this.taxonomy.actions[actionId] || {};
+    const updated = { ...prev, ...updates, id: actionId };
+    this.taxonomy.actions[actionId] = updated;
+    // manage per-table file movement if target changed
+    const prevTable = (prev.target || '').split('.')[0] || 'ungrouped';
+    const newTable = (updated.target || '').split('.')[0] || 'ungrouped';
+    try{
+      if(prevTable !== newTable){
+        // remove from prev
+        const prevActions = await this.readTableActions(prevTable);
+        delete prevActions[actionId];
+        await this.writeTableActions(prevTable, prevActions);
+      }
+      // write to new table
+      const newActions = await this.readTableActions(newTable);
+      newActions[actionId] = updated;
+      await this.writeTableActions(newTable, newActions);
+    }catch(e){ console.warn('[taxonomy] updateAction table write failed', e); }
     await this.save();
     return this.taxonomy.actions[actionId];
   }
@@ -176,7 +237,18 @@ class TaxonomyService {
   async deleteAction(actionId) {
     await this.initialize();
     if (!this.taxonomy.actions) return false;
+    const prev = this.taxonomy.actions[actionId] || {};
+    const table = (prev.target || '').split('.')[0] || 'ungrouped';
     delete this.taxonomy.actions[actionId];
+    try{
+      const tblActions = await this.readTableActions(table);
+      if(tblActions && tblActions[actionId]){ delete tblActions[actionId]; await this.writeTableActions(table, tblActions); }
+      else {
+        // ensure scanned removal across all files as fallback
+        const files = await fs.readdir(ACTIONS_DIR);
+        for(const f of files){ if(!f.endsWith('.json')) continue; const fp = path.join(ACTIONS_DIR,f); const raw = await fs.readFile(fp,'utf8'); const obj = JSON.parse(raw||'{}'); if(obj[actionId]){ delete obj[actionId]; await fs.writeFile(fp, JSON.stringify(obj,null,2)); }}
+      }
+    }catch(e){ console.warn('[taxonomy] deleteAction table removal failed', e); }
     await this.save();
     return true;
   }

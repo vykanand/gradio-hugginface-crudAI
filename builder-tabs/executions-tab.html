@@ -1,0 +1,34 @@
+<div id="executions-panel" class="tab-panel">
+  <div class="toolbar">
+    <button class="btn btn-secondary" onclick="loadExecutions()">
+      🔄 Refresh
+    </button>
+    <select
+      class="form-select toolbar-right"
+      style="width: 150px"
+      id="status-filter"
+      onchange="loadExecutions()"
+    >
+      <option value="">All Statuses</option>
+      <option value="running">Running</option>
+      <option value="waiting">Waiting</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+    </select>
+  </div>
+  <div class="main">
+    <div class="content-area">
+      <h2 style="margin-bottom: 1rem">Workflow Executions</h2>
+      <div id="executions-list"></div>
+    </div>
+  </div>
+</div>
+<script>
+  window.initExecutionsTab = async function () {
+    try {
+      if (typeof loadExecutions === "function") await loadExecutions();
+    } catch (e) {
+      console.warn("initExecutionsTab error", e);
+    }
+  };
+</script>

@@ -63,6 +63,10 @@ app.use(cors());
 
 // Serve static assets (CSS, JS, images) from /assets
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
+// Serve builder tab fragments so lazy-loading via fetch('builder-tabs/...') works
+app.use('/builder-tabs', express.static(path.join(__dirname, 'builder-tabs')));
+// Serve config files so front-end can fetch `/config/database.json` and schema_store
+app.use('/config', express.static(path.join(__dirname, 'config')));
 
 // Simple request logger to aid debugging (prints method + path)
 app.use((req, res, next) => {
@@ -253,11 +257,25 @@ async function initializeDatabase() {
     console.log("MySQL pool created with active configuration");
 }
 
+// Helper to apply a timeout to a promise
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout after ' + ms + 'ms')), ms))
+  ]);
+}
+
 // Function to get table structure
 async function getTableStructure(entity) {
-  const connection = await pool.getConnection();
+  let connection;
   try {
-    const [columns] = await connection.query(`DESCRIBE ${entity}`);
+    connection = await withTimeout(pool.getConnection(), 3000);
+  } catch (e) {
+    console.error('getTableStructure: failed to get connection or timed out', e && e.message ? e.message : e);
+    return null;
+  }
+  try {
+    const [columns] = await withTimeout(connection.query(`DESCRIBE ${entity}`), 3000);
     return columns.map((column) => ({
       name: column.Field,
       type: column.Type,
@@ -265,26 +283,32 @@ async function getTableStructure(entity) {
       key: column.Key,
     }));
   } catch (error) {
-    console.error("Error fetching table structure from DB:", error.message);
+    console.error("Error fetching table structure from DB:", error && error.message ? error.message : error);
     return null;
   } finally {
-    connection.release();
+    try { connection.release(); } catch(e){}
   }
 }
 
 // Function to fetch all tables in the database
 async function getAllTables() {
-  const connection = await pool.getConnection();
+  let connection;
   try {
-    const [tables] = await connection.query("SHOW TABLES");
+    connection = await withTimeout(pool.getConnection(), 3000);
+  } catch (e) {
+    console.error('getAllTables: failed to get connection or timed out', e && e.message ? e.message : e);
+    return null;
+  }
+  try {
+    const [tables] = await withTimeout(connection.query("SHOW TABLES"), 3000);
     return tables.map(
       (table) => table[`Tables_in_${connection.config.database}`]
     );
   } catch (error) {
-    console.error("Error fetching tables:", error.message);
+    console.error("Error fetching tables:", error && error.message ? error.message : error);
     return null;
   } finally {
-    connection.release();
+    try { connection.release(); } catch(e){}
   }
 }
 

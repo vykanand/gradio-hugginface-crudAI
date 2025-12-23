@@ -1,0 +1,23 @@
+<div id="rules-panel" class="tab-panel">
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="showAddRuleSetDialog()">
+      ➕ Add Rule Set
+    </button>
+    <button class="btn btn-secondary" onclick="loadRules()">🔄 Refresh</button>
+  </div>
+  <div class="main">
+    <div class="content-area">
+      <h2 style="margin-bottom: 1rem">Business Rules - The Decision Layer</h2>
+      <div id="rules-list"></div>
+    </div>
+  </div>
+</div>
+<script>
+  window.initRulesTab = async function () {
+    try {
+      if (typeof loadRules === "function") await loadRules();
+    } catch (e) {
+      console.warn("initRulesTab error", e);
+    }
+  };
+</script>

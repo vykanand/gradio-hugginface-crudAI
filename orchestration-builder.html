@@ -825,7 +825,10 @@
       </div>
     </div>
 
-    <!-- Events Tab -->
+    <!-- Tab panels are lazy-loaded from builder-tabs/ (events, actions, rules, executions)
+         Lightweight placeholders below ensure tabs remain visible if lazy-loading fails. -->
+
+    <!-- Events Tab Placeholder -->
     <div id="events-panel" class="tab-panel" style="display: none">
       <div class="toolbar">
         <button class="btn btn-primary" onclick="showAddEventDialog()">
@@ -844,31 +847,541 @@
       <div class="main">
         <div class="content-area">
           <h2 style="margin-bottom: 1rem">Business Events</h2>
-          <div id="events-main-list"></div>
+          <div id="events-main-list">Loading...</div>
         </div>
       </div>
     </div>
 
-    <!-- Actions Tab -->
+    <!-- Actions Tab (refined) -->
     <div id="actions-panel" class="tab-panel" style="display: none">
       <div class="toolbar">
-        <button class="btn btn-primary" onclick="showAddActionDialog()">
-          ➕ Add Action
+        <button class="btn btn-primary" id="btn-new-action">
+          ➕ New Action
         </button>
-        <button class="btn btn-secondary" onclick="loadActions()">
+        <button class="btn btn-secondary" id="btn-refresh-actions">
           🔄 Refresh
         </button>
-      </div>
-      <div class="main">
-        <div class="content-area">
-          <h2 style="margin-bottom: 1rem">Business Actions</h2>
-          <div id="actions-main-list"></div>
+        <div style="margin-left: 12px; flex: 1 1 auto; max-width: 420px">
+          <input
+            id="actions-search"
+            placeholder="Search actions..."
+            class="form-input"
+            style="width: 100%"
+          />
         </div>
       </div>
+
+      <div class="main" style="display: flex; gap: 12px">
+        <!-- Left: Actions list -->
+        <div
+          style="
+            width: 320px;
+            background: white;
+            border-right: 1px solid #eef2f7;
+            padding: 12px;
+            overflow: auto;
+          "
+        >
+          <h3 style="margin-bottom: 8px">Actions</h3>
+          <div id="actions-panel-list">Loading...</div>
+        </div>
+
+        <!-- Center: Editor -->
+        <div style="flex: 1; padding: 12px; overflow: auto">
+          <h3 id="action-editor-title">Action Editor</h3>
+          <div style="display: flex; gap: 12px">
+            <div style="flex: 1">
+              <div class="form-group">
+                <label class="form-label">ID</label>
+                <input
+                  id="action-id"
+                  class="form-input"
+                  placeholder="unique-id"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Name</label>
+                <input id="action-name" class="form-input" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea id="action-desc" class="form-textarea"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label"
+                  >DB Target (table or table.column)</label
+                >
+                <input
+                  id="action-target"
+                  class="form-input"
+                  placeholder="table or table.column"
+                />
+              </div>
+            </div>
+            <div style="flex: 1">
+              <div class="form-group">
+                <label class="form-label">SQL / Query</label>
+                <textarea
+                  id="action-query"
+                  class="form-textarea"
+                  placeholder="SELECT * FROM table WHERE ..."
+                ></textarea>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center">
+                <button class="btn btn-primary" id="action-save">Save</button>
+                <button class="btn btn-secondary" id="action-delete">
+                  Delete
+                </button>
+                <div
+                  id="action-status"
+                  style="margin-left: 12px; color: #657786"
+                >
+                  Idle
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: DB Sidebar (accordion) -->
+        <div
+          style="
+            width: 320px;
+            background: white;
+            border-left: 1px solid #eef2f7;
+            padding: 12px;
+            overflow: auto;
+          "
+        >
+          <h3 style="margin-bottom: 8px">Database Explorer</h3>
+          <div id="db-accordion">Loading DB schema...</div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          let autosaveTimer = null;
+          let currentAction = null; // object being edited
+
+          async function fetchActions() {
+            const el = document.getElementById("actions-panel-list");
+            el.innerHTML = '<div class="muted">Loading...</div>';
+            try {
+              const r = await fetch("/api/actions");
+              const data = await r.json();
+              if (!data || !data.ok) {
+                el.innerHTML =
+                  '<div class="muted">Failed to load actions</div>';
+                return;
+              }
+              const items = Object.values(data.actions || {}).sort((a, b) =>
+                (a.name || a.id).localeCompare(b.name || b.id)
+              );
+              if (!items.length) {
+                el.innerHTML = '<div class="muted">No actions defined.</div>';
+                return;
+              }
+              el.innerHTML = items
+                .map(
+                  (
+                    a
+                  ) => `<div class="list-item type-action" style="margin-bottom:8px; cursor:pointer;" data-action-id="${
+                    a.id
+                  }">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <div><div class="list-item-title">${
+                    a.name || a.id
+                  } <span class="muted">${a.id}</span></div>
+                  <div class="list-item-desc">${(a.description || "").slice(
+                    0,
+                    120
+                  )}</div></div>
+                  <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" data-edit-id="${
+                      a.id
+                    }">Edit</button>
+                    <button class="btn btn-danger" data-del-id="${
+                      a.id
+                    }">Del</button>
+                  </div>
+                </div>
+              </div>`
+                )
+                .join("");
+            } catch (e) {
+              console.error("fetchActions", e);
+              el.innerHTML = '<div class="muted">Error loading actions</div>';
+            }
+          }
+
+          async function loadDbSchema() {
+            const out = document.getElementById("db-accordion");
+            out.innerHTML = '<div class="muted">Loading DB schema...</div>';
+            try {
+              let schema = null;
+
+              // Try primary DB schema API first
+              let schemaSource = null;
+              try {
+                const r = await fetch("/api/db/schema");
+                if (r.ok) {
+                  const data = await r.json();
+                  if (data && Object.keys(data.tables || {}).length) {
+                    schema = data;
+                    schemaSource = "/api/db/schema";
+                  }
+                }
+              } catch (e) {
+                console.warn(
+                  "/api/db/schema failed, will try metadata fallback",
+                  e
+                );
+              }
+
+              // Fallback to local metadata file `config/database.json` when API empty/unavailable
+              if (!schema) {
+                try {
+                  const r2 = await fetch("/config/database.json");
+                  if (r2.ok) {
+                    const meta = await r2.json();
+                    let tables = {};
+                    if (meta && meta.tables) {
+                      tables = meta.tables;
+                    } else if (Array.isArray(meta)) {
+                      meta.forEach((t) => {
+                        if (t && t.name)
+                          tables[t.name] = t.columns || t.fields || [];
+                      });
+                    } else if (typeof meta === "object") {
+                      // accept a simple object where keys are table names
+                      // and values are arrays or objects with `columns`
+                      Object.keys(meta).forEach((k) => {
+                        const v = meta[k];
+                        if (Array.isArray(v)) tables[k] = v;
+                        else if (v && v.columns) tables[k] = v.columns;
+                      });
+                    }
+                    schema = { tables };
+                    schemaSource = "/config/database.json";
+                  }
+                } catch (e) {
+                  console.warn("Failed to load config/database.json", e);
+                }
+              }
+
+              if (!schema) {
+                out.innerHTML =
+                  '<div class="muted">Failed to load DB schema</div>';
+                return;
+              }
+
+              // Log source and a small preview of the schema for debugging in Actions tab
+              try {
+                console.log(
+                  "loadDbSchema: source=",
+                  schemaSource || "unknown",
+                  schema
+                );
+              } catch (e) {
+                console.warn("Failed to console.log schema", e);
+              }
+
+              const tables = schema.tables || {};
+              const keys = Object.keys(tables).sort();
+              if (!keys.length) {
+                out.innerHTML = '<div class="muted">No tables in schema</div>';
+                return;
+              }
+
+              out.innerHTML = keys
+                .map((t) => {
+                  const raw = tables[t];
+                  const cols = Array.isArray(raw)
+                    ? raw
+                    : raw.columns || raw.fields || [];
+                  const colsHtml = cols
+                    .map((c) => {
+                      const colName =
+                        typeof c === "string"
+                          ? c
+                          : c &&
+                            (c.name || c.Field || c.column || c.COLUMN_NAME)
+                          ? c.name || c.Field || c.column || c.COLUMN_NAME
+                          : "";
+                      return `<div class="db-column" data-table="${t}" data-column="${colName}"><span>${colName}</span><button class="btn btn-secondary" style="font-size:12px;">+</button></div>`;
+                    })
+                    .join("");
+                  return `<div style="margin-bottom:8px;"><div class="group-header" style="cursor:pointer; font-weight:700;">▸ ${t}</div><div class="group-items" style="margin-top:6px; display:none;">${colsHtml}</div></div>`;
+                })
+                .join("");
+
+              // attach handlers
+              out.querySelectorAll(".group-header").forEach((h) => {
+                h.addEventListener("click", () => {
+                  const items = h.nextElementSibling;
+                  if (!items) return;
+                  const shown = items.style.display !== "none";
+                  items.style.display = shown ? "none" : "block";
+                  h.textContent =
+                    (shown ? "▸ " : "▾ ") + h.textContent.slice(2);
+                });
+              });
+              out.querySelectorAll(".db-column").forEach((colEl) => {
+                const btn = colEl.querySelector("button");
+                btn.addEventListener("click", (ev) => {
+                  ev.stopPropagation();
+                  const table = colEl.dataset.table;
+                  const column = colEl.dataset.column;
+                  const targetInput = document.getElementById("action-target");
+                  // if no table.target set, set to table
+                  if (targetInput && !targetInput.value)
+                    targetInput.value = table;
+                  // insert table.column into query at cursor
+                  const q = document.getElementById("action-query");
+                  if (q) insertAtCursor(q, `${table}.${column}`);
+                });
+              });
+            } catch (e) {
+              console.error("loadDbSchema", e);
+              out.innerHTML =
+                '<div class="muted">Error loading DB schema</div>';
+            }
+          }
+
+          function insertAtCursor(input, text) {
+            try {
+              const start = input.selectionStart || 0;
+              const end = input.selectionEnd || 0;
+              const v = input.value || "";
+              input.value = v.slice(0, start) + text + v.slice(end);
+              input.selectionStart = input.selectionEnd = start + text.length;
+              input.focus();
+              triggerAutosave();
+            } catch (e) {
+              input.value += text;
+              triggerAutosave();
+            }
+          }
+
+          function collectEditor() {
+            return {
+              id: (document.getElementById("action-id").value || "").trim(),
+              name: document.getElementById("action-name").value || "",
+              description: document.getElementById("action-desc").value || "",
+              target: document.getElementById("action-target").value || "",
+              query: document.getElementById("action-query").value || "",
+            };
+          }
+
+          async function saveAction(now) {
+            const status = document.getElementById("action-status");
+            const data = collectEditor();
+            if (!data.id) {
+              showToast("ID is required", "error");
+              return;
+            }
+            try {
+              status.textContent = now ? "Saving..." : "Auto-saving...";
+              const method =
+                currentAction && currentAction.id === data.id ? "PUT" : "POST";
+              const url =
+                method === "POST"
+                  ? "/api/taxonomy/actions"
+                  : `/api/taxonomy/actions/${encodeURIComponent(data.id)}`;
+              const r = await fetch(url, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data),
+              });
+              const d = await r.json();
+              if (d && d.ok) {
+                currentAction = data;
+                showToast("Action saved", "success");
+                fetchActions();
+                status.textContent = "Saved";
+                setTimeout(() => (status.textContent = "Idle"), 1200);
+              } else {
+                showToast(
+                  "Save failed: " + ((d && d.error) || "unknown"),
+                  "error"
+                );
+                status.textContent = "Error";
+              }
+            } catch (e) {
+              console.error("saveAction", e);
+              showToast("Save error: " + e.message, "error");
+              status.textContent = "Error";
+            }
+          }
+
+          function triggerAutosave() {
+            clearTimeout(autosaveTimer);
+            autosaveTimer = setTimeout(() => saveAction(false), 900);
+            document.getElementById("action-status").textContent =
+              "Pending changes...";
+          }
+
+          async function deleteAction(id) {
+            if (!id) return;
+            if (!confirm("Delete this action?")) return;
+            try {
+              const r = await fetch(
+                `/api/taxonomy/actions/${encodeURIComponent(id)}`,
+                { method: "DELETE" }
+              );
+              const d = await r.json();
+              if (d && d.ok) {
+                showToast("Deleted", "success");
+                fetchActions();
+                clearEditor();
+              } else showToast("Delete failed", "error");
+            } catch (e) {
+              showToast("Delete error: " + e.message, "error");
+            }
+          }
+
+          function clearEditor() {
+            currentAction = null;
+            // auto-generate a unique action id and make it readonly
+            const genId =
+              "act_" +
+              Date.now().toString(36) +
+              "_" +
+              Math.random().toString(36).slice(2, 6);
+            const idEl = document.getElementById("action-id");
+            idEl.value = genId;
+            idEl.setAttribute("readonly", "readonly");
+            idEl.title = "Auto-generated id (read-only)";
+            document.getElementById("action-name").value = "";
+            document.getElementById("action-desc").value = "";
+            document.getElementById("action-target").value = "";
+            document.getElementById("action-query").value = "";
+            document.getElementById("action-status").textContent = "Idle";
+            document.getElementById("action-editor-title").textContent =
+              "Action Editor";
+          }
+
+          async function openForEdit(id) {
+            try {
+              // fetch complete actions map and pick the requested action
+              const r = await fetch("/api/actions");
+              const d = await r.json();
+              if (!d || !d.ok) {
+                showToast("Failed to load action list", "error");
+                return;
+              }
+              const all = d.actions || {};
+              const a = all[id] || null;
+              if (!a) {
+                showToast("Action not found", "error");
+                return;
+              }
+              currentAction = a;
+              const idEl = document.getElementById("action-id");
+              idEl.value = a.id || "";
+              // id must not be editable once created
+              idEl.setAttribute("readonly", "readonly");
+              idEl.title = "Action id is immutable";
+              document.getElementById("action-name").value = a.name || "";
+              document.getElementById("action-desc").value =
+                a.description || "";
+              document.getElementById("action-target").value = a.target || "";
+              document.getElementById("action-query").value =
+                a.query || a.sql || "";
+              document.getElementById("action-editor-title").textContent =
+                "Editing: " + (a.name || a.id);
+            } catch (e) {
+              console.error(e);
+              showToast("Load error", "error");
+            }
+          }
+
+          // wire UI
+          document
+            .getElementById("btn-refresh-actions")
+            .addEventListener("click", () => {
+              fetchActions();
+            });
+          document
+            .getElementById("btn-new-action")
+            .addEventListener("click", () => {
+              clearEditor();
+              document.getElementById("action-editor-title").textContent =
+                "New Action";
+              document.getElementById("action-id").focus();
+            });
+          document
+            .getElementById("action-save")
+            .addEventListener("click", () => saveAction(true));
+          document
+            .getElementById("action-delete")
+            .addEventListener("click", () =>
+              deleteAction(document.getElementById("action-id").value.trim())
+            );
+
+          [
+            "action-id",
+            "action-name",
+            "action-desc",
+            "action-target",
+            "action-query",
+          ].forEach((id) => {
+            const el = document.getElementById(id);
+            el.addEventListener("input", () => triggerAutosave());
+          });
+
+          // delegate edit/delete buttons in list
+          document
+            .getElementById("actions-panel-list")
+            .addEventListener("click", (ev) => {
+              const edit = ev.target.closest("[data-edit-id]");
+              const del = ev.target.closest("[data-del-id]");
+              const item = ev.target.closest("[data-action-id]");
+              if (edit) {
+                const id = edit.getAttribute("data-edit-id");
+                openForEdit(id);
+              } else if (del) {
+                const id = del.getAttribute("data-del-id");
+                deleteAction(id);
+              } else if (item) {
+                const id = item.getAttribute("data-action-id");
+                openForEdit(id);
+              }
+            });
+
+          // search box
+          document
+            .getElementById("actions-search")
+            .addEventListener("input", (ev) => {
+              const q = (ev.target.value || "").toLowerCase();
+              document
+                .querySelectorAll("#actions-panel-list .list-item")
+                .forEach((li) => {
+                  const text = li.textContent.toLowerCase();
+                  li.style.display = text.indexOf(q) === -1 ? "none" : "block";
+                });
+            });
+
+          // init
+          window.initActionsTab = async function () {
+            await fetchActions();
+            await loadDbSchema();
+          };
+          // call immediately in case panel already visible
+          try {
+            if (
+              document
+                .getElementById("actions-panel")
+                .classList.contains("active")
+            )
+              window.initActionsTab();
+          } catch (e) {}
+        })();
+      </script>
     </div>
 
-    <!-- Rules Tab -->
-    <div id="rules-panel" class="tab-panel">
+    <!-- Rules Tab Placeholder -->
+    <div id="rules-panel" class="tab-panel" style="display: none">
       <div class="toolbar">
         <button class="btn btn-primary" onclick="showAddRuleSetDialog()">
           ➕ Add Rule Set
@@ -882,13 +1395,13 @@
           <h2 style="margin-bottom: 2rem">
             Business Rules - The Decision Layer
           </h2>
-          <div id="rules-list"></div>
+          <div id="rules-list">Loading...</div>
         </div>
       </div>
     </div>
 
-    <!-- Executions Tab -->
-    <div id="executions-panel" class="tab-panel">
+    <!-- Executions Tab Placeholder -->
+    <div id="executions-panel" class="tab-panel" style="display: none">
       <div class="toolbar">
         <button class="btn btn-secondary" onclick="loadExecutions()">
           🔄 Refresh
@@ -909,7 +1422,7 @@
       <div class="main">
         <div class="content-area">
           <h2 style="margin-bottom: 2rem">Workflow Executions</h2>
-          <div id="executions-list"></div>
+          <div id="executions-list">Loading...</div>
         </div>
       </div>
     </div>
@@ -2048,7 +2561,7 @@
 
       // Inline DB explorer initialization removed; modal is used instead
 
-      function switchTab(tabName, ev) {
+      async function switchTab(tabName, ev) {
         // Update tab buttons
         document
           .querySelectorAll(".tab")
@@ -2056,15 +2569,50 @@
         try {
           if (ev && ev.target) ev.target.classList.add("active");
         } catch (e) {}
+        // Ensure panel exists; lazy-load fragment if missing
+        let panel = document.getElementById(tabName + "-panel");
+        if (!panel) {
+          try {
+            const res = await fetch(`builder-tabs/${tabName}-tab.html`);
+            if (res.ok) {
+              const html = await res.text();
+              // insert fragment at end of body
+              const wrapper = document.createElement("div");
+              wrapper.innerHTML = html;
+              // move children into body
+              while (wrapper.firstChild) {
+                const child = wrapper.firstChild;
+                document.body.appendChild(child);
+              }
+              // re-query panel
+              panel = document.getElementById(tabName + "-panel");
+              // execute any inline init function if provided
+              const initName =
+                "init" +
+                tabName.charAt(0).toUpperCase() +
+                tabName.slice(1) +
+                "Tab";
+              if (window[initName] && typeof window[initName] === "function") {
+                try {
+                  console.log("switchTab: calling init", initName);
+                  await window[initName]();
+                } catch (e) {
+                  console.warn(initName + " failed", e);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to lazy-load tab", tabName, e);
+          }
+        }
 
-        // Update panels
+        // Update panels display
         document.querySelectorAll(".tab-panel").forEach((p) => {
           p.classList.remove("active");
           try {
             p.style.display = "none";
           } catch (e) {}
         });
-        const panel = document.getElementById(tabName + "-panel");
         if (panel) {
           panel.classList.add("active");
           try {
@@ -2081,7 +2629,19 @@
             loadEvents();
             break;
           case "actions":
+            console.log("switchTab: loading actions");
             loadActions();
+            try {
+              if (
+                window.initActionsTab &&
+                typeof window.initActionsTab === "function"
+              ) {
+                console.log("switchTab: calling window.initActionsTab");
+                window.initActionsTab();
+              }
+            } catch (e) {
+              console.warn("initActionsTab call failed", e);
+            }
             break;
           case "rules":
             loadRules();
@@ -2270,7 +2830,14 @@
 
       // Load actions for Actions panel from dedicated actions metadata endpoint
       async function loadActions() {
-        const container = document.getElementById("actions-main-list");
+        console.log("loadActions: start");
+        const container =
+          document.getElementById("actions-panel-list") ||
+          document.getElementById("actions-main-list");
+        if (!container) {
+          console.warn("loadActions: actions list container not found");
+          return;
+        }
         container.innerHTML = '<div class="muted">Loading actions...</div>';
         try {
           const res = await fetch("/api/actions");
@@ -2286,6 +2853,7 @@
           if (!actions.length) {
             container.innerHTML =
               '<div class="muted">No business actions defined.</div>';
+            console.log("loadActions: no actions");
             return;
           }
           container.innerHTML = actions
@@ -2306,6 +2874,7 @@
                 }')">Delete</button>\n                </div>\n              </div>\n            </div>\n          `
             )
             .join("");
+          console.log("loadActions: loaded", actions.length, "actions");
         } catch (e) {
           console.error("loadActions failed", e);
           container.innerHTML =

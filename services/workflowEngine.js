@@ -50,8 +50,7 @@ class WorkflowEngine {
     if (this.initialized) return;
     try {
       await this.ensureFiles();
-      const raw = await fs.readFile(WORKFLOWS_FILE, 'utf8');
-      this.workflows = JSON.parse(raw);
+      this.workflows = await this._safeReadJson(WORKFLOWS_FILE, this.getDefaultWorkflows());
       this.initialized = true;
       console.log('[workflow] initialized with', (this.workflows.definitions || []).length, 'workflows');
     } catch (e) {
@@ -666,8 +665,7 @@ class WorkflowEngine {
 
   async getExecution(executionId) {
     try {
-      const raw = await fs.readFile(EXECUTIONS_FILE, 'utf8');
-      const data = JSON.parse(raw);
+      const data = await this._safeReadJson(EXECUTIONS_FILE, { executions: [] });
       return (data.executions || []).find(e => e.id === executionId) || null;
     } catch (e) {
       return null;
@@ -676,8 +674,7 @@ class WorkflowEngine {
 
   async saveExecution(execution) {
     try {
-      const raw = await fs.readFile(EXECUTIONS_FILE, 'utf8');
-      const data = JSON.parse(raw);
+      const data = await this._safeReadJson(EXECUTIONS_FILE, { executions: [] });
       if (!data.executions) data.executions = [];
       
       const idx = data.executions.findIndex(e => e.id === execution.id);
@@ -696,8 +693,7 @@ class WorkflowEngine {
 
   async getExecutions(filter = {}) {
     try {
-      const raw = await fs.readFile(EXECUTIONS_FILE, 'utf8');
-      const data = JSON.parse(raw);
+      const data = await this._safeReadJson(EXECUTIONS_FILE, { executions: [] });
       let executions = data.executions || [];
       
       if (filter.workflowId) {
@@ -722,11 +718,42 @@ class WorkflowEngine {
    */
   async findExecutionByIdempotencyKey(key) {
     try {
-      const raw = await fs.readFile(EXECUTIONS_FILE, 'utf8');
-      const data = JSON.parse(raw);
+      const data = await this._safeReadJson(EXECUTIONS_FILE, { executions: [] });
       return (data.executions || []).find(e => e.idempotencyKey === key) || null;
     } catch (e) {
       return null;
+    }
+  }
+
+  // Helper: safely read JSON file and recover from malformed content (e.g., unexpected EOF)
+  async _safeReadJson(filePath, defaultValue) {
+    try {
+      const raw = await fs.readFile(filePath, 'utf8');
+      try {
+        return JSON.parse(raw);
+      } catch (parseErr) {
+        console.error(`[workflow] JSON parse error for ${filePath}:`, parseErr.message);
+        // attempt to move corrupt file aside and write default
+        try {
+          const brokenPath = filePath + `.broken-${Date.now()}`;
+          await fs.rename(filePath, brokenPath);
+          console.warn(`[workflow] moved corrupt file to ${brokenPath} and recreating default`);
+          await fs.writeFile(filePath, JSON.stringify(defaultValue, null, 2));
+          return defaultValue;
+        } catch (repairErr) {
+          console.error('[workflow] failed to repair file', repairErr);
+          throw parseErr; // rethrow original parse error
+        }
+      }
+    } catch (e) {
+      // if file doesn't exist or other read error, create with default
+      try {
+        await fs.writeFile(filePath, JSON.stringify(defaultValue, null, 2));
+        return defaultValue;
+      } catch (werr) {
+        console.error('[workflow] failed to write default file', werr);
+        throw werr;
+      }
     }
   }
 
