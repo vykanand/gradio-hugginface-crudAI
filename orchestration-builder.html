@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Orchestration Builder - Business Operating System</title>
+    <title>CONTROL CENTER</title>
     <link rel="stylesheet" href="assets/css/theme.css" />
     <style>
       * {
@@ -510,6 +510,18 @@
       .group-container.collapsed .group-items {
         display: none;
       }
+      .group-items {
+        max-height: 280px;
+        overflow: auto;
+        padding: 8px;
+      }
+
+      /* Make the events list container scrollable when long */
+      #events-main-list {
+        max-height: 560px;
+        overflow: auto;
+        padding-right: 8px;
+      }
       .group-header {
         cursor: pointer;
       }
@@ -610,7 +622,7 @@
   <body>
     <div class="header">
       <div>
-        <h1>🧠 Business Orchestration Builder</h1>
+        <h1>🧠 BILLION CONTROL CENTER</h1>
         <div class="header-subtitle">
           Metadata-driven, no-code workflow designer for enterprise operations
         </div>
@@ -799,20 +811,6 @@
             >
               Concepts
             </button>
-            <button
-              id="taxTabEvents"
-              class="btn btn-secondary"
-              onclick="switchTaxonomyTab('events')"
-            >
-              Events
-            </button>
-            <button
-              id="taxTabActions"
-              class="btn btn-secondary"
-              onclick="switchTaxonomyTab('actions')"
-            >
-              Actions
-            </button>
           </div>
 
           <div id="taxContent">
@@ -821,20 +819,6 @@
                 Business Concepts
               </h3>
               <div id="concepts-list" style="margin-bottom: 2rem"></div>
-            </div>
-
-            <div id="tax-events" style="display: none">
-              <h3 style="margin-bottom: 1rem; color: #667eea">
-                Business Events
-              </h3>
-              <div id="events-list" style="margin-bottom: 2rem"></div>
-            </div>
-
-            <div id="tax-actions" style="display: none">
-              <h3 style="margin-bottom: 1rem; color: #667eea">
-                Business Actions
-              </h3>
-              <div id="actions-list"></div>
             </div>
           </div>
         </div>
@@ -850,6 +834,12 @@
         <button class="btn btn-secondary" onclick="loadEvents()">
           🔄 Refresh
         </button>
+        <input
+          id="events-search"
+          placeholder="Search events..."
+          style="margin-left: 8px; padding: 6px 8px; min-width: 220px"
+          oninput="scheduleLoadEvents()"
+        />
       </div>
       <div class="main">
         <div class="content-area">
@@ -1031,94 +1021,17 @@
         try {
           const d = ev.data;
           if (typeof d === "string" && d.indexOf("orchestrator_event^") === 0) {
-            const parts = d.split("^");
-            const listener = parts[1] || null;
-            const detail = parts[2] ? JSON.parse(parts[2]) : {};
-            const eventName =
-              listener && listener.endsWith("-listener")
-                ? listener.replace(/-listener$/, "")
-                : listener;
-            const payload = {
-              event: eventName,
-              listener: listener,
-              module: (eventName && String(eventName).split(":")[0]) || null,
-              detail,
-            };
+            // simple refresh of discovered events when embedded CRUD posts an orchestrator_event
             try {
-              try {
-                const r = await fetch("/api/orchestrator/event", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload),
-                });
-                const js = await r.json().catch(() => ({ ok: false }));
-                if (js && js.ok)
-                  showBuilderToast(
-                    "Event accepted (" + (js.id || "") + ")",
-                    "success"
-                  );
-                else showBuilderToast("Event ingest failed", "error");
-              } catch (fe) {
-                showBuilderToast("Event send error", "error");
-              }
-            } catch (e) {
-              /* dont block UI */
-            }
+              setTimeout(() => {
+                if (typeof loadEvents === "function") loadEvents();
+              }, 100);
+            } catch (e) {}
           }
         } catch (e) {
-          /* ignore */
+          console.warn("message handler error", e);
         }
       });
-
-      // Subscribe to SSE event stream from server (discovered events via Kafka)
-      try {
-        const __runtimeCfg2 = window.__RUNTIME_CONFIG__ || null;
-        const __orchestratorBase2 = (function () {
-          if (window.__ORCHESTRATOR_URL__) return window.__ORCHESTRATOR_URL__;
-          if (__runtimeCfg2 && __runtimeCfg2.port)
-            return (
-              location.protocol +
-              "//" +
-              location.hostname +
-              ":" +
-              __runtimeCfg2.port
-            );
-          if (
-            location.hostname === "localhost" &&
-            location.port &&
-            location.port !== "5050"
-          )
-            return location.protocol + "//" + location.hostname + ":5050";
-          return (
-            location.protocol +
-            "//" +
-            location.hostname +
-            (location.port ? ":" + location.port : "")
-          );
-        })();
-        const __es_endpoint =
-          __orchestratorBase2.replace(/\/$/, "") + "/events/stream";
-        const es = new EventSource(__es_endpoint);
-        es.onmessage = function (m) {
-          try {
-            const obj = JSON.parse(m.data || "{}");
-            if (!taxonomy) return;
-            taxonomy.events = taxonomy.events || {};
-            if (!taxonomy.events[obj.event]) {
-              taxonomy.events = taxonomy.events || {};
-              taxonomy.events[obj.event] = {
-                id: obj.event,
-                name: obj.event,
-                description: "",
-                target: obj.module || "",
-              };
-              renderTaxonomy();
-            }
-          } catch (e) {}
-        };
-      } catch (e) {
-        console.warn("Failed to open event stream", e);
-      }
       function getDistinctGroupColors(key) {
         key = key || "grp";
         if (window.__groupColorRegistry.keys[key])
@@ -1536,78 +1449,119 @@
             if (selectedTable) {
               const cols =
                 (tables[selectedTable] && tables[selectedTable].columns) || [];
-              // Middle pane header
-              const midHeader = document.createElement("div");
-              midHeader.style.fontWeight = "700";
-              midHeader.style.marginBottom = "8px";
-              midHeader.textContent = "Columns";
-              middle.appendChild(midHeader);
-
-              cols.forEach((c) => {
-                const colName = c.name || c;
-                const row = document.createElement("div");
-                row.className = "db-column";
-                row.style.display = "flex";
-                row.style.alignItems = "center";
-                row.style.justifyContent = "space-between";
-                row.style.padding = "6px 8px";
-                row.style.cursor = "pointer";
-                // visual highlight for selected columns
-                if (selectedColumns.includes(colName)) {
-                  row.style.background = "#eef6ff";
-                }
-                const label = document.createElement("div");
-                label.textContent = colName;
-                label.draggable = true;
-                label.addEventListener("dragstart", (ev) => {
-                  const colVal = QUALIFIED_TABLES.includes(selectedTable)
-                    ? `${selectedTable}.${colName}`
-                    : colName;
-                  const payload = { table: selectedTable, column: colVal };
-                  ev.dataTransfer.setData(
-                    "application/json",
-                    JSON.stringify(payload)
-                  );
-                });
-                label.addEventListener("click", (ev) => {
-                  ev.stopPropagation();
-                  // toggle selection (store qualified name when required)
-                  const qualified = QUALIFIED_TABLES.includes(selectedTable)
-                    ? `${selectedTable}.${colName}`
-                    : colName;
-                  if (selectedColumns.includes(qualified)) {
-                    selectedColumns = selectedColumns.filter(
-                      (x) => x !== qualified
-                    );
-                  } else {
-                    selectedColumns.push(qualified);
+              // Load events for the Events panel — use discovered registry + live SSE
+              async function loadEvents() {
+                const container = document.getElementById("events-main-list");
+                container.innerHTML =
+                  '<div class="muted">Loading events...</div>';
+                try {
+                  // initial load from runtime registry
+                  const r = await fetch("/api/event-registry");
+                  if (!r.ok) {
+                    container.innerHTML =
+                      '<div class="muted">Failed to load discovered events</div>';
+                    return;
                   }
-                  render();
-                });
-                const dragHint = document.createElement("div");
-                dragHint.style.opacity = "0.6";
-                dragHint.style.fontSize = "0.85rem";
-                dragHint.textContent = "⇅";
-                row.appendChild(label);
-                row.appendChild(dragHint);
-                middle.appendChild(row);
-              });
+                  const dr = await r.json();
+                  const reg = dr && dr.registry ? dr.registry : {};
+                  const discovered = [];
+                  Object.keys(reg).forEach((mod) => {
+                    const m = reg[mod] || {};
+                    Object.keys(m.events || {}).forEach((evName) => {
+                      discovered.push({
+                        id: evName,
+                        name: evName,
+                        description: "(discovered)",
+                        target: mod,
+                      });
+                    });
+                  });
 
-              // Right pane: selection summary + removable pills
-              const h = document.createElement("div");
-              h.style.fontWeight = "700";
-              h.style.marginTop = "8px";
-              h.textContent = selectedTable;
-              right.appendChild(h);
+                  if (!discovered.length) {
+                    container.innerHTML =
+                      '<div class="muted">No discovered runtime events.</div>';
+                  } else {
+                    // group by module derived from event id (token before ':')
+                    function groupByModule(list) {
+                      const g = {};
+                      (list || []).forEach((it) => {
+                        const name = (it && (it.id || it.name)) || "";
+                        let mod = "misc";
+                        if (
+                          typeof name === "string" &&
+                          name.indexOf(":") !== -1
+                        ) {
+                          mod = String(name).split(":")[0] || "misc";
+                        } else {
+                          mod =
+                            (name.split(/\s+/)[0] || "misc").trim() || "misc";
+                        }
+                        g[mod] = g[mod] || [];
+                        g[mod].push(it);
+                      });
+                      return g;
+                    }
 
-              const selLabel = document.createElement("div");
-              selLabel.style.fontWeight = "600";
-              selLabel.style.marginTop = "8px";
-              selLabel.textContent = "Selected Columns";
-              right.appendChild(selLabel);
+                    const groups = groupByModule(discovered);
+                    // render grouped HTML with collapsible headers
+                    container.innerHTML = Object.keys(groups)
+                      .sort()
+                      .map((gk) => {
+                        const items = (groups[gk] || [])
+                          .map(
+                            (ev) =>
+                              `\n                  <div class="list-item type-event" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">\n                    <div style="display:flex; justify-content:space-between; align-items:center;">\n                      <div>\n                        <div class="list-item-title">${
+                                ev.name
+                              } <span class="muted">${
+                                ev.id
+                              }</span></div>\n                        <div class="list-item-desc">${
+                                ev.description || ""
+                              }</div>\n                      </div>\n                      <div style="display:flex; gap:8px;">\n                        <button class="btn btn-secondary" disabled>Read-only</button>\n                      </div>\n                    </div>\n                  </div>\n                `
+                          )
+                          .join("");
+                        const gid = `group-events-${encodeURIComponent(gk)}`;
+                        const isCollapsed =
+                          window.__eventsGroupStates &&
+                          window.__eventsGroupStates[gid] !== undefined
+                            ? window.__eventsGroupStates[gid]
+                            : true;
+                        const chev = isCollapsed ? "▸" : "▾";
+                        return `\n                <div id="${gid}" class="group-container event-group ${
+                          isCollapsed ? "collapsed" : ""
+                        }">\n                  <div class="group-header" onclick="toggleGroup('${gid}')">\n                    <span class="chev">${chev}</span>\n                    <span style="font-weight:700">${gk}</span>\n                    <span style="margin-left:8px; color: #657786; font-size:0.85rem">(${
+                          groups[gk].length
+                        })</span>\n                  </div>\n                  <div class="group-items">${items}</div>\n                </div>\n              `;
+                      })
+                      .join("");
+                  }
 
-              const selectionBox = document.createElement("div");
-              selectionBox.style.display = "flex";
+                  // subscribe to SSE for live discovered events
+                  try {
+                    const sseUrl =
+                      (location.origin.replace(/:\d+$/, "") ||
+                        location.origin) + "/events/stream";
+                    const es = new EventSource("/events/stream");
+                    es.onmessage = (ev) => {
+                      try {
+                        const d = JSON.parse(ev.data || "{}");
+                        if (d && d.type === "registry-update") {
+                          // refresh list quickly
+                          loadEvents();
+                        }
+                      } catch (e) {}
+                    };
+                    es.onerror = () => {
+                      es.close && es.close();
+                    };
+                  } catch (e) {
+                    console.warn("SSE subscribe failed", e);
+                  }
+                } catch (e) {
+                  console.error("loadEvents failed", e);
+                  container.innerHTML =
+                    '<div class="muted">Error loading events</div>';
+                }
+              }
               selectionBox.style.flexWrap = "wrap";
               selectionBox.style.gap = "6px";
               selectionBox.style.marginTop = "6px";
@@ -2104,10 +2058,19 @@
         } catch (e) {}
 
         // Update panels
-        document
-          .querySelectorAll(".tab-panel")
-          .forEach((p) => p.classList.remove("active"));
-        document.getElementById(tabName + "-panel").classList.add("active");
+        document.querySelectorAll(".tab-panel").forEach((p) => {
+          p.classList.remove("active");
+          try {
+            p.style.display = "none";
+          } catch (e) {}
+        });
+        const panel = document.getElementById(tabName + "-panel");
+        if (panel) {
+          panel.classList.add("active");
+          try {
+            panel.style.display = "flex";
+          } catch (e) {}
+        }
 
         // Load data for the tab
         switch (tabName) {
@@ -2137,79 +2100,183 @@
           if (data.ok) {
             taxonomy = data.taxonomy;
             renderTaxonomy();
-            // enrich taxonomy with DB/module mappings where available
-            try {
-              await enrichTaxonomyWithMappings();
-              // re-render to show mapped badges
-              renderTaxonomy();
-            } catch (e) {
-              console.warn(
-                "enrichTaxonomyWithMappings failed",
-                e && e.message ? e.message : e
-              );
-            }
+            // keep taxonomy focused on concepts only (avoid injecting events/actions)
           }
         } catch (e) {
           console.error("Failed to load taxonomy:", e);
         }
       }
 
-      // Load events for the Events panel
-      async function loadEvents() {
+      // Load events for the Events panel (grouped by module)
+      // Debounced trigger for search box
+      function scheduleLoadEvents() {
         try {
-          const res = await fetch("/api/taxonomy/events");
-          const data = await res.json();
-          if (!data || !data.ok) {
-            document.getElementById("events-main-list").innerHTML =
-              '<div class="muted">Failed to load events</div>';
-            return;
+          window.__eventsSearchTimer &&
+            clearTimeout(window.__eventsSearchTimer);
+        } catch (e) {}
+        window.__eventsSearchTimer = setTimeout(() => {
+          try {
+            loadEvents();
+          } catch (e) {}
+        }, 250);
+      }
+
+      async function loadEvents() {
+        const container = document.getElementById("events-main-list");
+        if (!container) return;
+        container.innerHTML = '<div class="muted">Loading events...</div>';
+        try {
+          // try taxonomy events first
+          let all = [];
+          try {
+            const res = await fetch("/api/taxonomy/events");
+            const data = await res.json();
+            if (data && data.ok && Object.keys(data.events || {}).length) {
+              all = Object.values(data.events || {}).map((e) => ({
+                id: e.id,
+                name: e.name || e.id,
+                description: e.description || "",
+                target: e.target || "",
+              }));
+            }
+          } catch (e) {
+            // ignore and fallback
           }
-          const events = Object.values(data.events || {}).sort((a, b) =>
-            (a.id || "").localeCompare(b.id || "")
-          );
-          if (!events.length) {
-            document.getElementById("events-main-list").innerHTML =
+
+          // fallback to discovered runtime registry when no taxonomy events
+          // apply search filter (if provided)
+          const searchEl = document.getElementById("events-search");
+          const rawSearch = searchEl ? searchEl.value || "" : "";
+          const search = String(rawSearch || "")
+            .trim()
+            .toLowerCase();
+
+          if (!all.length) {
+            try {
+              const r = await fetch("/api/event-registry");
+              if (r.ok) {
+                const dr = await r.json();
+                const reg = dr && dr.registry ? dr.registry : {};
+                Object.keys(reg).forEach((mod) => {
+                  const m = reg[mod] || {};
+                  Object.keys(m.events || {}).forEach((evName) => {
+                    all.push({
+                      id: evName,
+                      name: evName,
+                      description: "(discovered)",
+                      target: mod,
+                    });
+                  });
+                });
+              }
+            } catch (e) {
+              console.warn("fallback event-registry failed", e);
+            }
+          }
+
+          if (!all.length) {
+            container.innerHTML =
               '<div class="muted">No business events defined.</div>';
             return;
           }
-          document.getElementById("events-main-list").innerHTML = events
-            .map(
-              (ev) => `
-            <div class="list-item type-event" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                  <div class="list-item-title">${
-                    ev.name || ev.id
-                  } <span class="muted">${ev.id}</span></div>
-                  <div class="list-item-desc">${ev.description || ""}</div>
-                </div>
-                <div style="display:flex; gap:8px;">
-                  <button class="btn btn-secondary" onclick="editEvent('${
-                    ev.id
-                  }')">Edit</button>
-                  <button class="btn btn-danger" onclick="deleteEvent('${
-                    ev.id
-                  }')">Delete</button>
-                </div>
-              </div>
-            </div>
-          `
-            )
+
+          // filter and group by module token (before ':') or by target
+          const filtered = search
+            ? all.filter((it) => {
+                const s = (it.name || it.id || "").toLowerCase();
+                return (
+                  s.indexOf(search) !== -1 ||
+                  (it.target || "").toLowerCase().indexOf(search) !== -1
+                );
+              })
+            : all;
+
+          const groups = {};
+          (filtered || []).forEach((it) => {
+            const name = (it && (it.id || it.name)) || "";
+            let mod = "misc";
+            if (typeof name === "string" && name.indexOf(":") !== -1) {
+              mod = String(name).split(":")[0] || "misc";
+            } else {
+              mod =
+                (it.target || "").trim() ||
+                (name.split(/\s+/)[0] || "misc").trim() ||
+                "misc";
+            }
+            groups[mod] = groups[mod] || [];
+            groups[mod].push(it);
+          });
+
+          container.innerHTML = Object.keys(groups)
+            .sort()
+            .map((gk) => {
+              const items = (groups[gk] || [])
+                .map(
+                  (ev) =>
+                    `\n            <div class="list-item type-event" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">\n              <div style="display:flex; justify-content:space-between; align-items:center;">\n                <div>\n                  <div class="list-item-title">${
+                      ev.name
+                    } <span class="muted">${
+                      ev.id
+                    }</span></div>\n                  <div class="list-item-desc">${
+                      ev.description || ""
+                    } <span class="badge">${
+                      ev.target || ""
+                    }</span></div>\n                </div>\n                <div style="display:flex; gap:8px;">\n                  <button class="btn btn-secondary" disabled>Read-only</button>\n                </div>\n              </div>\n            </div>\n          `
+                )
+                .join("");
+              const gid = `group-events-${encodeURIComponent(gk)}`;
+              let isCollapsed;
+              if (search && String(search).trim().length) {
+                // when searching, expand groups that contain results
+                isCollapsed = false;
+              } else {
+                isCollapsed =
+                  window.__eventsGroupStates &&
+                  window.__eventsGroupStates[gid] !== undefined
+                    ? window.__eventsGroupStates[gid]
+                    : true;
+              }
+              const chev = isCollapsed ? "▸" : "▾";
+              return `\n                <div id="${gid}" class="group-container event-group ${
+                isCollapsed ? "collapsed" : ""
+              }">\n                  <div class="group-header" onclick="toggleGroup('${gid}')">\n                    <span class="chev">${chev}</span>\n                    <span style="font-weight:700">${gk}</span>\n                    <span style="margin-left:8px; color: #657786; font-size:0.85rem">(${
+                groups[gk].length
+              })</span>\n                  </div>\n                  <div class="group-items">${items}</div>\n                </div>\n              `;
+            })
             .join("");
+
+          // subscribe to SSE for live discovered events
+          try {
+            const es = new EventSource("/events/stream");
+            es.onmessage = (ev) => {
+              try {
+                const d = JSON.parse(ev.data || "{}");
+                if (d && d.type === "registry-update") {
+                  loadEvents();
+                }
+              } catch (e) {}
+            };
+            es.onerror = () => {
+              es.close && es.close();
+            };
+          } catch (e) {
+            console.warn("SSE subscribe failed", e);
+          }
         } catch (e) {
           console.error("loadEvents failed", e);
-          document.getElementById("events-main-list").innerHTML =
-            '<div class="muted">Error loading events</div>';
+          container.innerHTML = '<div class="muted">Error loading events</div>';
         }
       }
 
-      // Load actions for the Actions panel
+      // Load actions for Actions panel from dedicated actions metadata endpoint
       async function loadActions() {
+        const container = document.getElementById("actions-main-list");
+        container.innerHTML = '<div class="muted">Loading actions...</div>';
         try {
-          const res = await fetch("/api/taxonomy/actions");
+          const res = await fetch("/api/actions");
           const data = await res.json();
           if (!data || !data.ok) {
-            document.getElementById("actions-main-list").innerHTML =
+            container.innerHTML =
               '<div class="muted">Failed to load actions</div>';
             return;
           }
@@ -2217,37 +2284,31 @@
             (a.id || "").localeCompare(b.id || "")
           );
           if (!actions.length) {
-            document.getElementById("actions-main-list").innerHTML =
+            container.innerHTML =
               '<div class="muted">No business actions defined.</div>';
             return;
           }
-          document.getElementById("actions-main-list").innerHTML = actions
+          container.innerHTML = actions
             .map(
-              (act) => `
-            <div class="list-item type-action" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                  <div class="list-item-title">${
-                    act.name || act.id
-                  } <span class="muted">${act.id}</span></div>
-                  <div class="list-item-desc">${act.description || ""}</div>
-                </div>
-                <div style="display:flex; gap:8px;">
-                  <button class="btn btn-secondary" onclick="editAction('${
-                    act.id
-                  }')">Edit</button>
-                  <button class="btn btn-danger" onclick="deleteAction('${
-                    act.id
-                  }')">Delete</button>
-                </div>
-              </div>
-            </div>
-          `
+              (act) =>
+                `\n            <div class="list-item type-action" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">\n              <div style="display:flex; justify-content:space-between; align-items:center;">\n                <div>\n                  <div class="list-item-title">${
+                  act.name || act.id
+                } <span class="muted">${
+                  act.id
+                }</span></div>\n                  <div class="list-item-desc">${
+                  act.description || ""
+                } <span class="badge">${
+                  act.workerCapability || ""
+                }</span></div>\n                </div>\n                <div style="display:flex; gap:8px;">\n                  <button class="btn btn-secondary" onclick="editAction('${
+                  act.id
+                }')">Edit</button>\n                  <button class="btn btn-danger" onclick="deleteAction('${
+                  act.id
+                }')">Delete</button>\n                </div>\n              </div>\n            </div>\n          `
             )
             .join("");
         } catch (e) {
           console.error("loadActions failed", e);
-          document.getElementById("actions-main-list").innerHTML =
+          container.innerHTML =
             '<div class="muted">Error loading actions</div>';
         }
       }
@@ -2280,6 +2341,9 @@
           // non-fatal
         }
       }
+
+      window.__eventsGroupStates = window.__eventsGroupStates || {};
+      window.__taxonomyGroupStates = window.__taxonomyGroupStates || {};
 
       function renderTaxonomy() {
         if (!taxonomy) return;
@@ -2386,6 +2450,7 @@
 
               const gid = `group-${type}-${encodeURIComponent(gk)}`;
               const isCollapsed =
+                window.__taxonomyGroupStates &&
                 window.__taxonomyGroupStates[gid] !== undefined
                   ? window.__taxonomyGroupStates[gid]
                   : true;
@@ -2420,42 +2485,9 @@
           "concept"
         );
 
-        // Render events grouped by module (derive module from event name before ':')
-        function groupEventsByModule(list) {
-          const g = {};
-          (list || []).forEach((it) => {
-            const name = (it && (it.name || it.id)) || "";
-            let mod = "misc";
-            if (typeof name === "string" && name.indexOf(":") !== -1) {
-              mod = String(name).split(":")[0] || "misc";
-            } else {
-              // fallback to first whitespace token
-              mod = (name.split(/\s+/)[0] || "misc").trim() || "misc";
-            }
-            g[mod] = g[mod] || [];
-            g[mod].push(it);
-          });
-          return g;
-        }
-
-        const events = Object.values(taxonomy.events || {});
-        const eventGroups = groupEventsByModule(events);
-        document.getElementById("events-list").innerHTML = buildGroupHtml(
-          eventGroups,
-          "event"
-        );
-
-        // Render actions grouped by first word
-        const actions = Object.values(taxonomy.actions || {});
-        const actionGroups = groupByFirstWord(actions);
-        document.getElementById("actions-list").innerHTML = buildGroupHtml(
-          actionGroups,
-          "action"
-        );
-        // Ensure a default taxonomy tab is visible
+        // Ensure taxonomy shows concepts by default
         try {
-          // prefer previously selected state, else default to 'events'
-          const prev = window.__lastTaxonomyTab || "events";
+          const prev = window.__lastTaxonomyTab || "concepts";
           switchTaxonomyTab(prev);
         } catch (e) {}
       }
@@ -2471,8 +2503,16 @@
             chev.textContent = el.classList.contains("collapsed") ? "▸" : "▾";
           // persist state so subsequent renderTaxonomy calls preserve expansion
           try {
-            window.__taxonomyGroupStates[id] =
-              el.classList.contains("collapsed");
+            // use separate state bucket for taxonomy vs events groups
+            if (String(id).indexOf("group-events-") === 0) {
+              window.__eventsGroupStates = window.__eventsGroupStates || {};
+              window.__eventsGroupStates[id] =
+                el.classList.contains("collapsed");
+            } else {
+              window.__taxonomyGroupStates = window.__taxonomyGroupStates || {};
+              window.__taxonomyGroupStates[id] =
+                el.classList.contains("collapsed");
+            }
           } catch (e) {}
         } catch (e) {
           console.warn("toggleGroup failed", e && e.message ? e.message : e);
@@ -2482,29 +2522,11 @@
       // Taxonomy tab switcher (internal to Taxonomy panel)
       function switchTaxonomyTab(name) {
         try {
-          window.__lastTaxonomyTab = name;
-          document.getElementById("tax-concepts").style.display =
-            name === "concepts" ? "" : "none";
-          document.getElementById("tax-events").style.display =
-            name === "events" ? "" : "none";
-          document.getElementById("tax-actions").style.display =
-            name === "actions" ? "" : "none";
-          // update button active classes
-          ["taxTabConcepts", "taxTabEvents", "taxTabActions"].forEach((id) =>
-            document.getElementById(id).classList.remove("tab-selected")
-          );
-          if (name === "concepts")
-            document
-              .getElementById("taxTabConcepts")
-              .classList.add("tab-selected");
-          if (name === "events")
-            document
-              .getElementById("taxTabEvents")
-              .classList.add("tab-selected");
-          if (name === "actions")
-            document
-              .getElementById("taxTabActions")
-              .classList.add("tab-selected");
+          // taxonomy now only supports concepts
+          window.__lastTaxonomyTab = "concepts";
+          document.getElementById("tax-concepts").style.display = "";
+          const btn = document.getElementById("taxTabConcepts");
+          if (btn) btn.classList.add("tab-selected");
         } catch (e) {
           console.warn("switchTaxonomyTab err", e);
         }

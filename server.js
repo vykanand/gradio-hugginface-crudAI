@@ -1926,6 +1926,16 @@ app.get('/api/taxonomy/actions', async (req, res) => {
   }
 });
 
+// Backwards-compatible separate actions metadata endpoint (non-taxonomy)
+app.get('/api/actions', async (req, res) => {
+  try {
+    const actions = await taxonomyService.getActions();
+    res.json({ ok: true, actions });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.post('/api/taxonomy/actions', async (req, res) => {
   try {
     const action = await taxonomyService.addAction(req.body);
