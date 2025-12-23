@@ -908,65 +908,6 @@
                 <input id="action-name" class="form-input" />
               </div>
               <div class="form-group">
-                <label class="form-label">DB Target (tables)</label>
-                <div
-                  id="action-target-container"
-                  style="
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    flex-wrap: wrap;
-                    padding: 6px;
-                    border: 1px solid #e6eef6;
-                    border-radius: 6px;
-                    min-height: 38px;
-                  "
-                >
-                  <div
-                    id="action-target-pills"
-                    style="
-                      display: flex;
-                      gap: 6px;
-                      flex-wrap: wrap;
-                      align-items: center;
-                    "
-                  ></div>
-                  <input
-                    id="action-target-input"
-                    class="form-input"
-                    style="
-                      border: none;
-                      box-shadow: none;
-                      min-width: 80px;
-                      flex: 1;
-                      padding: 6px;
-                    "
-                    placeholder="add table and press Enter"
-                  />
-                </div>
-                <div
-                  style="
-                    margin-top: 8px;
-                    display: flex;
-                    gap: 8px;
-                    align-items: center;
-                  "
-                >
-                  <button class="btn btn-secondary" id="action-target-choose">
-                    Choose from DB
-                  </button>
-                  <div style="color: #657786; font-size: 0.85rem">
-                    Or type a table and press Enter
-                  </div>
-                </div>
-                <input type="hidden" id="action-target" />
-                <div
-                  style="margin-top: 6px; color: #657786; font-size: 0.85rem"
-                >
-                  Select tables (no columns). Multiple tables allowed.
-                </div>
-              </div>
-              <div class="form-group">
                 <label class="form-label">Description</label>
                 <textarea
                   id="action-desc"
@@ -985,8 +926,50 @@
                     class="btn btn-secondary"
                     id="generate-query-btn"
                     type="button"
+                    aria-label="Generate query from description"
                   >
-                    🤖 Generate Query from Description
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      style="vertical-align: middle; margin-right: 6px"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <rect
+                        x="3"
+                        y="3"
+                        width="18"
+                        height="6"
+                        rx="1.5"
+                        fill="#E6EEF6"
+                        stroke="#9CA3AF"
+                      />
+                      <rect
+                        x="6"
+                        y="11"
+                        width="12"
+                        height="8"
+                        rx="1"
+                        fill="#F8FAFC"
+                        stroke="#9CA3AF"
+                      />
+                      <circle cx="17.5" cy="6.5" r="1.5" fill="#6B7280" />
+                      <text
+                        x="6"
+                        y="15.5"
+                        font-family="Arial,Helvetica,sans-serif"
+                        font-size="6"
+                        fill="#374151"
+                      >
+                        AI
+                      </text>
+                    </svg>
+                    <span style="vertical-align: middle"
+                      >Generate Query from Description</span
+                    >
                   </button>
                   <div
                     id="generate-query-status"
@@ -1414,7 +1397,6 @@
               "query-preview-content"
             );
             const testResults = document.getElementById("test-results");
-            const targetInput = document.getElementById("action-target");
 
             const query = previewContent.textContent.trim();
 
@@ -1423,18 +1405,19 @@
               return;
             }
 
-            // Extract table name from target or query
-            let table = targetInput.value;
-            if (!table) {
-              // Try to extract from query (simple heuristic)
-              const fromMatch = query.match(/FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)/i);
-              if (fromMatch) {
-                table = fromMatch[1];
-              }
+            // Extract table name from query
+            let table = null;
+            // Try to extract from query (simple heuristic)
+            const fromMatch = query.match(/FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)/i);
+            if (fromMatch) {
+              table = fromMatch[1];
             }
 
             if (!table) {
-              showToast("Please select a target table first", "error");
+              showToast(
+                "Could not extract table name from query. Please ensure the query has a FROM clause.",
+                "error"
+              );
               return;
             }
 
@@ -1703,10 +1686,6 @@
                   ev.stopPropagation();
                   const table = colEl.dataset.table;
                   const column = colEl.dataset.column;
-                  const targetInput = document.getElementById("action-target");
-                  // if no table.target set, set to table
-                  if (targetInput && !targetInput.value)
-                    targetInput.value = table;
                   // insert table.column into query at cursor
                   const q = document.getElementById("action-query");
                   if (q) insertAtCursor(q, `${table}.${column}`);
@@ -1739,132 +1718,9 @@
               id: (document.getElementById("action-id").value || "").trim(),
               name: document.getElementById("action-name").value || "",
               description: document.getElementById("action-desc").value || "",
-              target: document.getElementById("action-target").value || "",
               query: document.getElementById("action-query").value || "",
             };
           }
-
-          // --- Action target (tables) tag/pill helpers ---
-          function _getTargetState() {
-            try {
-              const v = (
-                document.getElementById("action-target").value || ""
-              ).trim();
-              return v ? v.split(/\s*,\s*/).filter(Boolean) : [];
-            } catch (e) {
-              return [];
-            }
-          }
-
-          function _syncHiddenTarget(tables) {
-            const uniq = (tables || []).filter(Boolean);
-            document.getElementById("action-target").value = uniq.join(",");
-          }
-
-          function renderTargetPills() {
-            const container = document.getElementById("action-target-pills");
-            const hidden = document.getElementById("action-target");
-            if (!container || !hidden) return;
-            container.innerHTML = "";
-            const tables = _getTargetState();
-            tables.forEach((t) => {
-              const pill = document.createElement("div");
-              pill.style.display = "inline-flex";
-              pill.style.alignItems = "center";
-              pill.style.gap = "6px";
-              pill.style.background = "#eef6ff";
-              pill.style.padding = "6px 8px";
-              pill.style.borderRadius = "999px";
-              pill.style.fontSize = "0.9rem";
-              const name = document.createElement("div");
-              name.textContent = t;
-              const removeBtn = document.createElement("button");
-              removeBtn.className = "btn btn-ghost";
-              removeBtn.style.padding = "4px 6px";
-              removeBtn.textContent = "✕";
-              removeBtn.title = "Remove";
-              removeBtn.addEventListener("click", (ev) => {
-                ev.stopPropagation();
-                removeTargetTable(t);
-              });
-              pill.appendChild(name);
-              pill.appendChild(removeBtn);
-              container.appendChild(pill);
-            });
-          }
-
-          function addTargetTable(table) {
-            if (!table) return;
-            const cur = _getTargetState();
-            if (cur.includes(table)) return;
-            cur.push(table);
-            _syncHiddenTarget(cur);
-            renderTargetPills();
-            triggerAutosave();
-          }
-
-          function removeTargetTable(table) {
-            if (!table) return;
-            const cur = _getTargetState().filter((t) => t !== table);
-            _syncHiddenTarget(cur);
-            renderTargetPills();
-            triggerAutosave();
-          }
-
-          function setTargetTablesFromArray(arr) {
-            const list = Array.isArray(arr) ? arr.filter(Boolean) : [];
-            _syncHiddenTarget(list);
-            renderTargetPills();
-          }
-
-          // wire up input for typing table names
-          (function () {
-            const ti = document.getElementById("action-target-input");
-            if (ti) {
-              ti.addEventListener("keydown", (ev) => {
-                if (ev.key === "Enter" || ev.key === ",") {
-                  ev.preventDefault();
-                  const v = (ti.value || "").trim().replace(/,$/, "");
-                  if (v) addTargetTable(v);
-                  ti.value = "";
-                } else if (ev.key === "Backspace" && !ti.value) {
-                  const cur = _getTargetState();
-                  if (cur.length) removeTargetTable(cur[cur.length - 1]);
-                }
-              });
-            }
-            const chooserBtn = document.getElementById("action-target-choose");
-            if (chooserBtn) {
-              chooserBtn.addEventListener("click", async (ev) => {
-                ev.preventDefault();
-                // require action name before choosing DB target
-                const nameEl = document.getElementById("action-name");
-                if (!nameEl || !(nameEl.value || "").trim()) {
-                  showToast("Enter name first", "error");
-                  try {
-                    if (nameEl) nameEl.focus();
-                  } catch (e) {}
-                  return;
-                }
-                const sel = await showDBExplorer("Choose tables");
-                if (!sel) return;
-                if (sel.type === "tables" && Array.isArray(sel.tables)) {
-                  // sel.tables may be array of strings
-                  setTargetTablesFromArray(
-                    sel.tables.map((t) =>
-                      typeof t === "string" ? t : t.table || ""
-                    )
-                  );
-                } else if (sel.table) {
-                  setTargetTablesFromArray([sel.table]);
-                } else if (sel.type && sel.item) {
-                  // for taxonomy/rules selections, populate with id/name
-                  const v = sel.item.id || sel.item.name;
-                  if (v) setTargetTablesFromArray([v]);
-                }
-              });
-            }
-          })();
 
           async function saveAction(now) {
             const status = document.getElementById("action-status");
@@ -1956,10 +1812,6 @@
             idEl.title = "Auto-generated id (immutable)";
             document.getElementById("action-name").value = "";
             document.getElementById("action-desc").value = "";
-            document.getElementById("action-target").value = "";
-            try {
-              renderTargetPills();
-            } catch (e) {}
             document.getElementById("action-query").value = "";
             document.getElementById("action-status").textContent = "Idle";
             document.getElementById("action-editor-title").textContent =
@@ -1990,10 +1842,6 @@
               document.getElementById("action-name").value = a.name || "";
               document.getElementById("action-desc").value =
                 a.description || "";
-              document.getElementById("action-target").value = a.target || "";
-              try {
-                renderTargetPills();
-              } catch (e) {}
               document.getElementById("action-query").value =
                 a.query || a.sql || "";
               document.getElementById("action-editor-title").textContent =
@@ -2027,16 +1875,12 @@
               deleteAction(document.getElementById("action-id").value.trim())
             );
 
-          [
-            "action-id",
-            "action-name",
-            "action-desc",
-            "action-target",
-            "action-query",
-          ].forEach((id) => {
-            const el = document.getElementById(id);
-            el.addEventListener("input", () => triggerAutosave());
-          });
+          ["action-id", "action-name", "action-desc", "action-query"].forEach(
+            (id) => {
+              const el = document.getElementById(id);
+              el.addEventListener("input", () => triggerAutosave());
+            }
+          );
 
           // delegate edit/delete buttons in list
           document
