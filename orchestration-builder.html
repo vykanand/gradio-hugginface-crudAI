@@ -513,7 +513,9 @@
       .group-items {
         max-height: 280px;
         overflow: auto;
-        padding: 8px;
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
       }
 
       /* Make the events list container scrollable when long */
@@ -541,11 +543,7 @@
         text-align: center;
       }
 
-      .group-items {
-        padding: 0.75rem;
-        display: flex;
-        flex-direction: column;
-      }
+      /* merged .group-items definition above */
 
       /* Type-specific header colors */
       .concept-group .group-header {
@@ -896,7 +894,7 @@
           <div style="display: flex; gap: 12px">
             <div style="flex: 1">
               <div class="form-group">
-                <label class="form-label">ID</label>
+                <label class="form-label" for="action-id">ID</label>
                 <input
                   id="action-id"
                   class="form-input"
@@ -904,9 +902,64 @@
                 />
               </div>
               <div class="form-group">
-                <label class="form-label">Name</label>
+                <label class="form-label" for="action-name">Name</label>
                 <input id="action-name" class="form-input" />
               </div>
+
+              <!-- Event Bindings Section -->
+              <div
+                class="form-group"
+                style="
+                  border: 2px solid #e1e8ed;
+                  border-radius: 8px;
+                  padding: 12px;
+                  background: #f8f9fa;
+                "
+              >
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 8px;
+                  "
+                >
+                  <div class="form-label" style="margin: 0">
+                    ⚡ Event Triggers
+                  </div>
+                  <button
+                    class="btn btn-secondary"
+                    id="add-event-binding"
+                    type="button"
+                    style="padding: 4px 12px; font-size: 0.85rem"
+                    disabled
+                  >
+                    + Add Event
+                  </button>
+                </div>
+                <div
+                  id="event-bindings-list"
+                  style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    min-height: 40px;
+                  "
+                >
+                  <div
+                    style="
+                      color: #8899a6;
+                      font-size: 0.85rem;
+                      text-align: center;
+                      padding: 12px;
+                    "
+                  >
+                    No events connected. Click "Add Event" to bind event
+                    payloads to this action.
+                  </div>
+                </div>
+              </div>
+
               <div class="form-group">
                 <label class="form-label">Description</label>
                 <textarea
@@ -1026,15 +1079,210 @@
               </div>
             </div>
             <div style="flex: 1">
+              <!-- SQL Parameter Mapping -->
+              <div
+                class="form-group"
+                style="
+                  border: 2px solid #e1e8ed;
+                  border-radius: 8px;
+                  padding: 12px;
+                  background: #fff8e8;
+                "
+              >
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 8px;
+                  "
+                >
+                  <div class="form-label" style="margin: 0">
+                    🔗 Variable Mapping
+                  </div>
+                  <button
+                    class="btn btn-secondary"
+                    id="ai-suggest-mapping"
+                    type="button"
+                    style="padding: 4px 12px; font-size: 0.85rem"
+                    disabled
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      style="vertical-align: middle; margin-right: 4px"
+                    >
+                      <rect
+                        x="3"
+                        y="3"
+                        width="18"
+                        height="6"
+                        rx="1.5"
+                        fill="#667eea"
+                        stroke="#667eea"
+                      />
+                      <circle cx="17.5" cy="6.5" r="1.5" fill="white" />
+                      <text
+                        x="6"
+                        y="15.5"
+                        font-family="Arial"
+                        font-size="6"
+                        fill="#667eea"
+                      >
+                        AI
+                      </text>
+                    </svg>
+                    AI Suggest
+                  </button>
+                </div>
+                <div
+                  id="variable-mapping-area"
+                  style="max-height: 200px; overflow-y: auto"
+                >
+                  <div
+                    style="
+                      color: #8899a6;
+                      font-size: 0.85rem;
+                      text-align: center;
+                      padding: 8px;
+                    "
+                  >
+                    Use {{event.fieldName}} in your SQL query. Variables will
+                    appear here.
+                  </div>
+                </div>
+              </div>
+
               <div class="form-group">
-                <label class="form-label">SQL / Query</label>
+                <label class="form-label" for="action-query">SQL / Query</label>
                 <textarea
                   id="action-query"
                   class="form-textarea"
-                  placeholder="SELECT * FROM table WHERE ..."
+                  placeholder="INSERT INTO users (id, email) VALUES ({{added.value}}, {{added.field}}) -- Click event data fields above to insert"
                   disabled
+                  style="font-family: 'Courier New', monospace"
                 ></textarea>
+                <div
+                  style="margin-top: 6px; font-size: 0.75rem; color: #657786"
+                >
+                  💡 Tip: Click the colored event data fields above to insert
+                  variables like
+                  <code
+                    style="
+                      background: #f0f3f7;
+                      padding: 2px 6px;
+                      border-radius: 3px;
+                    "
+                    >{{eventName.fieldName}}</code
+                  >
+                  into your SQL
+                </div>
               </div>
+
+              <!-- Preview & Test Section -->
+              <div
+                class="form-group"
+                style="
+                  border: 2px solid #e1e8ed;
+                  border-radius: 8px;
+                  padding: 12px;
+                  background: #f0f7ff;
+                "
+              >
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 8px;
+                  "
+                >
+                  <div class="form-label" style="margin: 0">
+                    🔍 Preview & Test
+                  </div>
+                  <div style="display: flex; gap: 6px">
+                    <button
+                      class="btn btn-secondary"
+                      id="test-with-real-events"
+                      type="button"
+                      style="padding: 4px 12px; font-size: 0.85rem"
+                      disabled
+                      title="Test SQL with multiple real event samples"
+                    >
+                      🎲 Test with Real Events
+                    </button>
+                    <button
+                      class="btn btn-primary"
+                      id="test-action-execution"
+                      type="button"
+                      style="padding: 4px 12px; font-size: 0.85rem"
+                      disabled
+                      title="Test with manual sample data"
+                    >
+                      ▶ Manual Test
+                    </button>
+                  </div>
+                </div>
+                <div id="test-execution-area" style="display: none">
+                  <div
+                    style="
+                      margin-bottom: 12px;
+                      padding: 8px;
+                      background: #fff3cd;
+                      border-radius: 6px;
+                      border-left: 3px solid #ffc107;
+                    "
+                  >
+                    <strong style="color: #856404; font-size: 0.85rem"
+                      >💡 Tip:</strong
+                    >
+                    <div
+                      style="
+                        color: #856404;
+                        font-size: 0.75rem;
+                        margin-top: 4px;
+                      "
+                    >
+                      Use <strong>"Test with Real Events"</strong> to validate
+                      with actual event data from your registry, or use
+                      <strong>"Manual Test"</strong> to provide custom JSON
+                      data.
+                    </div>
+                  </div>
+                  <div style="margin-bottom: 8px">
+                    <label
+                      for="sample-event-data"
+                      style="
+                        font-size: 0.85rem;
+                        font-weight: 600;
+                        color: #2c3e50;
+                        display: block;
+                        margin-bottom: 4px;
+                      "
+                      >Sample Event Data (JSON) - Optional for Manual
+                      Test</label
+                    >
+                    <textarea
+                      id="sample-event-data"
+                      style="
+                        width: 100%;
+                        min-height: 80px;
+                        font-family: monospace;
+                        font-size: 0.85rem;
+                        padding: 8px;
+                        border: 1px solid #e1e8ed;
+                        border-radius: 6px;
+                      "
+                      placeholder='{"userId": 123, "status": "active"}'
+                    ></textarea>
+                  </div>
+                  <div id="test-results-area" style="margin-top: 12px"></div>
+                </div>
+              </div>
+
               <div style="display: flex; gap: 8px; align-items: center">
                 <button class="btn btn-primary" id="action-save" disabled>
                   Save
@@ -1189,41 +1437,63 @@
         (function () {
           let autosaveTimer = null;
           let currentAction = null; // object being edited
+          let eventBindings = []; // Array of {eventId, eventName, payloadSchema}
+          let variableMappings = {}; // {varName: {eventId, field, type}}
 
           // Initialize AI and event handlers on load
           (async function initAI() {
             await ensureRuntimeConfig();
 
-            // Setup Generate Query button
-            const generateBtn = document.getElementById("generate-query-btn");
-            if (generateBtn) {
-              generateBtn.addEventListener(
-                "click",
-                generateQueryFromDescription
-              );
+            // Wait for DOM to be ready before setting up handlers
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", setupHandlers);
+            } else {
+              setupHandlers();
             }
 
-            // Setup Use Generated Query button
-            const useQueryBtn = document.getElementById("use-generated-query");
-            if (useQueryBtn) {
-              useQueryBtn.addEventListener("click", () => {
-                const previewContent = document.getElementById(
-                  "query-preview-content"
+            function setupHandlers() {
+              // Setup event binding handlers
+              setupEventBindingHandlers();
+
+              // Setup SQL parameter detection
+              setupSQLParameterDetection();
+
+              // Setup preview/test handlers
+              setupPreviewHandlers();
+
+              // Setup Generate Query button
+              const generateBtn = document.getElementById("generate-query-btn");
+              if (generateBtn) {
+                generateBtn.addEventListener(
+                  "click",
+                  generateQueryFromDescription
                 );
-                const queryTextarea = document.getElementById("action-query");
-                if (previewContent && queryTextarea) {
-                  queryTextarea.value = previewContent.textContent;
-                  showToast("Query copied to SQL field", "success");
-                }
-              });
-            }
+              }
 
-            // Setup Test Query button
-            const testQueryBtn = document.getElementById(
-              "test-generated-query"
-            );
-            if (testQueryBtn) {
-              testQueryBtn.addEventListener("click", testGeneratedQuery);
+              // Setup Use Generated Query button
+              const useQueryBtn = document.getElementById(
+                "use-generated-query"
+              );
+              if (useQueryBtn) {
+                useQueryBtn.addEventListener("click", () => {
+                  const previewContent = document.getElementById(
+                    "query-preview-content"
+                  );
+                  const queryTextarea = document.getElementById("action-query");
+                  if (previewContent && queryTextarea) {
+                    queryTextarea.value = previewContent.textContent;
+                    showToast("Query copied to SQL field", "success");
+                  }
+                });
+              }
+
+              // Setup Test Query button
+              const testQueryBtn = document.getElementById(
+                "test-generated-query"
+              );
+              if (testQueryBtn) {
+                testQueryBtn.addEventListener("click", testGeneratedQuery);
+              }
             }
           })();
 
@@ -1515,6 +1785,1413 @@
             }
           }
 
+          // ====== EVENT BINDING & PAYLOAD MAPPING SYSTEM ======
+
+          function setupEventBindingHandlers() {
+            const addEventBtn = document.getElementById("add-event-binding");
+            if (addEventBtn) {
+              addEventBtn.addEventListener("click", showEventSelector);
+            }
+          }
+
+          async function showEventSelector() {
+            try {
+              // Load available events from event registry
+              const eventsRes = await fetch("/api/event-registry", {
+                cache: "no-store",
+              });
+
+              if (!eventsRes.ok) {
+                showToast("Could not load events from registry", "error");
+                return;
+              }
+
+              const eventsData = await eventsRes.json();
+              const registry =
+                eventsData && eventsData.registry ? eventsData.registry : {};
+
+              // Parse registry into flat list of events
+              const eventsList = [];
+              const rawKeys = Object.keys(registry || {});
+
+              for (const k of rawKeys) {
+                if (!k) continue;
+                // Skip special keys
+                if (
+                  typeof k === "string" &&
+                  (k.indexOf("evt:") === 0 || k.indexOf("dlq:") === 0)
+                )
+                  continue;
+
+                const val = registry[k];
+
+                // If value looks like a module (has .events), extract all events
+                if (val && typeof val === "object" && val.events) {
+                  Object.keys(val.events).forEach((eventName) => {
+                    eventsList.push({
+                      id: eventName,
+                      name: eventName,
+                      module: k,
+                      count: val.events[eventName],
+                    });
+                  });
+                } else {
+                  // Otherwise treat key as an event name
+                  const eventName = k;
+                  const moduleName =
+                    typeof eventName === "string" &&
+                    eventName.indexOf(":") !== -1
+                      ? String(eventName).split(":")[0]
+                      : "misc";
+
+                  let cnt = 0;
+                  if (
+                    val &&
+                    typeof val === "object" &&
+                    (val.total || val.count)
+                  )
+                    cnt = val.total || val.count;
+                  else if (typeof val === "number") cnt = val;
+                  else cnt = 1;
+
+                  eventsList.push({
+                    id: eventName,
+                    name: eventName,
+                    module: moduleName,
+                    count: cnt,
+                  });
+                }
+              }
+
+              if (eventsList.length === 0) {
+                showToast(
+                  "No events available. Trigger some events first.",
+                  "info"
+                );
+                return;
+              }
+
+              // Build event selector modal
+              const modal = document.createElement("div");
+              modal.style.cssText = "max-height: 400px; overflow-y: auto;";
+
+              eventsList.forEach((event) => {
+                const eventItem = document.createElement("div");
+                eventItem.style.cssText =
+                  "padding: 12px; margin: 8px 0; border: 1px solid #e1e8ed; border-radius: 6px; cursor: pointer; transition: all 0.2s;";
+                eventItem.innerHTML = `
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                      <div style="font-weight: 600; color: #2c3e50;">${event.name}</div>
+                      <div style="font-size: 0.75rem; color: #8899a6; margin-top: 2px;">Module: ${event.module}</div>
+                    </div>
+                    <div style="font-size: 0.75rem; color: #657786; background: #f0f3f5; padding: 4px 8px; border-radius: 12px;">
+                      ${event.count} fired
+                    </div>
+                  </div>
+                `;
+
+                eventItem.addEventListener("mouseenter", () => {
+                  eventItem.style.background = "#f8f9fa";
+                  eventItem.style.borderColor = "#667eea";
+                });
+
+                eventItem.addEventListener("mouseleave", () => {
+                  eventItem.style.background = "white";
+                  eventItem.style.borderColor = "#e1e8ed";
+                });
+
+                eventItem.addEventListener("click", () => {
+                  addEventBinding(event);
+                  document.querySelector(".modal-overlay").remove();
+                });
+
+                modal.appendChild(eventItem);
+              });
+
+              await _createModal({
+                title: "Select Event to Bind",
+                bodyEl: modal,
+                showCancel: true,
+                confirmText: "Cancel",
+              });
+            } catch (error) {
+              console.error("Error showing event selector:", error);
+              showToast("Error loading events: " + error.message, "error");
+            }
+          }
+
+          function addEventBinding(event) {
+            // Check if already bound
+            if (eventBindings.some((b) => b.eventId === event.id)) {
+              showToast("Event already bound", "info");
+              return;
+            }
+
+            // Fetch event schema/payload structure
+            fetchEventPayloadSchema(event).then((payloadSchema) => {
+              eventBindings.push({
+                eventId: event.id,
+                eventName: event.name || event.id,
+                eventDescription: event.description || "",
+                payloadSchema: payloadSchema || {},
+              });
+
+              renderEventBindings();
+              showToast(`Event "${event.name}" bound successfully`, "success");
+            });
+          }
+
+          async function fetchEventPayloadSchema(event) {
+            // Fetch actual event records to extract real payload schema
+            try {
+              const response = await fetch(
+                `/api/event-records?module=${encodeURIComponent(
+                  event.module
+                )}&event=${encodeURIComponent(event.name)}`
+              );
+
+              if (!response.ok) {
+                console.warn(
+                  "Could not fetch event records, using default schema"
+                );
+                return getDefaultSchema();
+              }
+
+              const data = await response.json();
+              const records = data && data.records ? data.records : [];
+
+              if (records.length === 0) {
+                console.warn("No event records found, using default schema");
+                return getDefaultSchema();
+              }
+
+              // Get the most recent record to infer schema
+              const latestRecord = records[0];
+
+              // Extract payload from the record
+              let payload =
+                latestRecord.payload || latestRecord.data || latestRecord;
+
+              // If payload is a string, try to parse it
+              if (typeof payload === "string") {
+                try {
+                  payload = JSON.parse(payload);
+                } catch (e) {
+                  console.warn("Could not parse payload JSON");
+                }
+              }
+
+              // Infer schema from actual payload, prioritizing business data
+              return inferSchemaFromSample(payload);
+            } catch (error) {
+              console.error("Error fetching event payload schema:", error);
+              return getDefaultSchema();
+            }
+          }
+
+          function getDefaultSchema() {
+            return {
+              primaryFields: {
+                value: {
+                  type: "string",
+                  description: "Event value",
+                  sample: null,
+                },
+              },
+              metadataFields: {
+                id: { type: "string", description: "Event ID" },
+                timestamp: { type: "datetime", description: "Event timestamp" },
+              },
+            };
+          }
+
+          function inferSchemaFromSample(sample) {
+            const schema = {
+              primaryFields: {},
+              metadataFields: {},
+            };
+
+            if (typeof sample === "object" && sample !== null) {
+              // Extract detail/data object as primary fields
+              const detailObj = sample.detail || sample.data || sample.payload;
+
+              if (detailObj && typeof detailObj === "object") {
+                // Process detail fields as primary (these are the business data)
+                Object.keys(detailObj).forEach((key) => {
+                  const value = detailObj[key];
+                  const fieldType = inferFieldType(value);
+
+                  schema.primaryFields[key] = {
+                    type: fieldType,
+                    description: `${key} (${fieldType})`,
+                    sample: value,
+                    path: `detail.${key}`, // Track the actual path
+                  };
+                });
+              } else {
+                // No detail object, treat first-level non-metadata fields as primary
+                Object.keys(sample).forEach((key) => {
+                  const value = sample[key];
+                  const fieldType = inferFieldType(value);
+
+                  // Identify metadata vs business fields
+                  const metadataKeys = [
+                    "id",
+                    "event",
+                    "module",
+                    "domain",
+                    "version",
+                    "ts",
+                    "publishedTs",
+                    "producer",
+                    "actor",
+                    "status",
+                    "attempts",
+                    "level",
+                    "canonicalEvent",
+                  ];
+
+                  if (metadataKeys.includes(key)) {
+                    schema.metadataFields[key] = {
+                      type: fieldType,
+                      description: `${key} (${fieldType})`,
+                      sample: value,
+                    };
+                  } else {
+                    schema.primaryFields[key] = {
+                      type: fieldType,
+                      description: `${key} (${fieldType})`,
+                      sample: value,
+                    };
+                  }
+                });
+              }
+
+              // Always add common metadata fields if they exist
+              const metadataKeys = [
+                "id",
+                "event",
+                "module",
+                "ts",
+                "field",
+                "canonicalEvent",
+              ];
+              metadataKeys.forEach((key) => {
+                if (sample[key] !== undefined && !schema.metadataFields[key]) {
+                  const value = sample[key];
+                  const fieldType = inferFieldType(value);
+                  schema.metadataFields[key] = {
+                    type: fieldType,
+                    description: `${key} (metadata)`,
+                    sample: value,
+                  };
+                }
+              });
+            }
+
+            return schema;
+          }
+
+          function inferFieldType(value) {
+            if (value === null) return "null";
+            if (Array.isArray(value)) return "array";
+            if (
+              value instanceof Date ||
+              (typeof value === "string" &&
+                !isNaN(Date.parse(value)) &&
+                value.includes("T"))
+            ) {
+              return "datetime";
+            }
+            if (typeof value === "number") {
+              return Number.isInteger(value) ? "integer" : "number";
+            }
+            if (typeof value === "object") return "object";
+            return typeof value;
+          }
+
+          function renderEventBindings() {
+            const container = document.getElementById("event-bindings-list");
+
+            if (eventBindings.length === 0) {
+              container.innerHTML =
+                '<div style="color: #8899a6; font-size: 0.85rem; text-align: center; padding: 12px;">No events connected. Click "Add Event" to bind event payloads to this action.</div>';
+              return;
+            }
+
+            container.innerHTML = eventBindings
+              .map((binding, index) => {
+                const primaryFields =
+                  binding.payloadSchema?.primaryFields || {};
+                const metadataFields =
+                  binding.payloadSchema?.metadataFields || {};
+                const hasPrimary = Object.keys(primaryFields).length > 0;
+                const hasMetadata = Object.keys(metadataFields).length > 0;
+
+                return `
+              <div style="background: white; border: 1px solid #e1e8ed; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                  <div style="flex: 1;">
+                    <div style="font-weight: 600; color: #2c3e50; font-size: 0.9rem;">${
+                      binding.eventName
+                    }</div>
+                    <div style="font-size: 0.75rem; color: #8899a6; margin-top: 2px;">${
+                      binding.eventDescription || "Event data fields"
+                    }</div>
+
+                    ${
+                      hasPrimary
+                        ? `
+                    <div style="margin-top: 8px;">
+                      <div style="font-size: 0.75rem; font-weight: 600; color: #2c3e50; margin-bottom: 4px;">📦 Event Data (Click to insert):</div>
+                      <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                        ${Object.keys(primaryFields)
+                          .map((field) => {
+                            const info = primaryFields[field];
+                            const sampleDisplay =
+                              info.sample !== undefined && info.sample !== null
+                                ? typeof info.sample === "object"
+                                  ? JSON.stringify(info.sample).substring(0, 30)
+                                  : String(info.sample).substring(0, 30)
+                                : "";
+                            return `
+                            <span
+                              style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 10px; border-radius: 14px; font-size: 0.75rem; cursor: pointer; box-shadow: 0 2px 4px rgba(102,126,234,0.3); transition: all 0.2s;"
+                              onclick="insertPayloadField('${field}', '${
+                              binding.eventId
+                            }')"
+                              onmouseenter="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 8px rgba(102,126,234,0.5)';"
+                              onmouseleave="this.style.transform=''; this.style.boxShadow='0 2px 4px rgba(102,126,234,0.3)';"
+                              title="${info.description}${
+                              sampleDisplay ? "\nSample: " + sampleDisplay : ""
+                            }"
+                            >
+                              <strong>${field}</strong> ${
+                              sampleDisplay
+                                ? `= "${sampleDisplay}"`
+                                : `(${info.type})`
+                            }
+                            </span>
+                          `;
+                          })
+                          .join("")}
+                      </div>
+                    </div>
+                    `
+                        : ""
+                    }
+
+                    ${
+                      hasMetadata
+                        ? `
+                    <div style="margin-top: 8px;">
+                      <div
+                        style="font-size: 0.75rem; color: #657786; cursor: pointer; user-select: none;"
+                        onclick="toggleMetadata('metadata-${index}')"
+                      >
+                        <span id="metadata-toggle-${index}">▶</span> Event Metadata (${
+                            Object.keys(metadataFields).length
+                          } fields)
+                      </div>
+                      <div id="metadata-${index}" style="display: none; margin-top: 4px; padding-left: 12px;">
+                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                          ${Object.keys(metadataFields)
+                            .map((field) => {
+                              const info = metadataFields[field];
+                              return `
+                              <span
+                                style="background: #f0f3f7; color: #657786; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; cursor: pointer; border: 1px solid #e1e8ed;"
+                                onclick="insertPayloadField('${field}', '${binding.eventId}')"
+                                title="${info.description}"
+                              >
+                                ${field}
+                              </span>
+                            `;
+                            })
+                            .join("")}
+                        </div>
+                      </div>
+                    </div>
+                    `
+                        : ""
+                    }
+                  </div>
+                  <button class="btn btn-danger" onclick="removeEventBinding(${index})" style="padding: 4px 8px; font-size: 0.75rem;">✕</button>
+                </div>
+              </div>
+            `;
+              })
+              .join("");
+
+            // Show test execution area when events are bound
+            document.getElementById("test-execution-area").style.display =
+              "block";
+          }
+
+          window.toggleMetadata = function (id) {
+            const el = document.getElementById(id);
+            const toggleIcon = document.getElementById(
+              "metadata-toggle-" + id.split("-")[1]
+            );
+            if (el) {
+              if (el.style.display === "none") {
+                el.style.display = "block";
+                if (toggleIcon) toggleIcon.textContent = "▼";
+              } else {
+                el.style.display = "none";
+                if (toggleIcon) toggleIcon.textContent = "▶";
+              }
+            }
+          };
+
+          window.removeEventBinding = function (index) {
+            eventBindings.splice(index, 1);
+            renderEventBindings();
+            detectSQLParameters();
+            showToast("Event binding removed", "info");
+          };
+
+          window.insertPayloadField = function (field, eventId) {
+            const queryTextarea = document.getElementById("action-query");
+            // Find the event binding to get a clean event name
+            const binding = eventBindings.find((b) => b.eventId === eventId);
+            const eventName = binding
+              ? binding.eventName.split(":").pop() || binding.eventName
+              : eventId;
+            // Use event-namespaced syntax: {{eventName.field}}
+            const placeholder = `{{${eventName}.${field}}}`;
+            insertAtCursor(queryTextarea, placeholder);
+
+            // Trigger parameter detection
+            setTimeout(() => detectSQLParameters(), 100);
+          };
+
+          function setupSQLParameterDetection() {
+            const queryTextarea = document.getElementById("action-query");
+            if (queryTextarea) {
+              queryTextarea.addEventListener("input", () => {
+                detectSQLParameters();
+                triggerAutosave();
+              });
+            }
+          }
+
+          function detectSQLParameters() {
+            const query = document.getElementById("action-query").value;
+            // Match both old {{event.field}} and new {{eventName.field}} syntax
+            const paramRegex = /\{\{(\w+)\.(\w+)\}\}/g;
+            const params = [];
+            let match;
+
+            while ((match = paramRegex.exec(query)) !== null) {
+              params.push({
+                eventName: match[1],
+                fieldName: match[2],
+                fullMatch: match[0],
+              });
+            }
+
+            renderVariableMappings(params);
+          }
+
+          function renderVariableMappings(params) {
+            const container = document.getElementById("variable-mapping-area");
+
+            if (params.length === 0) {
+              container.innerHTML =
+                '<div style="color: #8899a6; font-size: 0.85rem; text-align: center; padding: 8px;">Use {{eventName.fieldName}} in your SQL query. Variables will appear here.</div>';
+              return;
+            }
+
+            container.innerHTML = `
+              <div style="font-size: 0.85rem; color: #2c3e50; margin-bottom: 8px;">
+                <strong>Detected Parameters:</strong>
+              </div>
+              ${params
+                .map((param) => {
+                  // param is now {eventName, fieldName, fullMatch}
+                  const eventName = param.eventName;
+                  const fieldName = param.fieldName;
+
+                  // Find which event binding this refers to
+                  let sourceEvent = null;
+                  let fieldInfo = null;
+                  let isPrimary = false;
+                  let isValid = false;
+
+                  for (const binding of eventBindings) {
+                    // Match by event name (check if binding name contains the eventName)
+                    const bindingName =
+                      binding.eventName.split(":").pop() || binding.eventName;
+
+                    if (
+                      bindingName === eventName ||
+                      binding.eventName === eventName ||
+                      eventName === "event"
+                    ) {
+                      // Found the event, now check if field exists
+                      if (binding.payloadSchema?.primaryFields?.[fieldName]) {
+                        sourceEvent = binding;
+                        fieldInfo =
+                          binding.payloadSchema.primaryFields[fieldName];
+                        isPrimary = true;
+                        isValid = true;
+                        break;
+                      } else if (
+                        binding.payloadSchema?.metadataFields?.[fieldName]
+                      ) {
+                        sourceEvent = binding;
+                        fieldInfo =
+                          binding.payloadSchema.metadataFields[fieldName];
+                        isPrimary = false;
+                        isValid = true;
+                        break;
+                      }
+                    }
+                  }
+
+                  const sampleDisplay =
+                    fieldInfo?.sample !== undefined &&
+                    fieldInfo?.sample !== null
+                      ? typeof fieldInfo.sample === "object"
+                        ? JSON.stringify(fieldInfo.sample).substring(0, 40)
+                        : String(fieldInfo.sample).substring(0, 40)
+                      : "";
+
+                  return `
+                  <div style="background: ${
+                    isValid ? (isPrimary ? "#f0f7ff" : "#f8f9fa") : "#fff3cd"
+                  }; padding: 8px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid ${
+                    isValid ? (isPrimary ? "#667eea" : "#95a5a6") : "#ffc107"
+                  };">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                      <div>
+                        <code style="background: ${
+                          isValid
+                            ? isPrimary
+                              ? "#e8f4ff"
+                              : "#e1e8ed"
+                            : "#fff9e6"
+                        }; padding: 2px 6px; border-radius: 3px; font-size: 0.85rem;">${
+                    param.fullMatch
+                  }</code>
+                        ${
+                          sourceEvent
+                            ? `<span style="color: #8899a6; font-size: 0.75rem; margin-left: 8px;">from ${
+                                sourceEvent.eventName
+                              } ${isPrimary ? "📦" : "🏷️"}</span>`
+                            : `<span style="color: #e74c3c; font-size: 0.75rem; margin-left: 8px;">⚠ Event "${eventName}" not found or field not in payload</span>`
+                        }
+                      </div>
+                      <div style="font-size: 0.75rem; color: #657786;">
+                        ${fieldInfo ? fieldInfo.type : "unknown"}
+                      </div>
+                    </div>
+                    ${
+                      sampleDisplay
+                        ? `<div style="font-size: 0.75rem; color: #657786; margin-top: 4px;">Sample: <code style="background: white; padding: 1px 4px; border-radius: 2px;">${sampleDisplay}</code></div>`
+                        : ""
+                    }
+                    ${
+                      fieldInfo && fieldInfo.description
+                        ? `<div style="font-size: 0.75rem; color: #8899a6; margin-top: 4px;">${fieldInfo.description}</div>`
+                        : ""
+                    }
+                  </div>
+                `;
+                })
+                .join("")}
+            `;
+          }
+
+          function setupPreviewHandlers() {
+            const testBtn = document.getElementById("test-action-execution");
+            const testRealBtn = document.getElementById(
+              "test-with-real-events"
+            );
+            const aiSuggestBtn = document.getElementById("ai-suggest-mapping");
+
+            if (testBtn) {
+              testBtn.addEventListener("click", testActionExecution);
+            }
+
+            if (testRealBtn) {
+              testRealBtn.addEventListener("click", testWithRealEvents);
+            }
+
+            if (aiSuggestBtn) {
+              aiSuggestBtn.addEventListener("click", aiSuggestMappingsEnhanced);
+            }
+          }
+
+          async function testActionExecution() {
+            const sampleDataTextarea =
+              document.getElementById("sample-event-data");
+            const resultsArea = document.getElementById("test-results-area");
+            const query = document.getElementById("action-query").value;
+
+            if (!query) {
+              showToast("Please enter a SQL query first", "error");
+              return;
+            }
+
+            let sampleData;
+            try {
+              sampleData = JSON.parse(sampleDataTextarea.value || "{}");
+            } catch (error) {
+              showToast("Invalid JSON in sample event data", "error");
+              return;
+            }
+
+            try {
+              resultsArea.innerHTML =
+                '<div style="color: #657786;">⏳ Processing...</div>';
+
+              // Replace parameters in query - supports {{eventName.field}} syntax
+              let processedQuery = query;
+              const paramRegex = /\{\{(\w+)\.(\w+)\}\}/g;
+
+              processedQuery = processedQuery.replace(
+                paramRegex,
+                (match, eventName, fieldName) => {
+                  // For manual test, try to find value in sample data or detail object
+                  let value = sampleData[fieldName];
+
+                  // If not found, check in detail/data object
+                  if (value === undefined && sampleData.detail) {
+                    value = sampleData.detail[fieldName];
+                  }
+                  if (value === undefined && sampleData.data) {
+                    value = sampleData.data[fieldName];
+                  }
+
+                  if (value === undefined) {
+                    throw new Error(
+                      `Missing field "${fieldName}" in sample data (looking for ${match})`
+                    );
+                  }
+
+                  // Properly escape and quote values
+                  if (typeof value === "string") {
+                    return `'${value.replace(/'/g, "''")}'`;
+                  } else if (typeof value === "number") {
+                    return value;
+                  } else if (value === null) {
+                    return "NULL";
+                  } else {
+                    return `'${JSON.stringify(value)}'`;
+                  }
+                }
+              );
+
+              // Show processed query
+              resultsArea.innerHTML = `
+                <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
+                  <div style="font-weight: 600; margin-bottom: 6px; color: #2c3e50;">Processed SQL:</div>
+                  <code style="background: white; display: block; padding: 8px; border-radius: 4px; font-size: 0.85rem; overflow-x: auto;">${processedQuery}</code>
+                </div>
+              `;
+
+              // Extract table from query for execution
+              const fromMatch = processedQuery.match(/FROM\s+(\w+)/i);
+              if (!fromMatch) {
+                resultsArea.innerHTML +=
+                  '<div style="color: #e74c3c; margin-top: 8px;">⚠ Could not extract table name from query</div>';
+                return;
+              }
+
+              const table = fromMatch[1];
+
+              // Execute query
+              const response = await fetch(`/${table}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: processedQuery }),
+                timeout: 30000,
+              });
+
+              if (!response.ok) {
+                throw new Error(`Query execution failed: ${response.status}`);
+              }
+
+              const result = await response.json();
+
+              if (!result.data || !Array.isArray(result.data)) {
+                resultsArea.innerHTML += `
+                  <div style="background: #d4edda; padding: 10px; border-radius: 6px; border: 1px solid #c3e6cb;">
+                    <strong style="color: #155724;">✓ Query executed successfully</strong><br>
+                    <div style="margin-top: 6px; color: #155724;">No rows returned</div>
+                  </div>
+                `;
+                return;
+              }
+
+              const data = result.data;
+              const columns = Object.keys(data[0] || {});
+
+              resultsArea.innerHTML += `
+                <div style="background: #d4edda; padding: 10px; border-radius: 6px; border: 1px solid #c3e6cb; margin-bottom: 8px;">
+                  <strong style="color: #155724;">✓ Query executed successfully</strong>
+                </div>
+                <div style="max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                    <thead>
+                      <tr style="background: #f8f9fa;">
+                        ${columns
+                          .map(
+                            (col) =>
+                              `<th style="padding: 8px; text-align: left; border-bottom: 2px solid #e1e8ed;">${col}</th>`
+                          )
+                          .join("")}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${data
+                        .slice(0, 50)
+                        .map(
+                          (row) => `
+                        <tr>
+                          ${columns
+                            .map(
+                              (col) =>
+                                `<td style="padding: 8px; border-bottom: 1px solid #eef2f7;">${
+                                  row[col] !== null
+                                    ? row[col]
+                                    : "<em style='color: #999;'>NULL</em>"
+                                }</td>`
+                            )
+                            .join("")}
+                        </tr>
+                      `
+                        )
+                        .join("")}
+                    </tbody>
+                  </table>
+                </div>
+                ${
+                  data.length > 50
+                    ? `<p style="margin-top: 8px; color: #657786; font-size: 0.85rem;">Showing first 50 rows of ${data.length} total rows.</p>`
+                    : ""
+                }
+              `;
+
+              showToast("Test executed successfully!", "success");
+            } catch (error) {
+              console.error("Test execution error:", error);
+              resultsArea.innerHTML = `
+                <div style="background: #f8d7da; padding: 10px; border-radius: 6px; border: 1px solid #f5c6cb;">
+                  <strong style="color: #721c24;">✕ Test Execution Failed</strong><br>
+                  <div style="margin-top: 6px; color: #721c24; font-size: 0.85rem;">${error.message}</div>
+                </div>
+              `;
+              showToast("Test execution failed: " + error.message, "error");
+            }
+          }
+
+          // ====== ENHANCED AI & REAL EVENT TESTING SYSTEM ======
+
+          async function testWithRealEvents() {
+            if (eventBindings.length === 0) {
+              showToast("Please bind at least one event first", "info");
+              return;
+            }
+
+            const query = document.getElementById("action-query").value;
+            if (!query) {
+              showToast("Please enter a SQL query first", "error");
+              return;
+            }
+
+            const resultsArea = document.getElementById("test-results-area");
+            resultsArea.innerHTML =
+              '<div style="color: #657786;">⏳ Fetching real event data...</div>';
+
+            try {
+              // Fetch real events for each bound event
+              const realEventSamples = [];
+
+              for (const binding of eventBindings) {
+                const response = await fetch(
+                  `/api/event-records?module=${encodeURIComponent(
+                    binding.eventId.split(":")[0] || "misc"
+                  )}&event=${encodeURIComponent(binding.eventId)}`
+                );
+
+                if (response.ok) {
+                  const data = await response.json();
+                  const records = data && data.records ? data.records : [];
+
+                  // Get up to 3 random samples
+                  const samples = [];
+                  const maxSamples = Math.min(3, records.length);
+                  for (let i = 0; i < maxSamples; i++) {
+                    const randomIndex = Math.floor(
+                      Math.random() * records.length
+                    );
+                    samples.push(records[randomIndex]);
+                  }
+
+                  realEventSamples.push({
+                    binding: binding,
+                    samples: samples,
+                  });
+                }
+              }
+
+              if (
+                realEventSamples.length === 0 ||
+                realEventSamples.every((s) => s.samples.length === 0)
+              ) {
+                resultsArea.innerHTML = `
+                  <div style="background: #fff3cd; padding: 12px; border-radius: 6px; border-left: 3px solid #ffc107;">
+                    <strong style="color: #856404;">⚠ No Real Event Data Found</strong><br>
+                    <div style="margin-top: 6px; color: #856404; font-size: 0.85rem;">
+                      No actual event records found in the registry. Trigger some events first, then test again.
+                    </div>
+                  </div>
+                `;
+                return;
+              }
+
+              // Test with each sample
+              let allTestsPassed = true;
+              let testResults = [];
+
+              for (const { binding, samples } of realEventSamples) {
+                for (let i = 0; i < samples.length; i++) {
+                  const sample = samples[i];
+                  let payload = sample.payload || sample.data || sample;
+
+                  if (typeof payload === "string") {
+                    try {
+                      payload = JSON.parse(payload);
+                    } catch (e) {
+                      console.warn("Could not parse payload");
+                    }
+                  }
+
+                  try {
+                    const result = await executeSQLWithPayload(query, payload);
+                    testResults.push({
+                      success: true,
+                      eventName: binding.eventName,
+                      sampleIndex: i + 1,
+                      payload: payload,
+                      result: result,
+                    });
+                  } catch (error) {
+                    allTestsPassed = false;
+                    testResults.push({
+                      success: false,
+                      eventName: binding.eventName,
+                      sampleIndex: i + 1,
+                      payload: payload,
+                      error: error.message,
+                    });
+                  }
+                }
+              }
+
+              // Render comprehensive test results
+              renderRealEventTestResults(testResults, allTestsPassed);
+
+              // Save validation metadata
+              if (allTestsPassed) {
+                variableMappings._validation = {
+                  tested: true,
+                  testDate: new Date().toISOString(),
+                  samplesCount: testResults.length,
+                  allPassed: true,
+                };
+                showToast(
+                  `✅ All ${testResults.length} tests passed! Ready to save.`,
+                  "success"
+                );
+              } else {
+                showToast(
+                  `⚠ Some tests failed. Review and fix issues.`,
+                  "error"
+                );
+              }
+            } catch (error) {
+              console.error("Real event testing error:", error);
+              resultsArea.innerHTML = `
+                <div style="background: #f8d7da; padding: 12px; border-radius: 6px; border-left: 3px solid #f5c6cb;">
+                  <strong style="color: #721c24;">✕ Testing Failed</strong><br>
+                  <div style="margin-top: 6px; color: #721c24; font-size: 0.85rem;">${error.message}</div>
+                </div>
+              `;
+            }
+          }
+
+          async function executeSQLWithPayload(query, payload) {
+            // Replace parameters in query - supports {{eventName.field}} syntax
+            let processedQuery = query;
+            const paramRegex = /\{\{(\w+)\.(\w+)\}\}/g;
+
+            processedQuery = processedQuery.replace(
+              paramRegex,
+              (match, eventName, fieldName) => {
+                // Extract value from payload, checking detail/data objects
+                let value = payload[fieldName];
+
+                // If not found at top level, check detail object (common pattern)
+                if (value === undefined && payload.detail) {
+                  value = payload.detail[fieldName];
+                }
+                // Also check data object
+                if (value === undefined && payload.data) {
+                  value = payload.data[fieldName];
+                }
+
+                if (value === undefined) {
+                  throw new Error(
+                    `Missing field "${fieldName}" in event payload (looking for ${match})`
+                  );
+                }
+
+                // Properly escape and quote values
+                if (typeof value === "string") {
+                  return `'${value.replace(/'/g, "''")}'`;
+                } else if (typeof value === "number") {
+                  return value;
+                } else if (value === null) {
+                  return "NULL";
+                } else {
+                  return `'${JSON.stringify(value)}'`;
+                }
+              }
+            );
+
+            // Extract table from query
+            const fromMatch = processedQuery.match(/FROM\s+(\w+)/i);
+            if (!fromMatch) {
+              throw new Error("Could not extract table name from query");
+            }
+
+            const table = fromMatch[1];
+
+            // Execute query
+            const response = await fetch(`/${table}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt: processedQuery }),
+              timeout: 30000,
+            });
+
+            if (!response.ok) {
+              throw new Error(`Query execution failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            return {
+              processedQuery: processedQuery,
+              data: result.data || [],
+              rowCount: (result.data || []).length,
+            };
+          }
+
+          function renderRealEventTestResults(testResults, allPassed) {
+            const resultsArea = document.getElementById("test-results-area");
+
+            const summary = `
+              <div style="background: ${
+                allPassed ? "#d4edda" : "#fff3cd"
+              }; padding: 12px; border-radius: 6px; border-left: 3px solid ${
+              allPassed ? "#c3e6cb" : "#ffc107"
+            }; margin-bottom: 12px;">
+                <strong style="color: ${allPassed ? "#155724" : "#856404"};">
+                  ${allPassed ? "✅ All Tests Passed" : "⚠ Some Tests Failed"}
+                </strong><br>
+                <div style="margin-top: 6px; color: ${
+                  allPassed ? "#155724" : "#856404"
+                }; font-size: 0.85rem;">
+                  Tested with ${testResults.length} real event sample(s)<br>
+                  ${testResults.filter((r) => r.success).length} passed, ${
+              testResults.filter((r) => !r.success).length
+            } failed
+                </div>
+              </div>
+            `;
+
+            const details = testResults
+              .map((test, idx) => {
+                if (test.success) {
+                  return `
+                  <div style="background: white; border: 1px solid #d4edda; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                      <div>
+                        <strong style="color: #28a745; font-size: 0.9rem;">✓ Test ${
+                          idx + 1
+                        }: ${test.eventName} (Sample ${
+                    test.sampleIndex
+                  })</strong>
+                        <div style="font-size: 0.75rem; color: #657786; margin-top: 4px;">
+                          ${test.result.rowCount} row(s) returned
+                        </div>
+                      </div>
+                      <button class="btn btn-sm" onclick="toggleDetails('test-${idx}')" style="padding: 2px 8px; font-size: 0.75rem;">
+                        View Details
+                      </button>
+                    </div>
+                    <div id="test-${idx}" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e1e8ed;">
+                      <div style="margin-bottom: 6px;">
+                        <strong style="font-size: 0.75rem;">Event Payload:</strong>
+                        <pre style="background: #f8f9fa; padding: 6px; border-radius: 4px; font-size: 0.7rem; overflow-x: auto;">${JSON.stringify(
+                          test.payload,
+                          null,
+                          2
+                        )}</pre>
+                      </div>
+                      <div>
+                        <strong style="font-size: 0.75rem;">Executed SQL:</strong>
+                        <code style="background: #f8f9fa; display: block; padding: 6px; border-radius: 4px; font-size: 0.7rem; overflow-x: auto;">${
+                          test.result.processedQuery
+                        }</code>
+                      </div>
+                    </div>
+                  </div>
+                `;
+                } else {
+                  return `
+                  <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                      <div>
+                        <strong style="color: #856404; font-size: 0.9rem;">✕ Test ${
+                          idx + 1
+                        }: ${test.eventName} (Sample ${
+                    test.sampleIndex
+                  })</strong>
+                        <div style="font-size: 0.75rem; color: #721c24; margin-top: 4px;">
+                          Error: ${test.error}
+                        </div>
+                      </div>
+                      <button class="btn btn-sm" onclick="toggleDetails('test-${idx}')" style="padding: 2px 8px; font-size: 0.75rem;">
+                        View Details
+                      </button>
+                    </div>
+                    <div id="test-${idx}" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e1e8ed;">
+                      <div>
+                        <strong style="font-size: 0.75rem;">Event Payload:</strong>
+                        <pre style="background: #f8f9fa; padding: 6px; border-radius: 4px; font-size: 0.7rem; overflow-x: auto;">${JSON.stringify(
+                          test.payload,
+                          null,
+                          2
+                        )}</pre>
+                      </div>
+                    </div>
+                  </div>
+                `;
+                }
+              })
+              .join("");
+
+            resultsArea.innerHTML = summary + details;
+          }
+
+          window.toggleDetails = function (id) {
+            const el = document.getElementById(id);
+            if (el) {
+              el.style.display = el.style.display === "none" ? "block" : "none";
+            }
+          };
+
+          async function aiSuggestMappingsEnhanced() {
+            if (eventBindings.length === 0) {
+              showToast("Please bind at least one event first", "info");
+              return;
+            }
+
+            const description = document.getElementById("action-desc").value;
+
+            if (!description || !description.trim()) {
+              showToast("Please enter a description first", "info");
+              return;
+            }
+
+            try {
+              showToast(
+                "🤖 AI analyzing event schemas and DB structure...",
+                "info"
+              );
+
+              // Build comprehensive context for AI
+              let context = "=== ORCHESTRATION EVENT-TO-SQL MAPPING ===\n\n";
+
+              context +=
+                "TASK: Generate a SQL query that uses event payload fields with {{event.fieldName}} syntax.\n\n";
+
+              context += "BUSINESS REQUIREMENT:\n";
+              context += description + "\n\n";
+
+              context += "AVAILABLE EVENT PAYLOADS:\n\n";
+              eventBindings.forEach((binding) => {
+                context += `Event: "${binding.eventName}"\n`;
+
+                // Show primary fields (business data) prominently
+                const primaryFields =
+                  binding.payloadSchema?.primaryFields || {};
+                const metadataFields =
+                  binding.payloadSchema?.metadataFields || {};
+
+                if (Object.keys(primaryFields).length > 0) {
+                  context += `Primary Event Data (use these for business logic):\n`;
+                  Object.keys(primaryFields).forEach((f) => {
+                    const info = primaryFields[f];
+                    context += `  - ${f}: ${info.type}`;
+                    if (info.sample !== undefined && info.sample !== null) {
+                      const sampleStr =
+                        typeof info.sample === "object"
+                          ? JSON.stringify(info.sample)
+                          : String(info.sample);
+                      context += ` (sample value: ${sampleStr})`;
+                    }
+                    context += `\n`;
+                  });
+                }
+
+                if (Object.keys(metadataFields).length > 0) {
+                  context += `Metadata Fields (available if needed):\n`;
+                  Object.keys(metadataFields).forEach((f) => {
+                    const info = metadataFields[f];
+                    context += `  - ${f}: ${info.type}\n`;
+                  });
+                }
+
+                context += `\n`;
+              });
+
+              // Add DB schema context
+              context += "DATABASE SCHEMA:\n";
+              if (window.dbSchema && window.dbSchema.tables) {
+                Object.keys(window.dbSchema.tables).forEach((tableName) => {
+                  const table = window.dbSchema.tables[tableName];
+                  context += `\nTable: ${tableName}\n`;
+                  context += `Columns:\n`;
+                  (table.columns || []).forEach((col) => {
+                    context += `  - ${col.name}: ${col.type}${
+                      col.nullable ? " (nullable)" : ""
+                    }${col.primaryKey ? " PRIMARY KEY" : ""}\n`;
+                  });
+                });
+              } else {
+                context +=
+                  "(Database schema not loaded - use generic table/column names)\n";
+              }
+
+              context += "\nORCHESTRATION GRAMMAR:\n";
+              context +=
+                "- Use {{eventName.fieldName}} syntax where eventName is the short event name (last part after colon)\n";
+              context +=
+                "- Example: INSERT INTO users (id, email) VALUES ({{created.userId}}, {{created.email}})\n";
+              context +=
+                "- Example: UPDATE orders SET status = {{confirmed.status}} WHERE id = {{confirmed.orderId}}\n";
+              context +=
+                "- Example: SELECT * FROM products WHERE id = {{added.productId}}\n";
+              context +=
+                "- Each bound event is identified by its short name - use this prefix for all fields from that event\n\n";
+
+              context += "REQUIREMENTS:\n";
+              context += "1. Generate a complete, valid SQL query\n";
+              context +=
+                "2. Use {{eventName.fieldName}} for all dynamic values (eventName = short event name)\n";
+              context +=
+                "3. Match event field types to database column types\n";
+              context += "4. Return ONLY the SQL query, no explanations\n";
+              context +=
+                "5. Ensure the query fulfills the business requirement\n";
+
+              const aiTarget =
+                window.RUNTIME_CONFIG &&
+                window.RUNTIME_CONFIG.ai &&
+                window.RUNTIME_CONFIG.ai.mode === "direct"
+                  ? window.RUNTIME_CONFIG.ai.directUrl
+                  : "/ai/send";
+
+              const response = await fetch(aiTarget, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sessionId: "orchestrator-ai-" + Date.now(),
+                  aiquestion: context,
+                }),
+                timeout: 120000,
+              });
+
+              if (!response.ok) {
+                throw new Error(`AI request failed: ${response.status}`);
+              }
+
+              const result = await response.json();
+
+              let suggestedQuery = "";
+              if (result && typeof result === "object") {
+                const payload = result.data || result;
+                if (typeof payload === "string") {
+                  suggestedQuery = payload;
+                } else if (typeof payload === "object") {
+                  suggestedQuery = payload.response || JSON.stringify(payload);
+                }
+              }
+
+              // Clean up AI response
+              suggestedQuery = suggestedQuery
+                .replace(/```sql\n?/gi, "")
+                .replace(/```\n?/g, "")
+                .trim();
+
+              if (suggestedQuery) {
+                document.getElementById("action-query").value = suggestedQuery;
+                detectSQLParameters();
+                showToast(
+                  "✨ AI-generated SQL applied! Use 'Test with Real Events' to validate.",
+                  "success"
+                );
+              } else {
+                showToast("AI did not return a valid suggestion", "error");
+              }
+            } catch (error) {
+              console.error("AI suggestion error:", error);
+              showToast(
+                "Error getting AI suggestion: " + error.message,
+                "error"
+              );
+            }
+          }
+
+          // ====== END ENHANCED AI & TESTING SYSTEM ======
+
+          async function aiSuggestMappings() {
+            if (eventBindings.length === 0) {
+              showToast("Please bind at least one event first", "info");
+              return;
+            }
+
+            const description = document.getElementById("action-desc").value;
+
+            if (!description || !description.trim()) {
+              showToast("Please enter a description first", "info");
+              return;
+            }
+
+            try {
+              showToast("Asking AI for suggestions...", "info");
+
+              // Build context for AI
+              let context = "Event Payloads Available:\n\n";
+
+              eventBindings.forEach((binding) => {
+                context += `Event: ${binding.eventName}\n`;
+                context += `Fields: ${Object.keys(binding.payloadSchema || {})
+                  .map((f) => {
+                    const info = binding.payloadSchema[f];
+                    return `${f} (${info.type})`;
+                  })
+                  .join(", ")}\n\n`;
+              });
+
+              context += `\nBusiness Use Case: ${description}\n\n`;
+              context +=
+                "Generate a SQL query that uses event payload fields with {{event.fieldName}} syntax.";
+
+              const aiTarget =
+                window.RUNTIME_CONFIG &&
+                window.RUNTIME_CONFIG.ai &&
+                window.RUNTIME_CONFIG.ai.mode === "direct"
+                  ? window.RUNTIME_CONFIG.ai.directUrl
+                  : "/ai/send";
+
+              const response = await fetch(aiTarget, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sessionId: "action-mapper-" + Date.now(),
+                  aiquestion: context,
+                }),
+                timeout: 120000,
+              });
+
+              if (!response.ok) {
+                throw new Error(`AI request failed: ${response.status}`);
+              }
+
+              const result = await response.json();
+
+              let suggestedQuery = "";
+              if (result && typeof result === "object") {
+                const payload = result.data || result;
+                if (typeof payload === "string") {
+                  suggestedQuery = payload;
+                } else if (typeof payload === "object") {
+                  suggestedQuery = payload.response || JSON.stringify(payload);
+                }
+              }
+
+              // Clean up AI response
+              suggestedQuery = suggestedQuery
+                .replace(/```sql\n?/gi, "")
+                .replace(/```\n?/g, "")
+                .trim();
+
+              if (suggestedQuery) {
+                document.getElementById("action-query").value = suggestedQuery;
+                detectSQLParameters();
+                showToast(
+                  "AI suggestion applied! Review and adjust as needed.",
+                  "success"
+                );
+              } else {
+                showToast("AI did not return a valid suggestion", "error");
+              }
+            } catch (error) {
+              console.error("AI suggestion error:", error);
+              showToast(
+                "Error getting AI suggestion: " + error.message,
+                "error"
+              );
+            }
+          }
+
+          // Update collectEditor to include event bindings
+          const originalCollectEditor = collectEditor;
+          collectEditor = function () {
+            const data = originalCollectEditor();
+            data.eventBindings = eventBindings;
+            data.variableMappings = variableMappings;
+            return data;
+          };
+
+          // Update openForEdit to load event bindings
+          const originalOpenForEdit = openForEdit;
+          openForEdit = async function (id) {
+            await originalOpenForEdit(id);
+
+            // Load event bindings if they exist
+            if (currentAction && currentAction.eventBindings) {
+              eventBindings = currentAction.eventBindings || [];
+              variableMappings = currentAction.variableMappings || {};
+              renderEventBindings();
+              detectSQLParameters();
+            }
+          };
+
+          // Update clearEditor to reset event bindings
+          const originalClearEditor = clearEditor;
+          clearEditor = function () {
+            originalClearEditor();
+            eventBindings = [];
+            variableMappings = {};
+            renderEventBindings();
+            document.getElementById("variable-mapping-area").innerHTML =
+              '<div style="color: #8899a6; font-size: 0.85rem; text-align: center; padding: 8px;">Use {{event.fieldName}} in your SQL query. Variables will appear here.</div>';
+            document.getElementById("test-execution-area").style.display =
+              "none";
+          };
+
+          // ====== END EVENT BINDING SYSTEM ======
+
           async function fetchActions() {
             const el = document.getElementById("actions-panel-list");
             el.innerHTML = '<div class="muted">Loading...</div>';
@@ -1788,6 +3465,10 @@
             document.getElementById("action-save").disabled = true;
             document.getElementById("use-generated-query").disabled = true;
             document.getElementById("test-generated-query").disabled = true;
+            document.getElementById("add-event-binding").disabled = true;
+            document.getElementById("ai-suggest-mapping").disabled = true;
+            document.getElementById("test-action-execution").disabled = true;
+            document.getElementById("test-with-real-events").disabled = true;
           }
 
           function enableFormFields() {
@@ -1797,6 +3478,10 @@
             document.getElementById("action-save").disabled = false;
             document.getElementById("use-generated-query").disabled = false;
             document.getElementById("test-generated-query").disabled = false;
+            document.getElementById("add-event-binding").disabled = false;
+            document.getElementById("ai-suggest-mapping").disabled = false;
+            document.getElementById("test-action-execution").disabled = false;
+            document.getElementById("test-with-real-events").disabled = false;
           }
 
           async function saveAction(now) {
