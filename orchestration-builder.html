@@ -1140,71 +1140,10 @@
                     >
                       🎲 Test with Real Events
                     </button>
-                    <button
-                      class="btn btn-primary"
-                      id="test-action-execution"
-                      type="button"
-                      style="padding: 4px 12px; font-size: 0.85rem"
-                      disabled
-                      title="Test with manual sample data"
-                    >
-                      ▶ Manual Test
-                    </button>
+                    
                   </div>
                 </div>
                 <div id="test-execution-area" style="display: none">
-                  <div
-                    style="
-                      margin-bottom: 12px;
-                      padding: 8px;
-                      background: #fff3cd;
-                      border-radius: 6px;
-                      border-left: 3px solid #ffc107;
-                    "
-                  >
-                    <strong style="color: #856404; font-size: 0.85rem"
-                      >💡 Tip:</strong
-                    >
-                    <div
-                      style="
-                        color: #856404;
-                        font-size: 0.75rem;
-                        margin-top: 4px;
-                      "
-                    >
-                      Use <strong>"Test with Real Events"</strong> to validate
-                      with actual event data from your registry, or use
-                      <strong>"Manual Test"</strong> to provide custom JSON
-                      data.
-                    </div>
-                  </div>
-                  <div style="margin-bottom: 8px">
-                    <label
-                      for="sample-event-data"
-                      style="
-                        font-size: 0.85rem;
-                        font-weight: 600;
-                        color: #2c3e50;
-                        display: block;
-                        margin-bottom: 4px;
-                      "
-                      >Sample Event Data (JSON) - Optional for Manual
-                      Test</label
-                    >
-                    <textarea
-                      id="sample-event-data"
-                      style="
-                        width: 100%;
-                        min-height: 80px;
-                        font-family: monospace;
-                        font-size: 0.85rem;
-                        padding: 8px;
-                        border: 1px solid #e1e8ed;
-                        border-radius: 6px;
-                      "
-                      placeholder='{"userId": 123, "status": "active"}'
-                    ></textarea>
-                  </div>
                   <div id="test-results-area" style="margin-top: 12px"></div>
                 </div>
               </div>
@@ -2375,160 +2314,13 @@
           }
 
           function setupPreviewHandlers() {
-            const testBtn = document.getElementById("test-action-execution");
-            const testRealBtn = document.getElementById(
-              "test-with-real-events"
-            );
-
-            if (testBtn) {
-              testBtn.addEventListener("click", testActionExecution);
-            }
-
+            const testRealBtn = document.getElementById("test-with-real-events");
             if (testRealBtn) {
               testRealBtn.addEventListener("click", testWithRealEvents);
             }
           }
 
-          async function testActionExecution() {
-            const sampleDataTextarea =
-              document.getElementById("sample-event-data");
-            const resultsArea = document.getElementById("test-results-area");
-            const query = document.getElementById("action-query").value;
-
-            if (!query) {
-              showToast("Please enter a SQL query first", "error");
-              return;
-            }
-
-            let sampleData;
-            try {
-              sampleData = JSON.parse(sampleDataTextarea.value || "{}");
-            } catch (error) {
-              showToast("Invalid JSON in sample event data", "error");
-              return;
-            }
-
-            try {
-              resultsArea.innerHTML =
-                '<div style="color: #657786;">⏳ Processing...</div>';
-
-              // Call server endpoint to resolve template and execute using real resolver
-              // Determine eventName to pass: prefer explicit variable in query, otherwise fallback to single bound event
-              let eventNameForRequest = null;
-              const matchEvent = query.match(/\{\{([^\.\}]+)\./);
-              if (matchEvent) eventNameForRequest = matchEvent[1];
-              else if (eventBindings.length === 1)
-                eventNameForRequest = eventBindings[0].eventName;
-
-              const execResp = await fetch("/api/event/execute", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  query: query,
-                  eventName: eventNameForRequest,
-                  payload: sampleData,
-                }),
-                timeout: 60000,
-              });
-
-              // Read response body (text -> try parse JSON) so we can surface executedQuery details
-              const rawText = await execResp.text().catch(() => "");
-              let result = null;
-              try { result = rawText ? JSON.parse(rawText) : null; } catch (e) { result = null; }
-
-              if (!execResp.ok) {
-                const details = result && result.details ? result.details : rawText;
-                const executedQuery = result && (result.executedQuery || result.query) ? (result.executedQuery || result.query) : null;
-                const err = new Error(`Execution failed: ${execResp.status} ${details}`);
-                err.executedQuery = executedQuery;
-                throw err;
-              }
-
-              if (result && result.ok === false) {
-                const err = new Error(result.error || "Execution failed");
-                err.executedQuery = result.executedQuery || result.query || null;
-                throw err;
-              }
-
-              const data = Array.isArray(result.data)
-                ? result.data
-                : (result.data && result.data.rows) || [];
-              const columns = Object.keys(data[0] || {});
-
-              const executedQueryToShow = result && (result.executedQuery || result.query) ? (result.executedQuery || result.query) : null;
-              // Persist executed query into variableMappings so it will be saved with the action
-              try {
-                if (!variableMappings) variableMappings = {};
-                if (executedQueryToShow) {
-                  variableMappings.executedQuery = executedQueryToShow;
-                  variableMappings._lastExecutedAt = new Date().toISOString();
-                }
-              } catch (e) { console.warn('Failed to stash executedQuery into variableMappings', e); }
-
-              resultsArea.innerHTML += `
-                <div style="background: #d4edda; padding: 10px; border-radius: 6px; border: 1px solid #c3e6cb; margin-bottom: 8px;">
-                  <strong style="color: #155724;">✓ Query executed successfully</strong>
-                </div>
-                ${executedQueryToShow ? `<pre style="white-space: pre-wrap; background:#f6f8fa; padding:8px; border-radius:4px; border:1px solid #e1e8ed; margin-bottom:8px; font-size:0.85rem;">${escapeHtml(executedQueryToShow)}</pre>` : ""}
-                <div style="max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
-                    <thead>
-                      <tr style="background: #f8f9fa;">
-                        ${columns
-                          .map(
-                            (col) =>
-                              `<th style="padding: 8px; text-align: left; border-bottom: 2px solid #e1e8ed;">${col}</th>`
-                          )
-                          .join("")}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${data
-                        .slice(0, 50)
-                        .map(
-                          (row) => `
-                        <tr>
-                          ${columns
-                            .map(
-                              (col) =>
-                                `<td style="padding: 8px; border-bottom: 1px solid #eef2f7;">${
-                                  row[col] !== null
-                                    ? row[col]
-                                    : "<em style='color: #999;'>NULL</em>"
-                                }</td>`
-                            )
-                            .join("")}
-                        </tr>
-                      `
-                        )
-                        .join("")}
-                    </tbody>
-                  </table>
-                </div>
-                ${
-                  data.length > 50
-                    ? `<p style="margin-top: 8px; color: #657786; font-size: 0.85rem;">Showing first 50 rows of ${data.length} total rows.</p>`
-                    : ""
-                }
-              `;
-
-              showToast("Test executed successfully!", "success");
-            } catch (error) {
-              console.error("Test execution error:", error);
-              let executedHtml = "";
-              if (error && error.executedQuery) {
-                executedHtml = `<pre style="white-space: pre-wrap; background:#f6f8fa; padding:8px; border-radius:4px; border:1px solid #e1e8ed; margin-top:8px; font-size:0.85rem;">${escapeHtml(error.executedQuery)}</pre>`;
-              }
-              resultsArea.innerHTML = `
-                <div style="background: #f8d7da; padding: 10px; border-radius: 6px; border: 1px solid #f5c6cb;">
-                  <strong style="color: #721c24;">✕ Test Execution Failed</strong><br>
-                  <div style="margin-top: 6px; color: #721c24; font-size: 0.85rem;">${escapeHtml(error.message || String(error))}</div>
-                  ${executedHtml}
-                </div>
-              `;
-              showToast("Test execution failed: " + (error && error.message ? error.message : String(error)), "error");
-            }
-          }
+          
 
           // ====== ENHANCED AI & REAL EVENT TESTING SYSTEM ======
 
@@ -2606,87 +2398,97 @@
                 return;
               }
 
-              // Test with each sample
-              let allTestsPassed = true;
-              let testResults = [];
-
+              // Flatten samples across bindings and try sequentially until we find a matching row
+              const flattened = [];
               for (const { binding, samples } of realEventSamples) {
                 for (let i = 0; i < samples.length; i++) {
-                  const sample = samples[i];
-                  let payload = sample.payload || sample.data || sample;
+                  flattened.push({ binding, sample: samples[i], sampleIndex: i + 1 });
+                  if (flattened.length >= 10) break;
+                }
+                if (flattened.length >= 10) break;
+              }
 
-                  if (typeof payload === "string") {
-                    try {
-                      payload = JSON.parse(payload);
-                    } catch (e) {
-                      console.warn("Could not parse payload");
-                    }
-                  }
+              if (flattened.length === 0) {
+                resultsArea.innerHTML = `
+                  <div style="background: #fff3cd; padding: 12px; border-radius: 6px; border-left: 3px solid #ffc107;">
+                    <strong style="color: #856404;">⚠ No Real Event Samples Available</strong>
+                    <div style="margin-top:6px; color:#856404">No event records to test against.</div>
+                  </div>`;
+                return;
+              }
 
-                  try {
-                    const result = await executeSQLWithPayload(
-                      query,
-                      payload,
-                      binding
-                    );
-                    testResults.push({
-                      success: true,
-                      eventName: binding.eventName,
-                      sampleIndex: i + 1,
-                      payload: payload,
-                      result: result,
-                    });
-                  } catch (error) {
-                    allTestsPassed = false;
-                    testResults.push({
-                      success: false,
-                      eventName: binding.eventName,
-                      sampleIndex: i + 1,
-                      payload: payload,
-                      error: error.message,
-                      errorQuery: error.executedQuery || null,
-                    });
+              let matched = null;
+              const tried = [];
+              for (let idx = 0; idx < flattened.length && idx < 10; idx++) {
+                const item = flattened[idx];
+                let payload = item.sample.payload || item.sample.data || item.sample;
+                if (typeof payload === 'string') {
+                  try { payload = JSON.parse(payload); } catch(e){}
+                }
+                tried.push({ eventName: item.binding.eventName, sampleIndex: item.sampleIndex });
+                try {
+                  const result = await executeSQLWithPayload(query, payload, item.binding);
+                  // Consider a success when at least one row returned
+                  if (result && Array.isArray(result.data) && result.data.length > 0) {
+                    matched = { binding: item.binding, sampleIndex: item.sampleIndex, payload, result };
+                    break;
                   }
+                } catch (e) {
+                  // ignore and continue to next sample
                 }
               }
 
-              // Render comprehensive test results
-              renderRealEventTestResults(testResults, allTestsPassed);
+              if (!matched) {
+                // Offer retry option
+                resultsArea.innerHTML = `
+                  <div style="background:#fff3cd;padding:12px;border-radius:6px;border-left:3px solid #ffc107;">
+                    <strong style="color:#856404">No matching row found</strong>
+                    <div style="margin-top:6px;color:#856404">Tried ${flattened.length} sample(s). You can try again to fetch fresh events.</div>
+                    <div style="margin-top:10px"><button id="retry-real-events" class="btn btn-primary">Try Again</button></div>
+                  </div>
+                `;
+                const retryBtn = document.getElementById('retry-real-events');
+                if (retryBtn) retryBtn.addEventListener('click', () => testWithRealEvents());
+                return;
+              }
 
-              // Save validation metadata and example outputs
-              if (allTestsPassed) {
-                variableMappings._validation = {
-                  tested: true,
-                  testDate: new Date().toISOString(),
-                  samplesCount: testResults.length,
-                  allPassed: true,
-                };
+              // Show only the matched row in UI
+              const only = matched.result.data && matched.result.data.length > 0 ? [matched.result.data[0]] : [];
+              const columns = Object.keys(only[0] || {});
+              resultsArea.innerHTML = `
+                <div style="background: #d4edda; padding: 10px; border-radius: 6px; border: 1px solid #c3e6cb; margin-bottom: 8px;">
+                  <strong style="color: #155724;">✓ Match Found (showing first matched row)</strong>
+                </div>
+                ${matched.result.processedQuery ? `<pre style="white-space: pre-wrap; background:#f6f8fa; padding:8px; border-radius:4px; border:1px solid #e1e8ed; margin-bottom:8px; font-size:0.85rem;">${escapeHtml(matched.result.processedQuery)}</pre>` : ''}
+                <div style="max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                    <thead>
+                      <tr style="background: #f8f9fa;">
+                        ${columns.map((col) => `<th style="padding: 8px; text-align: left; border-bottom: 2px solid #e1e8ed;">${col}</th>`).join("")}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${only.map(row => `<tr>${columns.map(col => `<td style="padding:8px;border-bottom:1px solid #eef2f7;">${row[col] !== null ? row[col] : "<em style='color:#999'>NULL</em>"}</td>`).join("")}</tr>`).join("")}
+                    </tbody>
+                  </table>
+                </div>
+              `;
 
-                // Store example successful output from first test
-                const exampleOutputs = testResults
-                  .filter((t) => t.success)
-                  .slice(0, 1)
-                  .map((t) => ({
-                    eventName: t.eventName,
-                    sampleIndex: t.sampleIndex,
-                    testedAt: new Date().toISOString(),
-                    payload: t.payload,
-                    executedQuery: t.result.processedQuery,
-                    rowCount: t.result.rowCount,
-                    sampleData: Array.isArray(t.result.data) ? t.result.data.slice(0, 5) : t.result.data,
-                  }));
+              // Persist metadata: save template + executedQuery + exampleOutputs
+              try {
+                if (!variableMappings) variableMappings = {};
+                // Persist only minimal metadata required by other modules:
+                // keep the template and the last resolved executedQuery. Avoid storing
+                // verbose example outputs or validation blobs to prevent duplication
+                // and large metadata growth.
+                variableMappings.executedQuery = matched.result.processedQuery || null;
+                variableMappings.template = query;
 
-                variableMappings._exampleOutputs = exampleOutputs;
-
-                showToast(
-                  `✅ All ${testResults.length} tests passed! Ready to save.`,
-                  "success"
-                );
-              } else {
-                showToast(
-                  `⚠ Some tests failed. Review and fix issues.`,
-                  "error"
-                );
+                // Auto-save action metadata to persist these mappings
+                try { await saveAction(true); } catch(e) { console.warn('Auto-save failed after real event match', e); }
+                showToast('Matched row found and metadata saved', 'success');
+              } catch (e) {
+                console.warn('Failed to persist match metadata', e);
               }
             } catch (error) {
               console.error("Real event testing error:", error);
@@ -3711,7 +3513,6 @@
             document.getElementById("use-generated-query").disabled = true;
             document.getElementById("test-generated-query").disabled = true;
             document.getElementById("add-event-binding").disabled = true;
-            document.getElementById("test-action-execution").disabled = true;
             document.getElementById("test-with-real-events").disabled = true;
           }
 
@@ -3723,7 +3524,6 @@
             document.getElementById("use-generated-query").disabled = false;
             document.getElementById("test-generated-query").disabled = false;
             document.getElementById("add-event-binding").disabled = false;
-            document.getElementById("test-action-execution").disabled = false;
             document.getElementById("test-with-real-events").disabled = false;
           }
 
@@ -3747,21 +3547,18 @@
               return;
             }
 
-            // Include example outputs in metadata if available
-            if (variableMappings && variableMappings._exampleOutputs) {
-              data.exampleOutputs = variableMappings._exampleOutputs;
-            }
-            // If we have a resolved executedQuery from testing, prefer saving that
+            // Example outputs are persisted under `variableMappings._exampleOutputs`
+            // to avoid duplicating them at the top-level `exampleOutputs` field.
+            // Ensure variableMappings are attached to the save payload (persist executedQuery and template)
             try {
-              if (
-                variableMappings &&
-                variableMappings.executedQuery &&
-                ( !data.query || String(data.query).includes("{{") )
-              ) {
-                data.query = variableMappings.executedQuery;
+              if (!data.variableMappings) data.variableMappings = {};
+              if (variableMappings) {
+                data.variableMappings = Object.assign({}, variableMappings);
+                // Keep the original template in metadata to preserve the {{...}} form
+                if (!data.variableMappings.template) data.variableMappings.template = data.query || null;
               }
             } catch (e) {
-              console.warn('Failed to apply executedQuery to save payload', e);
+              console.warn('Failed to attach variableMappings to save payload', e);
             }
             try {
               status.textContent = now ? "Saving..." : "Auto-saving...";
@@ -3884,8 +3681,9 @@
               nameInput.style.boxShadow = "0 0 0 3px rgba(40, 167, 69, 0.2)";
               document.getElementById("action-desc").value =
                 a.description || "";
-              document.getElementById("action-query").value =
-                a.query || a.sql || "";
+              // Prefer the original template if present in variableMappings, otherwise fall back to stored query
+              const templateQuery = (a.variableMappings && a.variableMappings.template) ? a.variableMappings.template : null;
+              document.getElementById("action-query").value = templateQuery || a.query || a.sql || "";
               document.getElementById("action-editor-title").textContent =
                 "Editing: " + (a.name || a.id);
               // Enable fields when editing

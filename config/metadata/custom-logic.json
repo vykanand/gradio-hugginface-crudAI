@@ -1,37 +1,36 @@
 [
-	{
-		"id": "logic_example_test_action_one",
-		"name": "Combine Test Action One Result with Event Value",
-		"description": "Reads the result from 'test_action_one' (data[0].total) and an event field 'detail.value', returns combined summary.",
-		"inputs": [
-			{
-				"type": "action",
-				"source": "Test Action One",
-				"actionId": "test_action_one",
-				"field": "data[0].total",
-				"alias": "invoiceTotal"
-			},
-			{
-				"type": "event",
-				"source": "sample_event",
-				"eventId": "sample_event",
-				"field": "detail.value",
-				"alias": "eventValue"
-			}
-		],
-		"functionCode": "// inputs.invoiceTotal (number)\n// inputs.eventValue (number or string)\nconst total = (Number(inputs.invoiceTotal) || 0) + (Number(inputs.eventValue) || 0);\nreturn { total, invoice: inputs.invoiceTotal, eventValue: inputs.eventValue };",
-		"updatedAt": "2025-12-24T00:00:00.000Z",
-		"exampleContext": {
-			"actions": {
-				"test_action_one": [
-					{ "total": 120.5 }
-				]
-			},
-			"events": {
-				"sample_event": {
-					"detail": { "value": 30 }
-				}
-			}
-		}
-	}
+  {
+    "id": "logic_example_test_action_one",
+    "name": "check phone number valid format",
+    "description": "Reads the result from CRM to delivery and checks for valid phone number",
+    "inputs": [
+      {
+        "type": "action",
+        "actionId": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63",
+        "actionName": "Crm to delivery",
+        "field": null,
+        "parserPath": "rows[0].phone_number",
+        "parserVarName": "crmto delivery - phone_number",
+        "sampleValue": "vedcsc"
+      }
+    ],
+    "functionCode": "try {\n  const crmToDeliveryPhoneNumber = inputs.actions['ef4212aa_0fbe_4e40_a6d0_ea00bbd66d63']['crmto_delivery_phone_number'];\n  const phoneNumberRegex = /^\\d{3}-\\d{3}-\\d{4}$/;\n  if (crmToDeliveryPhoneNumber && typeof crmToDeliveryPhoneNumber === 'string' && phoneNumberRegex.test(crmToDeliveryPhoneNumber)) {\n    return { isValid: true, phoneNumber: crmToDeliveryPhoneNumber };\n  }\n  return { isValid: false, phoneNumber: crmToDeliveryPhoneNumber, error: 'Invalid phone number format' };\n} catch (error) {\n  console.error('Logic error:', error);\n  return { isValid: false, error: error.message };\n}",
+    "updatedAt": "2025-12-24T16:08:44.017Z",
+    "exampleContext": {
+      "actions": {
+        "test_action_one": [
+          {
+            "total": 120.5
+          }
+        ]
+      },
+      "events": {
+        "sample_event": {
+          "detail": {
+            "value": 30
+          }
+        }
+      }
+    }
+  }
 ]

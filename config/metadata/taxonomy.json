@@ -371,7 +371,7 @@
       "id": "eefd103c-7eed-4045-ae2d-140b4a2bd226",
       "name": "crm to extract contacts",
       "description": "with input phone number in appsthink crm  I want find all the related information in extract contact table which matches Phone number",
-      "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = 'yvib';",
+      "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}}",
       "eventBindings": [
         {
           "eventId": "appsthink_crm:phone_number:added",
@@ -434,69 +434,27 @@
         }
       ],
       "variableMappings": {
-        "_validation": {
-          "tested": true,
-          "testDate": "2025-12-23T23:43:08.727Z",
-          "samplesCount": 3,
-          "allPassed": true
-        },
-        "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = 'yvib';",
-        "_lastExecutedAt": "2025-12-24T12:03:27.116Z",
-        "_exampleOutputs": [
+        "parserPaths": [
           {
-            "eventName": "appsthink_crm:phone_number:added",
-            "sampleIndex": 1,
-            "testedAt": "2025-12-24T12:03:27.116Z",
-            "payload": {
-              "id": "035f6a4b-b84e-447a-b843-60ac949d6d73",
-              "event": "appsthink_crm:field:phone_number:added",
-              "module": "appsthink_crm",
-              "domain": "appsthink_crm",
-              "version": 1,
-              "detail": {
-                "field": "phone_number",
-                "module": "appsthink_crm",
-                "value": "yvib"
-              },
-              "ts": 1766353264303,
-              "producer": {
-                "service": "crud-ui",
-                "instance": "localhost:8001"
-              },
-              "actor": {
-                "user": "Admin",
-                "role": "admin",
-                "group": "Administrators",
-                "organization": "Prudential"
-              },
-              "status": "published",
-              "attempts": 0,
-              "level": "technical",
-              "field": "phone_number",
-              "canonicalEvent": "appsthink_crm:phone_number:added",
-              "publishedTs": 1766353264394
-            },
-            "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = 'yvib';",
-            "rowCount": 1,
-            "sampleData": [
-              {
-                "id": 4,
-                "emails_value": "fdesc",
-                "phoneNumbers_value": "yvib",
-                "role": "admin",
-                "created_at": "2025-12-01T20:41:44.000Z"
-              }
-            ]
+            "path": "rows[0].phoneNumbers_value",
+            "varName": "phoneNumbers_value",
+            "sampleValue": "yvib",
+            "field": null
+          },
+          {
+            "path": "appsthink_crm:phone_number:added.detail.value",
+            "varName": "appsthinkphone.value",
+            "field": "value"
           }
         ]
       },
       "exampleOutputs": [
         {
           "eventName": "appsthink_crm:phone_number:added",
-          "sampleIndex": 1,
-          "testedAt": "2025-12-24T12:03:27.116Z",
+          "sampleIndex": 2,
+          "testedAt": "2025-12-24T12:13:40.962Z",
           "payload": {
-            "id": "035f6a4b-b84e-447a-b843-60ac949d6d73",
+            "id": "43d11e2d-e605-4ac1-b7a9-bdb2be51252e",
             "event": "appsthink_crm:field:phone_number:added",
             "module": "appsthink_crm",
             "domain": "appsthink_crm",
@@ -504,9 +462,9 @@
             "detail": {
               "field": "phone_number",
               "module": "appsthink_crm",
-              "value": "yvib"
+              "value": "onkkl"
             },
-            "ts": 1766353264303,
+            "ts": 1766352250978,
             "producer": {
               "service": "crud-ui",
               "instance": "localhost:8001"
@@ -522,17 +480,17 @@
             "level": "technical",
             "field": "phone_number",
             "canonicalEvent": "appsthink_crm:phone_number:added",
-            "publishedTs": 1766353264394
+            "publishedTs": 1766352251573
           },
-          "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = 'yvib';",
+          "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = 'onkkl'",
           "rowCount": 1,
           "sampleData": [
             {
-              "id": 4,
-              "emails_value": "fdesc",
-              "phoneNumbers_value": "yvib",
+              "id": 3,
+              "emails_value": "nfsaf@awfds.com",
+              "phoneNumbers_value": "onkkl",
               "role": "admin",
-              "created_at": "2025-12-01T20:41:44.000Z"
+              "created_at": "2025-12-01T20:25:56.000Z"
             }
           ]
         }

@@ -42,7 +42,7 @@
         display: flex;
         flex-direction: column;
         min-height: 0;
-        overflow: hidden;
+        overflow: auto;
       "
     >
       <div id="custom-logic-editor" style="display: none">
@@ -64,13 +64,28 @@
         </div>
 
         <div style="margin-bottom: 16px">
-          <label style="display: block; margin-bottom: 4px; font-weight: 600"
-            >Description</label
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 4px;
+            "
           >
+            <label style="font-weight: 600">Description</label>
+            <button
+              class="btn btn-primary"
+              onclick="aiGenerateLogicCode()"
+              style="font-size: 0.85rem; padding: 4px 12px"
+              title="AI-powered code generation based on description and input variables"
+            >
+              ✨ AI Generate Code
+            </button>
+          </div>
           <textarea
             id="logic-description"
-            rows="2"
-            placeholder="Describe what this logic does..."
+            rows="3"
+            placeholder="Describe what this logic does... (AI will use this to generate JavaScript code)"
             style="
               width: 100%;
               padding: 8px;
@@ -78,6 +93,10 @@
               border-radius: 4px;
             "
           ></textarea>
+          <div style="font-size: 0.75rem; color: #657786; margin-top: 4px">
+            💡 Tip: Describe your logic clearly, add input variables below, then
+            click "AI Generate Code" for automatic JavaScript generation
+          </div>
         </div>
 
         <!-- Input Sources -->
@@ -281,6 +300,26 @@
 </div>
 
 <script>
+  // Runtime config for AI integration
+  async function ensureRuntimeConfig() {
+    if (window.__RUNTIME_CONFIG__) {
+      window.RUNTIME_CONFIG = window.__RUNTIME_CONFIG__;
+      return window.RUNTIME_CONFIG;
+    }
+    try {
+      const res = await fetch("/runtime-config");
+      const cfg = await res.json();
+      window.RUNTIME_CONFIG = cfg;
+      return cfg;
+    } catch (e) {
+      console.warn("Could not load runtime config, using defaults", e);
+      window.RUNTIME_CONFIG = {
+        ai: { mode: "proxy", directUrl: "/large" },
+      };
+      return window.RUNTIME_CONFIG;
+    }
+  }
+
   // Custom Logic state
   let customLogics = [];
   let currentLogic = null;
@@ -288,6 +327,7 @@
 
   window.initCustomLogicTab = async function () {
     try {
+      await ensureRuntimeConfig();
       await loadCustomLogics();
       await loadAvailableEvents();
       await loadAvailableActions();
@@ -819,33 +859,67 @@
     }
 
     try {
+      // Update variable preview before execution
+      showVariablePreviewFromTestData(testData);
+
       const result = await executeCustomLogic(functionCode, {
         inputs: testData,
       });
+
       const resultEl = document.getElementById("logic-test-result");
       resultEl.style.display = "block";
       resultEl.style.background = "#d4edda";
       resultEl.style.border = "1px solid #c3e6cb";
       resultEl.style.color = "#155724";
-      resultEl.innerHTML = `<strong>Result:</strong> <pre style="margin-top: 4px; background: #f8f9fa; padding: 6px; border-radius: 4px; color: #14171a;">${JSON.stringify(
-        result,
-        null,
-        2
-      )}</pre>`;
+
+      // Enhanced result display with type information
+      const resultType = Array.isArray(result) ? "array" : typeof result;
+      const resultPreview = JSON.stringify(result, null, 2);
+
+      resultEl.innerHTML =
+        `<div style="margin-bottom: 8px;"><strong>✅ Execution Successful</strong></div>` +
+        `<div style="font-size: 0.85rem; color: #0c5a3a; margin-bottom: 4px;">Return Type: ${resultType}</div>` +
+        `<pre style="margin-top: 4px; background: #f8f9fa; padding: 8px; border-radius: 4px; color: #14171a; max-height: 300px; overflow: auto;">${resultPreview}</pre>`;
     } catch (e) {
       const resultEl = document.getElementById("logic-test-result");
       resultEl.style.display = "block";
       resultEl.style.background = "#f8d7da";
       resultEl.style.border = "1px solid #f5c6cb";
       resultEl.style.color = "#721c24";
-      resultEl.innerHTML = `<strong>Error:</strong> ${e.message}`;
+
+      // Enhanced error display with stack trace
+      const errorDetails = e.stack
+        ? `<pre style="margin-top: 8px; background: #fff; padding: 8px; border-radius: 4px; font-size: 0.75rem; overflow: auto; max-height: 200px;">${e.stack}</pre>`
+        : "";
+
+      resultEl.innerHTML =
+        `<div style="margin-bottom: 8px;"><strong>❌ Execution Failed</strong></div>` +
+        `<div style="font-size: 0.9rem; margin-bottom: 4px;">${e.message}</div>` +
+        errorDetails;
     }
   }
 
   async function executeCustomLogic(functionCode, context) {
-    // Create sandboxed function
-    const func = new Function("inputs", functionCode);
-    return func(context.inputs);
+    // Create sandboxed function with enhanced error context
+    try {
+      const func = new Function("inputs", functionCode);
+      const result = func(context.inputs);
+
+      // Handle promises if the code is async
+      if (result && typeof result.then === "function") {
+        return await result;
+      }
+
+      return result;
+    } catch (error) {
+      // Enhance error message with context
+      const enhancedError = new Error(
+        `Custom Logic Execution Error: ${error.message}`
+      );
+      enhancedError.stack = error.stack;
+      enhancedError.originalError = error;
+      throw enhancedError;
+    }
   }
 
   async function saveCustomLogic() {
@@ -873,6 +947,22 @@
       functionCode,
       updatedAt: new Date().toISOString(),
     };
+
+    // Persist the current test payload so it can be re-used when selecting this logic later
+    try {
+      const testDataStr =
+        document.getElementById("logic-test-data").value || "";
+      if (testDataStr) {
+        try {
+          logic.exampleContext = JSON.parse(testDataStr);
+        } catch (e) {
+          // If parsing fails, store raw string as fallback
+          logic.exampleContextRaw = testDataStr;
+        }
+      }
+    } catch (e) {
+      console.warn("Unable to capture exampleContext for custom logic", e);
+    }
 
     try {
       const method = currentLogic ? "PUT" : "POST";
@@ -937,7 +1027,7 @@
 
       const modal = document.createElement("div");
       modal.style.cssText =
-        "background: white; border-radius: 8px; padding: 20px; min-width: 400px; max-width: 600px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);";
+        "background: white; border-radius: 8px; padding: 20px; min-width: 400px; max-width: 800px; max-height: 80vh; overflow: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.3);";
 
       const titleEl = document.createElement("h3");
       titleEl.textContent = title;
@@ -1001,6 +1091,13 @@
 
       <!-- Removed test parameters JSON input per UX decision; Custom Logic tester will use persisted executedQuery or action query directly -->
 
+      <div id="test-action-query-section" style="display:none; margin-bottom: 8px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 8px;">2. SQL To Execute</label>
+        <div style="background: #f6f8fa; border: 1px solid #e1e8ed; border-radius: 4px; padding: 8px;">
+          <pre id="test-action-query-display" style="margin:0; font-size:0.85rem; white-space: pre-wrap;"></pre>
+        </div>
+      </div>
+
       <div id="test-action-result-section" style="display:none; margin-bottom: 16px;">
         <label style="display: block; font-weight: 600; margin-bottom: 8px;">3. Action Result</label>
         <div style="background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 12px; max-height: 300px; overflow: auto;">
@@ -1058,9 +1155,28 @@
           if (fieldsSec) fieldsSec.style.display = "none";
           if (selSec) selSec.style.display = "none";
 
-          // Auto-run the test for the selected action and log debug info
+          // Auto-run the test for the selected action and show the SQL that will be used
           try {
             console.debug("action-test: selector changed, actionId=", actionId);
+            try {
+              const qSec = document.getElementById("test-action-query-section");
+              const qDisp = document.getElementById(
+                "test-action-query-display"
+              );
+              if (qDisp && qSec) {
+                const act = actions.find((a) => a && a.id === actionId) || null;
+                const vm =
+                  act && act.variableMappings ? act.variableMappings : {};
+                const qText =
+                  (vm && vm.executedQuery) ||
+                  (act && (act.sql || act.query || act.template)) ||
+                  "";
+                qDisp.textContent = qText || "(no SQL available)";
+                qSec.style.display = actionId ? "block" : "none";
+              }
+            } catch (e) {
+              console.warn("failed to set query preview", e);
+            }
             if (actionId) window.__executeTestAction();
           } catch (e) {
             console.error("action-test: auto-run failed", e);
@@ -1086,14 +1202,14 @@
         const selectorEl = document.getElementById("test-action-selector");
         if (!selectorEl) return;
 
-        // Find an action with an explicit sample or with validated tests
+        // Find an action that is useful for testing: has a stored executedQuery,
+        // a template, or parser paths. Avoid relying on verbose example blobs.
         const autoAction = actions.find((a) => {
           if (!a) return false;
           if (a.sample || a.successSample || a.exampleParams) return true;
           if (
             a.variableMappings &&
-            a.variableMappings._validation &&
-            a.variableMappings._validation.tested
+            (a.variableMappings.executedQuery || a.variableMappings.template)
           )
             return true;
           if (
@@ -1124,64 +1240,45 @@
     const result = await modalPromise;
 
     if (result === "save" && window.__actionTestState.selectedPaths.size > 0) {
-      // Add selected parser paths to logic inputs
+      // Add selected parser paths to logic inputs (skip ones already added)
       const actionId = window.__actionTestState.selectedAction;
+      let added = 0;
       for (const [
         path,
         data,
       ] of window.__actionTestState.selectedPaths.entries()) {
-        logicInputs.push({
-          type: "action",
-          actionId: actionId,
-          actionName: actionId,
-          field: null,
-          parserPath: path,
-          parserVarName: data.varName,
-          sampleValue: data.value,
-        });
+        const exists = logicInputs.some(
+          (li) =>
+            li &&
+            li.type === "action" &&
+            li.parserPath === path &&
+            li.actionId === actionId
+        );
+        if (!exists) {
+          logicInputs.push({
+            type: "action",
+            actionId: actionId,
+            actionName: actionId,
+            field: null,
+            parserPath: path,
+            parserVarName: data.varName,
+            sampleValue: data.value,
+          });
+          added++;
+        }
       }
-      renderInputsList();
-      updateAvailableVars();
+      if (added > 0) {
+        renderInputsList();
+        updateAvailableVars();
+      }
+      showToast(`Added ${added} new parser path variable(s)`, "success");
+      // Parser paths and selected variables are stored in `logicInputs` above
+      // and will be persisted together when the user saves the Custom Logic
+      // function (via `saveCustomLogic()`). No action metadata is modified here.
       showToast(
-        `Added ${window.__actionTestState.selectedPaths.size} parser path variable(s)`,
+        "Selected parser path variables added to the Custom Logic inputs — save the logic to persist.",
         "success"
       );
-      // Persist parser paths into action metadata variableMappings.parserPaths
-      try {
-        const parserArray = [];
-        for (const [p, d] of window.__actionTestState.selectedPaths.entries()) {
-          parserArray.push({
-            path: p,
-            varName: d.varName,
-            sampleValue: d.value,
-            field: d.field || null,
-          });
-        }
-        // Send partial update to action metadata
-        const updResp = await fetch(
-          `/api/actions/${encodeURIComponent(actionId)}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              variableMappings: { parserPaths: parserArray },
-            }),
-          }
-        );
-        const updJson = await updResp.json();
-        if (updJson && updJson.ok) {
-          showToast("Saved parser paths to action metadata", "success");
-        } else {
-          showToast(
-            "Failed to save parser paths: " +
-              (updJson && updJson.error ? updJson.error : "unknown"),
-            "error"
-          );
-        }
-      } catch (e) {
-        console.error("Failed to persist parser paths", e);
-        showToast("Failed to persist parser paths: " + e.message, "error");
-      }
     }
   };
 
@@ -1203,26 +1300,26 @@
         }
       }
 
-      // Use stored executedQuery if available (saved by Actions editor), otherwise fall back to action.query/template
+      // Use stored executedQuery if available, otherwise fall back to action.query/template
       const action = actions.find((a) => a.id === actionId) || {};
       const vm = action.variableMappings || {};
-      // ExampleOutputs may contain executedQuery saved earlier; prefer explicit executedQuery first
-      let queryText = (vm && vm.executedQuery) || null;
-      if (
-        !queryText &&
-        Array.isArray(vm._exampleOutputs) &&
-        vm._exampleOutputs.length > 0
-      ) {
-        // take the first exampleOutputs.executedQuery if present
-        for (const ex of vm._exampleOutputs) {
-          if (ex && ex.executedQuery) {
-            queryText = ex.executedQuery;
-            break;
-          }
+      let queryText =
+        (vm && vm.executedQuery) ||
+        action.sql ||
+        action.query ||
+        action.template ||
+        null;
+      // Reflect the chosen SQL in the modal UI
+      try {
+        const qSec = document.getElementById("test-action-query-section");
+        const qDisp = document.getElementById("test-action-query-display");
+        if (qDisp && qSec) {
+          qDisp.textContent = queryText || "(no SQL available)";
+          qSec.style.display = "block";
         }
+      } catch (e) {
+        console.warn("Failed to render query preview in modal", e);
       }
-      if (!queryText)
-        queryText = action.sql || action.query || action.template || null;
       if (!queryText) {
         showToast("Action has no SQL defined", "error");
         return;
@@ -1230,10 +1327,91 @@
 
       // Execute using the stored query from action metadata. Do not require user-supplied JSON params here.
       console.debug("action-test: executing action", { actionId, queryText });
+      // Determine eventName to pass to the resolver: prefer explicit variable in template,
+      // otherwise fall back to the first bound event for the action (if any).
+      let eventNameForRequest = null;
+      try {
+        const matchEvent = String(queryText).match(/\{\{([^\.\}]+)\./);
+        if (matchEvent) eventNameForRequest = matchEvent[1];
+        else if (
+          action &&
+          action.eventBindings &&
+          action.eventBindings.length === 1
+        )
+          eventNameForRequest = action.eventBindings[0].eventName;
+      } catch (e) {
+        console.warn("Failed to compute eventNameForRequest", e);
+      }
+
+      // Build a best-effort sample payload so template variables can be resolved.
+      let payloadForRequest = null;
+      try {
+        if (
+          vm &&
+          Array.isArray(vm._exampleOutputs) &&
+          vm._exampleOutputs.length > 0
+        ) {
+          payloadForRequest = vm._exampleOutputs[0].payload;
+        } else if (
+          action &&
+          Array.isArray(action.exampleOutputs) &&
+          action.exampleOutputs.length > 0
+        ) {
+          payloadForRequest = action.exampleOutputs[0].payload;
+        } else if (
+          action &&
+          action.eventBindings &&
+          action.eventBindings.length > 0
+        ) {
+          const binding = action.eventBindings[0] || {};
+          const schema = binding.payloadSchema || {};
+          const setAtPath = (obj, path, value) => {
+            if (!path) return;
+            const parts = path.split(".");
+            let cur = obj;
+            for (let i = 0; i < parts.length; i++) {
+              const p = parts[i];
+              if (i === parts.length - 1) {
+                cur[p] = value;
+              } else {
+                if (!cur[p] || typeof cur[p] !== "object") cur[p] = {};
+                cur = cur[p];
+              }
+            }
+          };
+          const pld = {};
+          if (schema.primaryFields) {
+            Object.keys(schema.primaryFields).forEach((k) => {
+              const fld = schema.primaryFields[k] || {};
+              if (fld.path && fld.sample !== undefined)
+                setAtPath(pld, fld.path, fld.sample);
+              else if (fld.sample !== undefined) pld[k] = fld.sample;
+            });
+          }
+          if (schema.metadataFields) {
+            Object.keys(schema.metadataFields).forEach((k) => {
+              const mf = schema.metadataFields[k] || {};
+              if (mf.sample !== undefined) pld[k] = mf.sample;
+            });
+          }
+          if (!pld.event)
+            pld.event =
+              binding.eventName || binding.eventId || eventNameForRequest;
+          if (!pld.module && binding.eventName)
+            pld.module = String(binding.eventName).split(":")[0];
+          payloadForRequest = pld;
+        }
+      } catch (e) {
+        console.warn("Failed to build sample payload for action test", e);
+      }
+
+      const reqBody = { query: queryText, eventName: eventNameForRequest };
+      if (payloadForRequest) reqBody.payload = payloadForRequest;
+
       const res = await fetch("/api/event/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: queryText, eventName: actionId }),
+        body: JSON.stringify(reqBody),
       });
       console.debug("action-test: fetch completed, status=", res.status);
 
@@ -1400,21 +1578,61 @@
     try {
       const result = window.__actionTestState.testResult;
       const value = __getNestedValue(result, path);
-      const defaultVarName = path
-        .split(".")
-        .pop()
-        .replace(/\[.*?\]/g, "");
+
+      const actId = window.__actionTestState.selectedAction || null;
+      const actions = window.__actionTestState.availableActions || [];
+      const act = actions.find((a) => a && a.id === actId) || null;
+      const rawActionName = act ? act.name || act.id : actId || "action";
+
+      // build a normalized base variable name: include action name + path
+      const normalize = (s) =>
+        String(s)
+          .replace(/\s+/g, "_")
+          .replace(/[^a-zA-Z0-9_]/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_+|_+$/g, "")
+          .toLowerCase();
+
+      const maxLen = 60;
+      const normalizedAction = normalize(rawActionName).slice(0, 20);
+      const normalizedPath = normalize(path).slice(
+        0,
+        maxLen - normalizedAction.length - 1
+      );
+      let baseVarName =
+        `${normalizedAction}_${normalizedPath}` || normalize(path) || "var";
+      if (!/^[a-zA-Z_]/.test(baseVarName)) baseVarName = `v_${baseVarName}`;
+
+      // ensure uniqueness against existing logicInputs and already selected parser vars
+      const usedNames = new Set();
+      (logicInputs || []).forEach((li) => {
+        if (li && li.parserVarName) usedNames.add(li.parserVarName);
+      });
+      for (const [, d] of window.__actionTestState.selectedPaths.entries())
+        usedNames.add(d.varName);
+
+      let uniqueName = baseVarName;
+      let suffix = 2;
+      while (usedNames.has(uniqueName)) {
+        uniqueName = `${baseVarName}_${suffix}`;
+        suffix += 1;
+      }
+
       const varName = prompt(
         `Enter variable name for path "${path}":`,
-        defaultVarName || "var"
+        uniqueName || "var"
       );
       if (!varName) return;
+      if (!varName) return;
 
-      window.__actionTestState.selectedPaths.set(path, {
-        varName,
-        value,
-        path,
-      });
+      const entry = { varName, value, path };
+      window.__actionTestState.selectedPaths.set(path, entry);
+      // Also add immediately to logic inputs so it appears in Input Sources list
+      try {
+        addParserPathToLogicInputs(path, entry);
+      } catch (e) {
+        console.warn("addParserPathToLogicInputs failed", e);
+      }
       __renderSelectedParserPaths();
       document.getElementById("selected-parser-paths-section").style.display =
         "block";
@@ -1467,6 +1685,39 @@
     }
     html += "</div>";
     container.innerHTML = html;
+  }
+
+  function addParserPathToLogicInputs(path, entry) {
+    try {
+      const actId = window.__actionTestState.selectedAction || null;
+      const actions = window.__actionTestState.availableActions || [];
+      const act = actions.find((a) => a && a.id === actId) || null;
+      const actionName = act ? act.name || act.id : actId;
+
+      // avoid duplicates
+      const exists = logicInputs.some(
+        (li) =>
+          li &&
+          li.type === "action" &&
+          li.parserPath === path &&
+          li.actionId === actId
+      );
+      if (exists) return;
+
+      logicInputs.push({
+        type: "action",
+        actionId: actId,
+        actionName: actionName || actId,
+        field: null,
+        parserPath: path,
+        parserVarName: entry.varName,
+        sampleValue: entry.value,
+      });
+      renderInputsList();
+      updateAvailableVars();
+    } catch (e) {
+      console.warn("addParserPathToLogicInputs error", e);
+    }
   }
 
   // Render metadata/event payload schema fields for the selected action
@@ -1570,12 +1821,18 @@
         window.__actionTestState && window.__actionTestState.testResult
           ? __getNestedValue(window.__actionTestState.testResult, candidatePath)
           : undefined;
-      window.__actionTestState.selectedPaths.set(candidatePath, {
+      const entry = {
         varName,
         value: sampleVal,
         path: candidatePath,
         field: fieldName,
-      });
+      };
+      window.__actionTestState.selectedPaths.set(candidatePath, entry);
+      try {
+        addParserPathToLogicInputs(candidatePath, entry);
+      } catch (e) {
+        console.warn("addParserPathToLogicInputs failed", e);
+      }
       __renderSelectedParserPaths();
       document.getElementById("selected-parser-paths-section").style.display =
         "block";
@@ -1587,11 +1844,645 @@
 
   window.__removeParserPath = function (path) {
     window.__actionTestState.selectedPaths.delete(path);
+    // Remove any corresponding logic input that was created from this parser path
+    try {
+      const actId = window.__actionTestState.selectedAction || null;
+      let removed = false;
+      for (let i = logicInputs.length - 1; i >= 0; i--) {
+        const li = logicInputs[i];
+        if (
+          li &&
+          li.type === "action" &&
+          li.parserPath === path &&
+          (actId == null || li.actionId === actId)
+        ) {
+          logicInputs.splice(i, 1);
+          removed = true;
+        }
+      }
+      if (removed) {
+        renderInputsList();
+        updateAvailableVars();
+      }
+    } catch (e) {
+      console.warn("Failed removing logic input for parser path", e);
+    }
     __renderSelectedParserPaths();
   };
 
   function showToast(message, type = "info") {
     console.log(`[Toast ${type}]`, message);
     alert(message);
+  }
+
+  // AI Code Generation for Custom Logic
+  async function aiGenerateLogicCode() {
+    const description = document
+      .getElementById("logic-description")
+      .value.trim();
+
+    if (!description) {
+      showToast(
+        "Please provide a description of what the logic should do",
+        "error"
+      );
+      return;
+    }
+
+    if (!logicInputs || logicInputs.length === 0) {
+      showToast(
+        "Please add at least one input variable before generating code",
+        "error"
+      );
+      return;
+    }
+
+    // Find the AI Generate button
+    const aiBtn = document.querySelector(
+      'button[onclick="aiGenerateLogicCode()"]'
+    );
+
+    try {
+      // Build comprehensive context from input variables
+      const context = await buildLogicInputContext();
+
+      // Create AI prompt with description and input context
+      const prompt = buildAIPrompt(description, context);
+
+      // Show loading state
+      if (aiBtn) {
+        aiBtn.disabled = true;
+        aiBtn.textContent = "⏳ Generating...";
+      }
+
+      // Ensure runtime config is loaded
+      await ensureRuntimeConfig();
+
+      // Determine AI endpoint (proxy mode uses /ai/send, direct mode uses directUrl)
+      const aiTarget =
+        window.RUNTIME_CONFIG &&
+        window.RUNTIME_CONFIG.ai &&
+        window.RUNTIME_CONFIG.ai.mode === "direct"
+          ? window.RUNTIME_CONFIG.ai.directUrl
+          : "/ai/send";
+
+      // Call AI service
+      const response = await fetch(aiTarget, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "custom-logic-" + Date.now(),
+          aiquestion: prompt,
+        }),
+      });
+
+      const data = await response.json();
+
+      // Normalize envelope response from /ai/send
+      let aiResult = "";
+      if (data && typeof data === "object") {
+        // Server returns envelope: { ok, statusCode, data, error, diagnostics }
+        const payload = data.data || data;
+        if (typeof payload === "string") {
+          aiResult = payload;
+        } else if (typeof payload === "object") {
+          aiResult =
+            payload.response || payload.result || JSON.stringify(payload);
+        }
+      }
+
+      if (aiResult && aiResult.trim()) {
+        // Parse JavaScript code from AI response with robust parser
+        const code = parseJavaScriptFromAI(aiResult);
+
+        if (code) {
+          // Populate function code textarea
+          document.getElementById("logic-function").value = code;
+
+          // Auto-populate test data with sample values
+          await populateTestDataFromSamples(context);
+
+          showToast(
+            "JavaScript code generated successfully! Review and test it.",
+            "success"
+          );
+
+          // Auto-scroll to function code section
+          document
+            .getElementById("logic-function")
+            .scrollIntoView({ behavior: "smooth", block: "center" });
+        } else {
+          showToast(
+            "Failed to extract valid JavaScript code from AI response",
+            "error"
+          );
+          console.error("AI response parsing failed:", data.result);
+        }
+      } else {
+        showToast(
+          "AI generation failed: " + (data.error || "Unknown error"),
+          "error"
+        );
+      }
+
+      // Restore button state
+      if (aiBtn) {
+        aiBtn.disabled = false;
+        aiBtn.textContent = "✨ AI Generate Code";
+      }
+    } catch (e) {
+      console.error("AI code generation error:", e);
+      showToast("AI generation error: " + e.message, "error");
+
+      // Restore button state
+      if (aiBtn) {
+        aiBtn.disabled = false;
+        aiBtn.textContent = "✨ AI Generate Code";
+      }
+    }
+  }
+
+  // Helper to normalize variable names to JavaScript-safe identifiers
+  function normalizeVarName(name) {
+    if (!name) return "var";
+    // Convert to string and normalize
+    let normalized = String(name)
+      .replace(/[^a-zA-Z0-9_$]/g, "_") // Replace invalid chars with underscore
+      .replace(/^[0-9]/, "_$&") // Prefix with underscore if starts with number
+      .replace(/_+/g, "_") // Collapse multiple underscores
+      .replace(/^_+|_+$/g, ""); // Trim leading/trailing underscores
+
+    // Ensure it doesn't start with a number after cleanup
+    if (/^[0-9]/.test(normalized)) {
+      normalized = "v_" + normalized;
+    }
+
+    // Ensure it's not empty
+    if (!normalized || normalized.length === 0) {
+      normalized = "var";
+    }
+
+    // Ensure it's a valid JS identifier
+    if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(normalized)) {
+      normalized = "var_" + normalized.replace(/[^a-zA-Z0-9_$]/g, "");
+    }
+
+    return normalized;
+  }
+
+  // Build comprehensive context from all input variables
+  async function buildLogicInputContext() {
+    const context = {
+      variables: [],
+      events: {},
+      actions: {},
+      description: "",
+    };
+
+    // Process each input to gather context and sample values
+    for (const input of logicInputs) {
+      if (input.type === "event") {
+        const eventInfo = await gatherEventContext(input);
+        const eventVarName = normalizeVarName(input.eventName || input.eventId);
+        const fieldVarName = input.field ? normalizeVarName(input.field) : null;
+
+        // Build safe access path using bracket notation for safety
+        let accessPath;
+        if (input.field) {
+          accessPath = `inputs['${eventVarName}']['${fieldVarName}']`;
+        } else {
+          accessPath = `inputs['${eventVarName}']`;
+        }
+
+        context.variables.push({
+          type: "event",
+          name: input.eventName || input.eventId,
+          field: input.field,
+          varName: eventVarName,
+          fieldVarName: fieldVarName,
+          accessPath: accessPath,
+          schema: eventInfo.schema,
+          sample: eventInfo.sample,
+        });
+        context.events[input.eventId] = eventInfo;
+      } else if (input.type === "action") {
+        const actionInfo = await gatherActionContext(input);
+        const actionVarName = normalizeVarName(input.actionId);
+        const parserVarName = input.parserVarName
+          ? normalizeVarName(input.parserVarName)
+          : null;
+        const fieldVarName = input.field ? normalizeVarName(input.field) : null;
+
+        // Build safe access path
+        let accessPath;
+        if (parserVarName) {
+          accessPath = `inputs.actions['${actionVarName}']['${parserVarName}']`;
+        } else if (fieldVarName) {
+          accessPath = `inputs.actions['${actionVarName}']['${fieldVarName}']`;
+        } else {
+          accessPath = `inputs.actions['${actionVarName}']`;
+        }
+
+        context.variables.push({
+          type: "action",
+          name: input.actionName || input.actionId,
+          actionId: input.actionId,
+          field: input.field,
+          parserPath: input.parserPath,
+          parserVarName: parserVarName,
+          fieldVarName: fieldVarName,
+          varName: actionVarName,
+          accessPath: accessPath,
+          schema: actionInfo.schema,
+          sample:
+            input.sampleValue !== undefined
+              ? input.sampleValue
+              : actionInfo.sample,
+          resultStructure: actionInfo.resultStructure,
+        });
+        context.actions[input.actionId] = actionInfo;
+      }
+    }
+
+    return context;
+  }
+
+  // Gather event context including schema and sample data
+  async function gatherEventContext(input) {
+    try {
+      const events = await loadAvailableEvents();
+      const event = events.find((e) => e.id === input.eventId);
+
+      if (event) {
+        const schema = await fetchEventPayloadSchema(event);
+        let sample = null;
+
+        if (schema) {
+          // Build sample from schema
+          sample = {};
+          if (schema.primaryFields) {
+            Object.keys(schema.primaryFields).forEach((k) => {
+              const field = schema.primaryFields[k];
+              if (field.sample !== undefined) {
+                sample[k] = field.sample;
+              }
+            });
+          }
+          if (schema.metadataFields) {
+            Object.keys(schema.metadataFields).forEach((k) => {
+              const field = schema.metadataFields[k];
+              if (field.sample !== undefined) {
+                sample[k] = field.sample;
+              }
+            });
+          }
+        }
+
+        return { schema, sample, event };
+      }
+    } catch (e) {
+      console.warn("Failed to gather event context:", e);
+    }
+
+    return { schema: null, sample: null };
+  }
+
+  // Gather action context including schema and sample result
+  async function gatherActionContext(input) {
+    try {
+      const actions = await loadAvailableActions();
+      const action = actions.find((a) => a.id === input.actionId);
+
+      if (action) {
+        let sample = null;
+        let resultStructure = null;
+
+        // Try to get sample from various sources
+        if (action.successSample) {
+          sample = action.successSample;
+          resultStructure = extractStructure(sample);
+        } else if (action.sample) {
+          sample = action.sample;
+          resultStructure = extractStructure(sample);
+        } else if (
+          action.variableMappings &&
+          action.variableMappings._exampleOutputs
+        ) {
+          const examples = action.variableMappings._exampleOutputs;
+          if (Array.isArray(examples) && examples.length > 0) {
+            sample = examples[0].result || examples[0];
+            resultStructure = extractStructure(sample);
+          }
+        }
+
+        return { schema: null, sample, resultStructure, action };
+      }
+    } catch (e) {
+      console.warn("Failed to gather action context:", e);
+    }
+
+    return { schema: null, sample: null, resultStructure: null };
+  }
+
+  // Extract structure from sample data
+  function extractStructure(sample) {
+    if (!sample || typeof sample !== "object") return null;
+
+    const structure = {};
+
+    if (Array.isArray(sample)) {
+      if (sample.length > 0) {
+        structure.type = "array";
+        structure.itemType = typeof sample[0];
+        structure.length = sample.length;
+        if (typeof sample[0] === "object") {
+          structure.fields = Object.keys(sample[0]);
+        }
+      }
+    } else {
+      structure.type = "object";
+      structure.fields = Object.keys(sample);
+    }
+
+    return structure;
+  }
+
+  // Build AI prompt with description and comprehensive context
+  function buildAIPrompt(description, context) {
+    let prompt = `You are an expert JavaScript developer. Generate a JavaScript function body based on the following requirements:\n\n`;
+
+    prompt += `DESCRIPTION:\n${description}\n\n`;
+
+    prompt += `AVAILABLE INPUT VARIABLES (use bracket notation for safety):\n`;
+    context.variables.forEach((v, idx) => {
+      prompt += `${idx + 1}. ${v.accessPath}\n`;
+      prompt += `   Type: ${v.type}\n`;
+      if (v.sample !== undefined && v.sample !== null) {
+        prompt += `   Sample Value: ${JSON.stringify(v.sample).substring(
+          0,
+          200
+        )}\n`;
+      }
+      if (v.resultStructure) {
+        prompt += `   Structure: ${JSON.stringify(v.resultStructure)}\n`;
+      }
+      prompt += `\n`;
+    });
+
+    prompt += `\nCRITICAL SYNTAX RULES:\n`;
+    prompt += `1. ALWAYS use bracket notation for property access: inputs['propertyName'] or inputs.actions['actionId']['fieldName']\n`;
+    prompt += `2. DO NOT use subtraction operator (-) when accessing properties\n`;
+    prompt += `3. DO NOT use undefined variables - only use the exact access paths listed above\n`;
+    prompt += `4. Property names with special characters MUST use bracket notation\n`;
+    prompt += `5. Use optional chaining (?.) for safe property access\n\n`;
+
+    prompt += `\nREQUIREMENTS:\n`;
+    prompt += `1. Write ONLY the JavaScript function body (no function declaration, no 'function' keyword)\n`;
+    prompt += `2. Use ONLY the input variables listed above with EXACT access paths\n`;
+    prompt += `3. The code must be production-ready, error-free JavaScript (ES2024+)\n`;
+    prompt += `4. Include proper error handling with try-catch\n`;
+    prompt += `5. Return a meaningful value (object, array, string, number, or boolean)\n`;
+    prompt += `6. Add brief inline comments for complex logic\n`;
+    prompt += `7. Handle null/undefined values gracefully using optional chaining\n`;
+    prompt += `8. Use modern JavaScript syntax (const/let, arrow functions, destructuring, etc.)\n\n`;
+
+    prompt += `RESPONSE FORMAT:\n`;
+    prompt += `Provide ONLY the JavaScript code block without any markdown formatting, explanations, or comments outside the code.\n`;
+    prompt += `The code should start directly with JavaScript statements and end with a return statement.\n\n`;
+
+    prompt += `CORRECT EXAMPLE:\n`;
+    prompt += `try {\n`;
+    prompt += `  const phoneNumber = inputs.actions['actionId']['phone_number'];\n`;
+    prompt += `  const regex = /^\\d{3}-\\d{3}-\\d{4}$/;\n`;
+    prompt += `  if (phoneNumber && typeof phoneNumber === 'string' && regex.test(phoneNumber)) {\n`;
+    prompt += `    return { isValid: true, phoneNumber };\n`;
+    prompt += `  }\n`;
+    prompt += `  return { isValid: false, phoneNumber, error: 'Invalid format' };\n`;
+    prompt += `} catch (error) {\n`;
+    prompt += `  console.error('Logic error:', error);\n`;
+    prompt += `  return { isValid: false, error: error.message };\n`;
+    prompt += `}\n\n`;
+
+    prompt += `WRONG EXAMPLES (DO NOT DO THIS):\n`;
+    prompt += `❌ inputs.actions.actionId.field - propertyName  // This is subtraction, NOT property access!\n`;
+    prompt += `❌ inputs.actions.actionId.crmToDelivery - phone_number  // Syntax error!\n`;
+    prompt += `❌ inputs.eventName.field  // Unsafe if names have special chars\n\n`;
+
+    prompt += `NOW GENERATE THE JAVASCRIPT CODE:`;
+
+    return prompt;
+  }
+
+  // Robust JavaScript parser to extract code from AI response
+  function parseJavaScriptFromAI(response) {
+    if (!response) return null;
+
+    let code = response.trim();
+
+    // Remove markdown code blocks if present
+    code = code.replace(/^```(?:javascript|js)?\s*\n/i, "");
+    code = code.replace(/\n```\s*$/, "");
+    code = code.replace(/^```(?:javascript|js)?\s*/i, "");
+    code = code.replace(/```\s*$/, "");
+
+    // Remove any leading/trailing explanatory text
+    const patterns = [
+      /(?:Here's|Here is|Here are).*?code.*?:\s*\n/gi,
+      /^.*?(?=(?:try|const|let|var|if|return|function)\s*[\{\(])/s,
+      /^[^\n]*(?:code|solution|implementation).*?:\s*\n/gi,
+    ];
+
+    for (const pattern of patterns) {
+      code = code.replace(pattern, "");
+    }
+
+    // Clean up the code
+    code = code.trim();
+
+    // Remove function wrapper if AI added it despite instructions
+    code = code.replace(/^function\s+\w*\s*\([^)]*\)\s*\{/i, "");
+    code = code.replace(/^\([^)]*\)\s*=>\s*\{/i, "");
+
+    // Remove trailing closing brace if it's a wrapper
+    if (
+      code.endsWith("}") &&
+      !code.includes("try") &&
+      !code.includes("if") &&
+      !code.includes("for")
+    ) {
+      code = code.substring(0, code.lastIndexOf("}")).trim();
+    }
+
+    // Fix common AI errors: property access with subtraction operator
+    // Pattern: inputs.something.field - variableName
+    // Should be: inputs.something['field_variableName'] or similar
+    code = code.replace(
+      /(inputs(?:\.[\w]+|\['[^']+'])+)\s*-\s*([\w]+)/g,
+      (match, path, varName) => {
+        console.warn(`Fixed AI syntax error: ${match} → ${path}['${varName}']`);
+        return `${path}['${varName}']`;
+      }
+    );
+
+    // Validate JavaScript syntax
+    try {
+      new Function("inputs", code);
+      return code;
+    } catch (syntaxError) {
+      console.error("JavaScript syntax validation failed:", syntaxError);
+      console.error("Code that failed:", code);
+
+      // Try aggressive cleanup
+      const lines = code.split("\n");
+      const cleanedLines = lines.filter((line) => {
+        const trimmed = line.trim();
+        // Remove obvious non-code lines
+        return !trimmed.startsWith("//") || trimmed.length < 100;
+      });
+
+      const cleanedCode = cleanedLines.join("\n").trim();
+
+      try {
+        new Function("inputs", cleanedCode);
+        return cleanedCode;
+      } catch (e) {
+        console.error("Cleaned code still invalid:", e);
+        console.error("Cleaned code:", cleanedCode);
+        return null;
+      }
+    }
+  }
+
+  // Auto-populate test data textarea with real sample values
+  async function populateTestDataFromSamples(context) {
+    try {
+      const testData = {};
+
+      // Build test data object from context with normalized variable names
+      for (const variable of context.variables) {
+        if (variable.type === "event") {
+          const eventVarName =
+            variable.varName || normalizeVarName(variable.name);
+
+          if (!testData[eventVarName]) {
+            testData[eventVarName] = {};
+          }
+
+          if (variable.field && variable.sample) {
+            const fieldVarName =
+              variable.fieldVarName || normalizeVarName(variable.field);
+            // Extract specific field value
+            const fieldValue =
+              variable.sample[variable.field] !== undefined
+                ? variable.sample[variable.field]
+                : null;
+            testData[eventVarName][fieldVarName] = fieldValue;
+          } else if (variable.sample) {
+            // Use full event sample
+            testData[eventVarName] = variable.sample;
+          }
+        } else if (variable.type === "action") {
+          if (!testData.actions) {
+            testData.actions = {};
+          }
+
+          const actionVarName =
+            variable.varName || normalizeVarName(variable.actionId);
+          if (!testData.actions[actionVarName]) {
+            testData.actions[actionVarName] = {};
+          }
+
+          if (variable.parserVarName && variable.sample !== undefined) {
+            // Use parser path variable with normalized name
+            const parserVarName = normalizeVarName(variable.parserVarName);
+            testData.actions[actionVarName][parserVarName] = variable.sample;
+          } else if (variable.field && variable.sample) {
+            // Extract specific field with normalized name
+            const fieldVarName =
+              variable.fieldVarName || normalizeVarName(variable.field);
+            const fieldValue =
+              typeof variable.sample === "object" &&
+              variable.sample[variable.field] !== undefined
+                ? variable.sample[variable.field]
+                : variable.sample;
+            testData.actions[actionVarName][fieldVarName] = fieldValue;
+          } else if (variable.sample !== undefined) {
+            // Use full action result
+            testData.actions[actionVarName] = variable.sample;
+          }
+        }
+      }
+
+      // Populate the test data textarea and make it read-only
+      const testDataTextarea = document.getElementById("logic-test-data");
+      testDataTextarea.value = JSON.stringify(testData, null, 2);
+      testDataTextarea.readOnly = true;
+      testDataTextarea.style.backgroundColor = "#f8f9fa";
+      testDataTextarea.style.cursor = "not-allowed";
+      testDataTextarea.title =
+        "Auto-generated from real action outputs (read-only)";
+
+      // Update variable preview
+      showVariablePreviewFromTestData(testData);
+    } catch (e) {
+      console.error("Failed to populate test data:", e);
+    }
+  }
+
+  // Update variable preview panel with test data
+  function showVariablePreviewFromTestData(testData) {
+    const container = document.getElementById("variable-preview-list");
+    if (!container) return;
+
+    const parts = [];
+
+    // Flatten test data for preview
+    const flatten = (obj, prefix = "") => {
+      if (!obj || typeof obj !== "object") return;
+
+      Object.keys(obj)
+        .slice(0, 20)
+        .forEach((key) => {
+          const value = obj[key];
+          const path = prefix ? `${prefix}.${key}` : key;
+
+          if (value && typeof value === "object" && !Array.isArray(value)) {
+            flatten(value, path);
+          } else {
+            let displayValue = JSON.stringify(value);
+            if (displayValue.length > 100) {
+              displayValue = displayValue.substring(0, 100) + "...";
+            }
+
+            parts.push(
+              `<div style="display:flex; justify-content:space-between; gap:12px; padding:4px 0; border-bottom:1px dashed #eee">` +
+                `<div style="font-family:monospace; color:#1a73e8; font-weight:600">${path}</div>` +
+                `<div style="color:#333; font-family:monospace; font-size:0.85rem">${displayValue}</div>` +
+                `</div>`
+            );
+          }
+        });
+    };
+
+    flatten(testData);
+
+    container.innerHTML =
+      parts.length > 0
+        ? parts.join("")
+        : '<div style="color:#666">No preview available</div>';
+  }
+
+  // Helper to fetch event payload schema
+  async function fetchEventPayloadSchema(event) {
+    try {
+      const res = await fetch(`/api/event-registry/${event.id}/schema`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.schema || null;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch event schema:", e);
+    }
+    return null;
   }
 </script>
