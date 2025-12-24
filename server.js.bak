@@ -1,0 +1,301 @@
+// Backup copy of server.js created by automation
+// Timestamp: 2025-12-24
+// This is a full textual backup of server.js at time of edit.
+// Use to restore original file if needed.
+
+// show all product with stock more than 50 and join on order_items with product_id foreign key
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+const fs = require("fs").promises;
+const mysql = require("mysql2/promise");
+const { spawn } = require("child_process");
+
+// const redis = require("redis");
+
+const processHtmlLLM = require("./generalAI.js");
+const queue = require('./services/queue');
+const taxonomyService = require('./services/taxonomyService');
+const rulesEngine = require('./services/rulesEngine');
+const workflowEngine = require('./services/workflowEngine');
+const executionOrchestrator = require('./services/executionOrchestrator');
+const eventBus = require('./services/eventBus');
+const { v4: uuidv4 } = require('uuid');
+const TransactionManager = require('./services/transactionManager');
+// Load server-side event bridge (exposes globalThis.eventBridge)
+try {
+  require(path.join(__dirname, 'lib', 'eventBridge.js'));
+} catch (e) {
+  console.warn('Could not load eventBridge.js for server-side use', e && e.message ? e.message : e);
+}
+
+const app = express();
+const PORT = process.env.PORT || 5050;
+
+// Try loading ai-config from repository `config/ai-config.js`.
+let aiConfigFromFile = {};
+try {
+  aiConfigFromFile = require(path.join(__dirname, 'config', 'ai-config.js')) || {};
+} catch (e) {
+  aiConfigFromFile = {};
+}
+
+// Runtime config (exposed to clients)
+const RUNTIME_CONFIG = {
+  port: PORT,
+  ai: {
+    // 'proxy' means client should call local `/api/ai` which the server will forward.
+    // 'direct' means client will call `ai.directUrl` directly from the browser.
+    mode: aiConfigFromFile.AI_MODE || process.env.AI_MODE || 'proxy',
+    // When in direct mode, clients will post here (useful for local dev gradio servers)
+    directUrl: aiConfigFromFile.AI_ENDPOINT || process.env.AI_ENDPOINT || process.env.AI_DIRECT_URL || 'http://localhost:3000/large',
+    // Helpful metadata about production huggingface model
+    huggingfaceModel: process.env.HF_DEFAULT_MODEL || 'google/flan-t5-large'
+  }
+};
+
+// Serve a small client JS snippet so frontends can access runtime config synchronously
+app.get('/client-config.js', (req, res) => {
+  res.type('application/javascript');
+  res.send(`window.__RUNTIME_CONFIG__ = ${JSON.stringify(RUNTIME_CONFIG)};`);
+});
+
+// Also provide a JSON endpoint for runtime config
+app.get('/runtime-config', (req, res) => {
+  res.json(RUNTIME_CONFIG);
+});
+
+// Database pool variable
+let pool;
+
+// Middleware setup
+app.use(express.json());
+app.use(cors());
+
+// Serve static assets (CSS, JS, images) from /assets
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
+// Serve builder tab fragments so lazy-loading via fetch('builder-tabs/...') works
+app.use('/builder-tabs', express.static(path.join(__dirname, 'builder-tabs')));
+// Serve config files so front-end can fetch `/config/database.json` and schema_store
+app.use('/config', express.static(path.join(__dirname, 'config')));
+
+// Simple request logger to aid debugging (prints method + path)
+app.use((req, res, next) => {
+  try {
+    console.log(`[req] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+  } catch (e) {}
+  next();
+});
+
+// initialize event bus (Kafka producer + consumer)
+try { eventBus.init().catch(e => console.warn('eventBus.init failed', e)); } catch(e) { /* ignore */ }
+
+// Provide a lightweight bindings read endpoint early so embedded clients
+// can discover bindings even if later route definitions are reordered.
+app.get('/orchestration/bindings', async (req, res) => {
+  try {
+    const localBindingsPath = path.join(__dirname, 'config', 'orchestration_bindings.json');
+    try { await fs.mkdir(path.join(__dirname, 'config'), { recursive: true }); } catch (e) {}
+    try {
+      const raw = await fs.readFile(localBindingsPath, 'utf8');
+      return res.json({ ok: true, bindings: JSON.parse(raw || '{}') });
+    } catch (e) {
+      // If file not present, return empty bindings map
+      return res.json({ ok: true, bindings: {} });
+    }
+  } catch (e) {
+    console.error('early bindings read error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Discover modules available for CRUD binding: metadata files + schema tables
+app.get('/orchestration/modules', async (req, res) => {
+  try {
+    const metaDir = path.join(__dirname, 'metadata');
+    const files = await fs.readdir(metaDir).catch(() => []);
+    const modules = {};
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        const raw = await fs.readFile(path.join(metaDir, f), 'utf8');
+        const j = JSON.parse(raw || '{}');
+        const m = j.module || j.id || j.name || null;
+        if (m) modules[m] = modules[m] || { id: m, name: j.name || m, description: j.description || '', source: 'metadata' };
+      } catch (e) {}
+    }
+    // Also include DB tables from schema_store/tables
+    try {
+      const tablesDir = path.join(__dirname, 'config', 'schema_store', 'tables');
+      const tfiles = await fs.readdir(tablesDir).catch(() => []);
+      for (const tf of tfiles) {
+        if (!tf.endsWith('.json')) continue;
+        const raw = await fs.readFile(path.join(tablesDir, tf), 'utf8');
+        const j = JSON.parse(raw || '{}');
+        const name = j.tableName || tf.replace(/\.json$/, '');
+        modules[name] = modules[name] || { id: name, name: j.title || name, description: j.description || '', source: 'schema' };
+      }
+    } catch (e) {}
+
+    // Enrich modules with existing bindings (if any)
+    await ensureBindingsFile();
+    const rawBindings = await fs.readFile(BINDINGS_FILE, 'utf8');
+    const binds = JSON.parse(rawBindings || '{}');
+    const result = Object.keys(modules).map(k => ({ ...modules[k], bindings: binds[k] || {} }));
+    return res.json({ ok: true, modules: result });
+  } catch (e) {
+    console.error('orchestration/modules error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Add graceful shutdown handler
+process.on('SIGTERM', async () => {
+    if (pool) {
+        await pool.end();
+    }
+    process.exit(0);
+});
+// Add database connection test endpoint
+app.get('/api/testConnection', async (req, res) => {
+  try {
+    // Test query to verify connection
+    await pool.query('SELECT 1');
+    // include active config so clients can show database details
+    let cfg = null;
+    try { cfg = await getActiveConfig(); } catch (e) { cfg = null; }
+    res.json({ status: 'connected', config: cfg });
+  } catch (error) {
+    let cfg = null;
+    try { cfg = await getActiveConfig(); } catch (e) { cfg = null; }
+    res.status(500).json({ 
+      error: 'Database connection failed',
+      details: error.message,
+      config: cfg
+    });
+  }
+});
+
+// Load all configurations
+async function loadConfigurations() {
+    const configPath = path.join(__dirname, 'config', 'database.json');
+    const configData = await fs.readFile(configPath, 'utf8');
+    return JSON.parse(configData);
+}
+
+// Save configurations
+async function saveConfigurations(configs) {
+    const configPath = path.join(__dirname, 'config', 'database.json');
+    await fs.writeFile(configPath, JSON.stringify(configs, null, 2));
+}
+
+// Get active configuration
+async function getActiveConfig() {
+    const configs = await loadConfigurations();
+    return configs.configurations[configs.activeConfig];
+}
+
+// Routes for multiple configurations
+app.get('/api/configs', async (req, res) => {
+    try {
+        const configs = await loadConfigurations();
+        res.json(configs);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to load configurations' });
+    }
+});
+
+app.post('/api/configs', async (req, res) => {
+    try {
+        const { name, config } = req.body;
+        const configs = await loadConfigurations();
+        configs.configurations[name] = config;
+        await saveConfigurations(configs);
+        res.json({ message: 'Configuration saved successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to save configuration' });
+    }
+});
+
+app.post("/api/configs/activate", async (req, res) => {
+  try {
+    const { name } = req.body;
+    const configs = await loadConfigurations();
+    configs.activeConfig = name;
+    await saveConfigurations(configs);
+
+    // Send response before restart
+    res.json({ message: "Active configuration changed, server restarting..." });
+
+    // Wait for response to be sent, then restart
+    setTimeout(() => {
+      process.on("exit", () => {
+        spawn(process.argv[0], process.argv.slice(1), {
+          env: { ...process.env, RELOAD: "true" },
+          stdio: "inherit",
+        });
+      });
+      process.exit();
+    }, 1000);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to change active configuration" });
+  }
+});
+
+
+app.delete('/api/configs/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        const configs = await loadConfigurations();
+        
+        if (name === configs.activeConfig) {
+            return res.status(400).json({ error: 'Cannot delete active configuration' });
+        }
+        
+        delete configs.configurations[name];
+        await saveConfigurations(configs);
+        res.json({ message: 'Configuration deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete configuration' });
+    }
+});
+
+// Update database initialization
+async function initializeDatabase() {
+    const config = await getActiveConfig();
+    pool = mysql.createPool(config);
+    console.log("MySQL pool created with active configuration");
+}
+
+// Helper to apply a timeout to a promise
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout after ' + ms + 'ms')), ms))
+  ]);
+}
+
+// Function to get table structure
+async function getTableStructure(entity) {
+  let connection;
+  try {
+    connection = await withTimeout(pool.getConnection(), 3000);
+  } catch (e) {
+    console.error('getTableStructure: failed to get connection or timed out', e && e.message ? e.message : e);
+    return null;
+  }
+  try {
+    const [columns] = await withTimeout(connection.query(`DESCRIBE ${entity}`), 3000);
+    return columns.map((column) => ({
+      name: column.Field,
+      type: column.Type,
+      nullable: column.Null === "YES",
+      key: column.Key,
+    }));
+  } catch (error) {
+    console.error("Error fetching table structure from DB:", error && error.message ? error.message : error);
+    return null;
+  } finally {
+    try { connection.release(); } catch(e){}
+  }
+}

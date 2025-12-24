@@ -17,6 +17,12 @@ const executionOrchestrator = require('./services/executionOrchestrator');
 const eventBus = require('./services/eventBus');
 const { v4: uuidv4 } = require('uuid');
 const TransactionManager = require('./services/transactionManager');
+// Load server-side event bridge (exposes globalThis.eventBridge)
+try {
+  require(path.join(__dirname, 'lib', 'eventBridge.js'));
+} catch (e) {
+  console.warn('Could not load eventBridge.js for server-side use', e && e.message ? e.message : e);
+}
 
 const app = express();
 const PORT = process.env.PORT || 5050;
@@ -367,6 +373,115 @@ app.get('/api/db/schema', async (req, res) => {
   }
 });
 
+// Execute SQL template using event payloads. This endpoint resolves variables like
+// {{FULL_EVENT_NAME.field.path}} using the eventBridge and executes the resulting SQL.
+app.post('/api/event/execute', async (req, res) => {
+  const { query, eventName, payload } = req.body || {};
+
+  // Always track the final SQL text we attempted to execute so it can be returned on errors
+  let executedQuery = null;
+
+  if (!query || typeof query !== 'string') {
+    return res.status(400).json({ ok: false, error: 'Missing required "query" string in request body' });
+  }
+
+  try {
+    if (!globalThis.eventBridge || !globalThis.eventBridge.resolveQuery) {
+      console.warn('eventBridge.resolveQuery not available on server');
+      return res.status(500).json({ ok: false, error: 'Server bridge unavailable' });
+    }
+
+    // Create a minimal binding object so resolver can match the requested eventName
+    const binding = eventName ? { eventName } : null;
+
+    // Resolve query using payload and optional binding (best-effort resolver returns executed text + error)
+    let processedQuery;
+    try {
+      if (!globalThis.eventBridge || !globalThis.eventBridge.tryResolveQuery) {
+        // Fallback to existing resolveQuery (will throw on missing fields)
+        processedQuery = globalThis.eventBridge.resolveQuery(query, payload, binding, []);
+      } else {
+        const out = globalThis.eventBridge.tryResolveQuery(query, payload, binding, []);
+        if (out && out.error) {
+          console.error('Template resolution failed:', out.error);
+          executedQuery = out.sql || null;
+          return res.status(400).json({ ok: false, error: 'Template resolution failed', details: out.error, executedQuery });
+        }
+        processedQuery = out.sql;
+        executedQuery = processedQuery;
+      }
+    } catch (e) {
+      console.error('Template resolution failed (throw):', e && e.stack ? e.stack : e);
+      // Best-effort: if tryResolveQuery is available, use it to produce the executedQuery
+      let executedQuery = null;
+      try {
+        if (globalThis.eventBridge && globalThis.eventBridge.tryResolveQuery) {
+          const probe = globalThis.eventBridge.tryResolveQuery(query, payload, binding, []);
+          if (probe && probe.sql) executedQuery = probe.sql;
+        }
+      } catch (probeErr) {
+        // ignore
+      }
+      return res.status(400).json({ ok: false, error: 'Template resolution failed', details: e && e.message ? e.message : String(e), executedQuery });
+    }
+
+    // Execute the SQL against the active pool
+    let connection;
+    try {
+      connection = await pool.getConnection();
+    } catch (e) {
+      console.error('DB connection failed for event execute:', e && e.stack ? e.stack : e);
+      return res.status(500).json({ ok: false, error: 'Database connection failed', details: e && e.message ? e.message : String(e) });
+    }
+
+    try {
+      let result;
+      try {
+        const queryResult = await connection.query(processedQuery);
+        // mysql2 returns [rows, fields] for select; support both styles
+        if (Array.isArray(queryResult) && queryResult.length > 0 && Array.isArray(queryResult[0])) {
+          result = queryResult[0];
+        } else {
+          result = queryResult[0] || queryResult;
+        }
+      } catch (e) {
+        console.error('DB query failed:', e && e.stack ? e.stack : e);
+        executedQuery = processedQuery || executedQuery;
+        return res.status(500).json({ ok: false, error: 'Database query failed', details: e && e.message ? e.message : String(e), executedQuery });
+      }
+
+      // Normalize response
+      let data = [];
+      let rowCount = 0;
+      if (Array.isArray(result)) {
+        data = result;
+        rowCount = result.length;
+      } else if (result && typeof result === 'object') {
+        // DML result (OkPacket)
+        rowCount = result.affectedRows || result.affected_rows || 0;
+        data = result;
+      }
+
+      // Audit log the execution (best-effort)
+      try {
+        if (typeof auditLog !== 'undefined' && auditLog && auditLog.write) {
+          await auditLog.write({ action: 'event.execute', eventName: eventName || null, query: processedQuery, rowCount, ip: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress });
+        }
+      } catch (e) {
+        console.warn('auditLog write failed for event.execute', e && e.message ? e.message : e);
+      }
+
+      return res.json({ ok: true, query: processedQuery, executedQuery: processedQuery, rowCount, data });
+    } finally {
+      try { connection.release(); } catch (e) {}
+    }
+    } catch (error) {
+    console.error('/api/event/execute error', error && error.stack ? error.stack : error);
+    // Ensure executedQuery is returned whenever possible to aid debugging in the UI
+    return res.status(500).json({ ok: false, error: error && error.message ? error.message : String(error), executedQuery });
+  }
+});
+
 // Get detailed schema for a specific table
 app.get("/api/schema/:tableName", async (req, res) => {
   try {
@@ -533,6 +648,95 @@ app.delete('/api/event-records/:id', async (req, res) => {
     const ok = await eventBus.deleteEventRecord(id);
     if (ok) return res.json({ ok: true });
     return res.status(404).json({ ok: false, error: 'not_found' });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Rules: simple file-backed rule set storage used by the UI
+const RULES_FILE = path.join(__dirname, 'config', 'rules.json');
+
+async function ensureRulesFile() {
+  try {
+    await fs.mkdir(path.join(__dirname, 'config'), { recursive: true });
+  } catch (e) {}
+  try {
+    await fs.access(RULES_FILE);
+  } catch (e) {
+    await fs.writeFile(RULES_FILE, JSON.stringify({ ruleSets: [] }, null, 2));
+  }
+}
+
+async function readRules() {
+  try {
+    await ensureRulesFile();
+    const raw = await fs.readFile(RULES_FILE, 'utf8');
+    const j = JSON.parse(raw || '{}');
+    return j.ruleSets || [];
+  } catch (e) {
+    console.warn('readRules failed', e && e.message ? e.message : e);
+    return [];
+  }
+}
+
+async function writeRules(ruleSets) {
+  try {
+    await ensureRulesFile();
+    await fs.writeFile(RULES_FILE, JSON.stringify({ ruleSets }, null, 2));
+    return true;
+  } catch (e) {
+    console.error('writeRules failed', e && e.stack ? e.stack : e);
+    return false;
+  }
+}
+
+app.get('/api/rules', async (req, res) => {
+  try {
+    const ruleSets = await readRules();
+    res.json({ ok: true, ruleSets });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/rules', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body || !body.id) return res.status(400).json({ ok: false, error: 'missing_id' });
+    const ruleSets = await readRules();
+    // replace if exists
+    const existingIndex = ruleSets.findIndex((r) => r.id === body.id);
+    if (existingIndex >= 0) ruleSets[existingIndex] = body;
+    else ruleSets.push(body);
+    const ok = await writeRules(ruleSets);
+    if (!ok) return res.status(500).json({ ok: false, error: 'write_failed' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.put('/api/rules/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const body = req.body || {};
+    const ruleSets = await readRules();
+    const idx = ruleSets.findIndex((r) => r.id === id);
+    if (idx === -1) return res.status(404).json({ ok: false, error: 'not_found' });
+    // merge existing with provided fields
+    ruleSets[idx] = { ...ruleSets[idx], ...body };
+    const ok = await writeRules(ruleSets);
+    if (!ok) return res.status(500).json({ ok: false, error: 'write_failed' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.delete('/api/rules/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const ruleSets = await readRules();
+    const idx = ruleSets.findIndex((r) => r.id === id);
+    if (idx === -1) return res.status(404).json({ ok: false, error: 'not_found' });
+    ruleSets.splice(idx, 1);
+    const ok = await writeRules(ruleSets);
+    if (!ok) return res.status(500).json({ ok: false, error: 'write_failed' });
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -831,14 +1035,14 @@ SELECT 'Cannot create' as Error;
 
       // Enhanced retry prompt with XML format requirement
       const retryPrompt = `
-        Previous query failed. Please fix the SQL command wrapped in <sqlcommand> tags.
+        Previous query failed. Please fix the SQL command wrapped in &lt;sqlcommand&gt; tags.
         Error: ${error.message}
         Original request:
         Table: ${entity}
         Structure: ${JSON.stringify(await getTableStructure(entity))}
         Request: ${prompt}
         
-        Return ONLY the corrected SQL in <sqlcommand> tags with:
+        Return ONLY the corrected SQL in &lt;sqlcommand&gt; tags with:
         - Proper XML formatting
         - Valid SQL syntax
         - No additional text

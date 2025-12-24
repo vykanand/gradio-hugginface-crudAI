@@ -5,10 +5,22 @@
     </button>
     <button class="btn btn-secondary" onclick="loadRules()">🔄 Refresh</button>
   </div>
-  <div class="main">
-    <div class="content-area">
+  <div
+    class="main"
+    style="flex: 1; display: flex; flex-direction: column; min-height: 0"
+  >
+    <div
+      class="content-area"
+      style="
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding-right: 12px;
+        max-height: calc(100vh - 160px);
+      "
+    >
       <h2 style="margin-bottom: 1rem">Business Rules - The Decision Layer</h2>
-      <div id="rules-list"></div>
+      <div id="rules-list" style="min-height: 520px"></div>
     </div>
   </div>
 </div>

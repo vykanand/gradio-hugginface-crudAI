@@ -1506,7 +1506,7 @@
                 }
               });
 
-              const prompt = `${context}\n\nBusiness Use Case: ${businessUseCase}\n\nIMPORTANT — Event SQL language and binder rules (must follow exactly):\n\n1) Table/Column mapping: Use the event metadata to determine the target table and column names. Treat the event's 'module' value as the literal SQL table name, and the event's 'field' value as the literal column name. Do NOT put table or column names inside braces or quotes — they must be plain SQL identifiers matching the schema provided in the context.\n\n2) Dynamic values / binder placeholders: For any dynamic value coming from an event payload, use the event-bridge binder placeholder format exactly: {{<bindingName>.<fieldPath>}} where <bindingName> is the event binding identifier (the same string used in the bindings list, e.g. appsthink_crm:phone_number:added) and <fieldPath> is the path inside the event payload (for example value, detail.phone_number, or data.someField). Example: {{appsthink_crm:phone_number:added.value}}.\n\n3) Resolution behavior: The executor (eventBridge.tryResolveQuery) will replace each {{...}} placeholder with a properly SQL-quoted literal (it handles escaping and NULL). Therefore DO NOT quote or escape {{...}} placeholders yourself — write SQL so that placeholders appear exactly where a SQL literal value belongs (e.g. VALUES ({{...}})).\n\n4) Preferred field access: When the primary value is named 'value', prefer using .value (e.g. {{bindingName.value}}). If the payload nests the value under detail or data, use detail.<name> or data.<name> accordingly.\n\n5) Output requirements: Produce a single, executable Event-SQL statement (or a minimal set of statements) that uses literal table/column names from the metadata and {{...}} placeholders for values. Return ONLY the SQL (no explanation, no markdown, no additional tags).\n\nExample (for clarity only; use actual metadata and bindings from the context above):\nINSERT INTO appsthink_crm (phone_number) VALUES ({{appsthink_crm:phone_number:added.value}});\n\nGenerate the SQL now for the Business Use Case. Use the schema and metadata provided in the context above, and prefer actual event sample values only for guidance — do not hardcode example literal values into the SQL.`;
+              const prompt = `${context}\n\nBusiness Use Case: ${businessUseCase}\n\nGenerate a SQL query for this business use case. Return ONLY the SQL query without any explanation, markdown formatting, or code blocks.`;
 
               const aiTarget =
                 globalThis.RUNTIME_CONFIG &&
@@ -1652,7 +1652,7 @@
                   <div style="padding: 10px; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
                     <strong style="color: #28a745;">✓ Query executed successfully</strong><br>
                     <code style="color: #657786;">${
-                      result.executedQuery || result.query || query
+                      result.query || query
                     }</code><br><br>
                     No rows returned.
                   </div>
@@ -1666,7 +1666,7 @@
               let html = `
                 <div style="padding: 10px; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
                   <strong style="color: #28a745;">✓ Query executed successfully</strong><br>
-                  <code style="color: #657786;">${result.executedQuery || result.query || query}</code>
+                  <code style="color: #657786;">${result.query || query}</code>
                 </div>
                 <div style="margin-top: 10px; max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
                   <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
@@ -2454,13 +2454,10 @@
                 : (result.data && result.data.rows) || [];
               const columns = Object.keys(data[0] || {});
 
-              const executedQueryToShow = result && (result.executedQuery || result.query) ? (result.executedQuery || result.query) : null;
-
               resultsArea.innerHTML += `
                 <div style="background: #d4edda; padding: 10px; border-radius: 6px; border: 1px solid #c3e6cb; margin-bottom: 8px;">
                   <strong style="color: #155724;">✓ Query executed successfully</strong>
                 </div>
-                ${executedQueryToShow ? `<pre style="white-space: pre-wrap; background:#f6f8fa; padding:8px; border-radius:4px; border:1px solid #e1e8ed; margin-bottom:8px; font-size:0.85rem;">${escapeHtml(executedQueryToShow)}</pre>` : ""}
                 <div style="max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
                   <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
                     <thead>
@@ -2941,12 +2938,6 @@
                           test.payload,
                           null,
                           2
-                        )}</pre>
-                      </div>
-                      <div style="margin-top:8px;">
-                        <strong style="font-size: 0.75rem;">Executed SQL:</strong>
-                        <pre style="background: #f8f9fa; padding: 6px; border-radius: 4px; font-size: 0.7rem; overflow-x: auto; color:#721c24;">${escapeHtml(
-                          test.errorQuery || (test.result && test.result.processedQuery) || ''
                         )}</pre>
                       </div>
                     </div>
@@ -3943,7 +3934,25 @@
       </script>
     </div>
 
-    <!-- Rules Tab Placeholder removed to avoid duplication; will lazy-load builder-tabs/rules-tab.html -->
+    <!-- Rules Tab Placeholder -->
+    <div id="rules-panel" class="tab-panel" style="display: none">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showAddRuleSetDialog()">
+          ➕ Add Rule Set
+        </button>
+        <button class="btn btn-secondary" onclick="loadRules()">
+          🔄 Refresh
+        </button>
+      </div>
+      <div class="main">
+        <div class="content-area">
+          <h2 style="margin-bottom: 2rem">
+            Business Rules - The Decision Layer
+          </h2>
+          <div id="rules-list">Loading...</div>
+        </div>
+      </div>
+    </div>
 
     <!-- Executions Tab Placeholder -->
     <div id="executions-panel" class="tab-panel" style="display: none">
