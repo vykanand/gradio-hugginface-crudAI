@@ -631,6 +631,7 @@
           Taxonomy
         </button>
         <button class="tab" onclick="switchTab('rules', event)">Rules</button>
+        <button class="tab" onclick="switchTab('custom-logic', event)">Custom Logic</button>
         <button class="tab" onclick="switchTab('events', event)">Events</button>
         <button class="tab" onclick="switchTab('actions', event)">
           Actions
@@ -2455,6 +2456,14 @@
               const columns = Object.keys(data[0] || {});
 
               const executedQueryToShow = result && (result.executedQuery || result.query) ? (result.executedQuery || result.query) : null;
+              // Persist executed query into variableMappings so it will be saved with the action
+              try {
+                if (!variableMappings) variableMappings = {};
+                if (executedQueryToShow) {
+                  variableMappings.executedQuery = executedQueryToShow;
+                  variableMappings._lastExecutedAt = new Date().toISOString();
+                }
+              } catch (e) { console.warn('Failed to stash executedQuery into variableMappings', e); }
 
               resultsArea.innerHTML += `
                 <div style="background: #d4edda; padding: 10px; border-radius: 6px; border: 1px solid #c3e6cb; margin-bottom: 8px;">
@@ -3742,14 +3751,26 @@
             if (variableMappings && variableMappings._exampleOutputs) {
               data.exampleOutputs = variableMappings._exampleOutputs;
             }
+            // If we have a resolved executedQuery from testing, prefer saving that
+            try {
+              if (
+                variableMappings &&
+                variableMappings.executedQuery &&
+                ( !data.query || String(data.query).includes("{{") )
+              ) {
+                data.query = variableMappings.executedQuery;
+              }
+            } catch (e) {
+              console.warn('Failed to apply executedQuery to save payload', e);
+            }
             try {
               status.textContent = now ? "Saving..." : "Auto-saving...";
               const method =
                 currentAction && currentAction.id === data.id ? "PUT" : "POST";
               const url =
                 method === "POST"
-                  ? "/api/taxonomy/actions"
-                  : `/api/taxonomy/actions/${encodeURIComponent(data.id)}`;
+                  ? "/api/actions"
+                  : `/api/actions/${encodeURIComponent(data.id)}`;
               const r = await fetch(url, {
                 method,
                 headers: { "Content-Type": "application/json" },
@@ -3788,7 +3809,7 @@
             if (!confirm("Delete this action?")) return;
             try {
               const r = await fetch(
-                `/api/taxonomy/actions/${encodeURIComponent(id)}`,
+                `/api/actions/${encodeURIComponent(id)}`,
                 { method: "DELETE" }
               );
               const d = await r.json();
@@ -5151,6 +5172,36 @@
               // insert fragment at end of body
               const wrapper = document.createElement("div");
               wrapper.innerHTML = html;
+              // Execute scripts found in the fragment so functions become available
+              try {
+                const scripts = wrapper.querySelectorAll("script");
+                for (const s of Array.from(scripts)) {
+                  const newScript = document.createElement("script");
+                  // copy attributes
+                  for (const attr of Array.from(s.attributes || [])) {
+                    newScript.setAttribute(attr.name, attr.value);
+                  }
+                  if (s.src) {
+                    // external script: append and wait for load
+                    newScript.src = s.src;
+                    newScript.async = false;
+                    document.head.appendChild(newScript);
+                    await new Promise((resolve, reject) => {
+                      newScript.onload = resolve;
+                      newScript.onerror = () => resolve();
+                    });
+                  } else {
+                    // inline script: execute by textContent
+                    newScript.textContent = s.textContent;
+                    document.head.appendChild(newScript);
+                  }
+                  // remove original script node so it won't be moved as-is
+                  s.parentNode && s.parentNode.removeChild(s);
+                }
+              } catch (e) {
+                console.warn('failed executing fragment scripts', e);
+              }
+
               // move children into body
               while (wrapper.firstChild) {
                 const child = wrapper.firstChild;
@@ -5224,6 +5275,19 @@
             break;
           case "rules":
             loadRules();
+            break;
+          case "custom-logic":
+            // Custom logic tab initialization
+            if (
+              globalThis.initCustomLogicTab &&
+              typeof globalThis.initCustomLogicTab === "function"
+            ) {
+              try {
+                await globalThis.initCustomLogicTab();
+              } catch (e) {
+                console.warn("initCustomLogicTab failed", e);
+              }
+            }
             break;
           case "executions":
             loadExecutions();
@@ -5389,7 +5453,7 @@
             .join("");
           try {
             const dbg = document.getElementById("actions-debug");
-            if (dbg) dbg.textContent = "Actions: " + items.length;
+            if (dbg) dbg.textContent = "Events: " + (filtered.length || 0);
           } catch (e) {
             console.warn(e);
           }
@@ -6780,8 +6844,17 @@
             }
 
             const grouped = groupByFirstWord(sets);
-            document.getElementById("rules-list").innerHTML =
-              buildRulesHtml(grouped);
+            const rulesListEl = document.getElementById("rules-list");
+            if (!sets || sets.length === 0) {
+              rulesListEl.innerHTML = `
+                <div style="padding:24px; color:#445;">
+                  <h3 style="margin-top:0">No rule sets found</h3>
+                  <div style="margin-top:8px">There are no business rule sets configured yet. Click <strong>➕ Add Rule Set</strong> to create one, or import rules from your orchestration configuration.</div>
+                </div>
+              `;
+            } else {
+              rulesListEl.innerHTML = buildRulesHtml(grouped);
+            }
           }
         } catch (e) {
           console.error("Failed to load rules:", e);

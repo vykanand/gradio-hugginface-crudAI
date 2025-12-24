@@ -1,0 +1,1597 @@
+<div id="custom-logic-panel" class="tab-panel">
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="addCustomLogic()">
+      ➕ New Custom Logic
+    </button>
+    <button class="btn btn-secondary" onclick="loadCustomLogics()">
+      🔄 Refresh
+    </button>
+    <button
+      id="toolbar-save-logic"
+      class="btn btn-primary"
+      style="margin-left: 8px"
+      onclick="saveCustomLogic()"
+    >
+      💾 Save Logic
+    </button>
+  </div>
+  <div class="main" style="flex: 1; display: flex; gap: 12px; min-height: 0">
+    <!-- Left: Logic List -->
+    <div
+      style="
+        width: 280px;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #e1e8ed;
+        padding-right: 12px;
+      "
+    >
+      <h3 style="margin: 0 0 12px 0; font-size: 0.95rem; color: #14171a">
+        Custom Logic Functions
+      </h3>
+      <div
+        id="custom-logic-list"
+        style="flex: 1; overflow-y: auto; min-height: 0"
+      ></div>
+    </div>
+
+    <!-- Right: Editor -->
+    <div
+      style="
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+      "
+    >
+      <div id="custom-logic-editor" style="display: none">
+        <div style="margin-bottom: 16px">
+          <label style="display: block; margin-bottom: 4px; font-weight: 600"
+            >Name</label
+          >
+          <input
+            type="text"
+            id="logic-name"
+            placeholder="e.g., Calculate Invoice Total"
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid #e1e8ed;
+              border-radius: 4px;
+            "
+          />
+        </div>
+
+        <div style="margin-bottom: 16px">
+          <label style="display: block; margin-bottom: 4px; font-weight: 600"
+            >Description</label
+          >
+          <textarea
+            id="logic-description"
+            rows="2"
+            placeholder="Describe what this logic does..."
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid #e1e8ed;
+              border-radius: 4px;
+            "
+          ></textarea>
+        </div>
+
+        <!-- Input Sources -->
+        <div style="margin-bottom: 16px">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600"
+            >Input Sources</label
+          >
+          <div style="display: flex; gap: 8px; margin-bottom: 8px">
+            <button
+              class="btn btn-secondary"
+              onclick="showEventInputSelector()"
+              style="font-size: 0.85rem"
+            >
+              + Add Event Input
+            </button>
+            <button
+              class="btn btn-secondary"
+              onclick="showActionTestRunner()"
+              style="font-size: 0.85rem"
+              title="Test run an action and select result fields using parser paths"
+            >
+              🧪 Test Action & Select Fields
+            </button>
+            <button
+              class="btn btn-secondary"
+              onclick="showActionInputSelector()"
+              style="font-size: 0.85rem"
+            >
+              + Add Action Input
+            </button>
+          </div>
+          <div
+            id="logic-inputs-list"
+            style="
+              border: 1px solid #e1e8ed;
+              border-radius: 4px;
+              padding: 8px;
+              min-height: 80px;
+              background: #f8f9fa;
+            "
+          >
+            <em style="color: #657786; font-size: 0.85rem"
+              >No inputs defined yet</em
+            >
+          </div>
+        </div>
+
+        <!-- Function Editor -->
+        <div style="margin-bottom: 16px">
+          <label style="display: block; margin-bottom: 4px; font-weight: 600"
+            >Function Code</label
+          >
+          <div
+            style="
+              font-size: 0.75rem;
+              color: #657786;
+              margin-bottom: 6px;
+              background: #fff3cd;
+              padding: 6px 8px;
+              border-radius: 4px;
+            "
+          >
+            Write a JavaScript function that returns a value. Available
+            variables: <code id="available-vars">none</code>
+          </div>
+          <div
+            id="variable-preview"
+            style="margin-top: 8px; font-size: 0.9rem; color: #333"
+          >
+            <div style="font-weight: 600; margin-bottom: 6px; color: #14171a">
+              Variable Preview
+            </div>
+            <div
+              id="variable-preview-list"
+              style="
+                background: #f8f9fa;
+                border: 1px solid #e1e8ed;
+                padding: 8px;
+                border-radius: 4px;
+                color: #657786;
+              "
+            >
+              No preview available
+            </div>
+          </div>
+          <textarea
+            id="logic-function"
+            rows="12"
+            placeholder="// Example:&#10;return inputs.eventField + inputs.actionResult;"
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid #e1e8ed;
+              border-radius: 4px;
+              font-family: 'Courier New', monospace;
+              font-size: 0.85rem;
+            "
+          ></textarea>
+          <div style="display: flex; gap: 8px; margin-top: 8px">
+            <button
+              id="inline-save-logic"
+              class="btn btn-primary"
+              onclick="saveCustomLogic()"
+            >
+              💾 Save Logic
+            </button>
+            <button class="btn btn-secondary" onclick="clearLogicEditor()">
+              Clear Editor
+            </button>
+          </div>
+        </div>
+
+        <!-- Test Section -->
+        <div style="margin-bottom: 16px">
+          <label style="display: block; margin-bottom: 4px; font-weight: 600"
+            >Test Function</label
+          >
+          <textarea
+            id="logic-test-data"
+            rows="4"
+            placeholder='{"eventField": 100, "actionResult": 50}'
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid #e1e8ed;
+              border-radius: 4px;
+              font-size: 0.85rem;
+              margin-bottom: 8px;
+            "
+          ></textarea>
+          <button
+            class="btn btn-primary"
+            onclick="testCustomLogic()"
+            style="margin-right: 8px"
+          >
+            Test Function
+          </button>
+          <div
+            id="logic-test-result"
+            style="
+              margin-top: 8px;
+              padding: 8px;
+              border-radius: 4px;
+              display: none;
+            "
+          ></div>
+        </div>
+
+        <!-- Actions -->
+        <div
+          style="
+            display: flex;
+            gap: 8px;
+            padding-top: 12px;
+            border-top: 1px solid #e1e8ed;
+          "
+        >
+          <button class="btn btn-primary" onclick="saveCustomLogic()">
+            Save Logic
+          </button>
+          <button class="btn btn-secondary" onclick="clearLogicEditor()">
+            Clear
+          </button>
+          <button
+            class="btn btn-danger"
+            onclick="deleteCurrentLogic()"
+            id="delete-logic-btn"
+            style="margin-left: auto; display: none"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+
+      <div
+        id="custom-logic-empty-state"
+        style="
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #657786;
+        "
+      >
+        <div style="text-align: center">
+          <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5">
+            ⚙️
+          </div>
+          <div
+            style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem"
+          >
+            No Custom Logic Selected
+          </div>
+          <div style="font-size: 0.9rem">
+            Create or select a custom logic function to get started
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Custom Logic state
+  let customLogics = [];
+  let currentLogic = null;
+  let logicInputs = [];
+
+  window.initCustomLogicTab = async function () {
+    try {
+      await loadCustomLogics();
+      await loadAvailableEvents();
+      await loadAvailableActions();
+    } catch (e) {
+      console.warn("initCustomLogicTab error", e);
+    }
+  };
+
+  async function loadCustomLogics() {
+    // Try API first, fall back to static config file so the editor works
+    try {
+      const res = await fetch("/api/custom-logic");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.ok) {
+          customLogics = data.logics || [];
+          renderLogicsList();
+          return;
+        }
+      }
+    } catch (e) {
+      // ignore and try fallback
+    }
+
+    // Fallback: load from config metadata file (served statically)
+    try {
+      const res2 = await fetch("/config/metadata/custom-logic.json");
+      if (res2.ok) {
+        const arr = await res2.json();
+        if (Array.isArray(arr)) {
+          customLogics = arr;
+          renderLogicsList();
+          return;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load custom logics from fallback:", e);
+    }
+
+    // If all fails, show empty state
+    customLogics = [];
+    renderLogicsList();
+  }
+
+  function renderLogicsList() {
+    const list = document.getElementById("custom-logic-list");
+    if (!customLogics || customLogics.length === 0) {
+      list.innerHTML =
+        '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">No custom logic functions yet</div>';
+      return;
+    }
+
+    list.innerHTML = customLogics
+      .map(
+        (logic) => `
+      <div class="list-item" onclick="selectLogic('${
+        logic.id
+      }')" style="margin-bottom: 8px; cursor: pointer;">
+        <div style="font-weight: 600; color: #14171a; font-size: 0.9rem;">${
+          logic.name
+        }</div>
+        <div style="font-size: 0.75rem; color: #657786; margin-top: 2px;">${
+          logic.description || ""
+        }</div>
+        <div style="font-size: 0.7rem; color: #657786; margin-top: 4px;">
+          Inputs: ${(logic.inputs || []).length} | Updated: ${new Date(
+          logic.updatedAt || Date.now()
+        ).toLocaleDateString()}
+        </div>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  function addCustomLogic() {
+    currentLogic = null;
+    logicInputs = [];
+    clearLogicEditor();
+    showEditor();
+  }
+
+  function selectLogic(id) {
+    const logic = customLogics.find((l) => l.id === id);
+    if (!logic) return;
+
+    currentLogic = logic;
+    logicInputs = logic.inputs || [];
+
+    document.getElementById("logic-name").value = logic.name || "";
+    document.getElementById("logic-description").value =
+      logic.description || "";
+    document.getElementById("logic-function").value = logic.functionCode || "";
+
+    renderInputsList();
+    updateAvailableVars();
+    showEditor();
+    document.getElementById("delete-logic-btn").style.display = "block";
+
+    // If exampleContext is provided, prefill the test data textarea
+    try {
+      if (logic.exampleContext) {
+        const testInputs = {};
+        const ctx = logic.exampleContext || {};
+        const extract = (obj, path) => {
+          if (!path) return obj;
+          const parts = path.split(".");
+          let cur = obj;
+          for (const p of parts) {
+            const m = p.match(/^(\w+)\[(\d+)\]$/);
+            if (m) {
+              cur = cur && cur[m[1]] && cur[m[1]][parseInt(m[2])];
+            } else {
+              cur = cur && cur[p];
+            }
+            if (cur === undefined) return null;
+          }
+          return cur === undefined ? null : cur;
+        };
+
+        (logic.inputs || []).forEach((inp) => {
+          if (inp.type === "event") {
+            const ev =
+              (ctx.events && ctx.events[inp.eventId]) ||
+              (ctx.events && ctx.events[inp.source]) ||
+              {};
+            const evName = inp.eventName || inp.eventId || inp.source;
+            testInputs[evName] = testInputs[evName] || {};
+            if (!inp.field) {
+              // full event object
+              testInputs[evName] = ev;
+            } else {
+              testInputs[evName][inp.field] = extract(ev, inp.field || "");
+            }
+          } else if (inp.type === "action") {
+            const act =
+              (ctx.actions && ctx.actions[inp.actionId]) ||
+              (ctx.actions && ctx.actions[inp.source]);
+            testInputs.actions = testInputs.actions || {};
+            const aid = inp.actionId || inp.actionName || inp.source;
+            if (Array.isArray(act) && act.length > 0) {
+              if (!inp.field) testInputs.actions[aid] = act;
+              else testInputs.actions[aid] = extract(act[0], inp.field || "");
+            } else {
+              if (!inp.field) testInputs.actions[aid] = act;
+              else testInputs.actions[aid] = extract(act, inp.field || "");
+            }
+          }
+        });
+
+        document.getElementById("logic-test-data").value = JSON.stringify(
+          testInputs,
+          null,
+          2
+        );
+      }
+    } catch (e) {
+      console.warn("Failed to prefill test data from exampleContext", e);
+    }
+  }
+
+  function showEditor() {
+    const editor = document.getElementById("custom-logic-editor");
+    const empty = document.getElementById("custom-logic-empty-state");
+    if (editor) editor.style.display = "block";
+    if (empty) empty.style.display = "none";
+    // ensure editor is visible in scroll container
+    try {
+      editor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const name = document.getElementById("logic-name");
+      if (name) {
+        name.focus();
+      }
+    } catch (e) {}
+  }
+
+  function clearLogicEditor() {
+    currentLogic = null;
+    logicInputs = [];
+    document.getElementById("logic-name").value = "";
+    document.getElementById("logic-description").value = "";
+    document.getElementById("logic-function").value = "";
+    document.getElementById("logic-test-data").value = "";
+    document.getElementById("logic-test-result").style.display = "none";
+    document.getElementById("delete-logic-btn").style.display = "none";
+    renderInputsList();
+    updateAvailableVars();
+  }
+
+  function renderInputsList() {
+    const container = document.getElementById("logic-inputs-list");
+    if (!logicInputs || logicInputs.length === 0) {
+      container.innerHTML =
+        '<em style="color: #657786; font-size: 0.85rem;">No inputs defined yet</em>';
+      return;
+    }
+
+    container.innerHTML = logicInputs
+      .map(
+        (input, idx) => `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px; background: white; border: 1px solid #e1e8ed; border-radius: 4px; margin-bottom: 4px;">
+        <div style="flex:1;">
+          <span style="font-weight: 600; font-size: 0.85rem;">${
+            input.type === "event"
+              ? input.eventName || input.eventId
+              : input.actionName || input.actionId
+          }</span>
+          <span style="color: #657786; font-size: 0.75rem; margin-left: 8px;">${
+            input.type === "event" ? "📋 Event" : "⚡ Action"
+          }</span>
+          ${
+            input.parserPath
+              ? `<div style="color: #1a73e8; font-size: 0.75rem; margin-top:4px; font-family:monospace;">→ <strong>${input.parserVarName}</strong> = ${input.parserPath}</div>`
+              : input.field
+              ? `<span style="color: #657786; font-size: 0.75rem;"> → ${input.field}</span>`
+              : '<span style="color:#657786; font-size:0.75rem; margin-left:8px;"> (full)</span>'
+          }
+        </div>
+        <button class="btn btn-sm btn-danger" onclick="removeInput(${idx})" style="padding: 2px 8px; font-size: 0.75rem;">✕</button>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  function removeInput(idx) {
+    logicInputs.splice(idx, 1);
+    renderInputsList();
+    updateAvailableVars();
+  }
+
+  function updateAvailableVars() {
+    const varsEl = document.getElementById("available-vars");
+    if (!logicInputs || logicInputs.length === 0) {
+      varsEl.textContent = "none";
+      return;
+    }
+
+    const parts = [];
+    logicInputs.forEach((i) => {
+      if (i.type === "event") {
+        const name = i.eventName || i.eventId;
+        if (i.field) parts.push(`inputs.${name}.${i.field}`);
+        else parts.push(`inputs.${name}`);
+      } else if (i.type === "action") {
+        const id = i.actionId || i.actionName;
+        if (i.parserPath) {
+          // Parser path variable
+          parts.push(`inputs.actions.${id}.${i.parserVarName}`);
+        } else if (i.field) {
+          parts.push(`inputs.actions.${id}.${i.field}`);
+        } else {
+          parts.push(`inputs.actions.${id}`);
+        }
+      }
+    });
+    varsEl.textContent = parts.join(", ");
+  }
+
+  async function showEventInputSelector() {
+    // Show modal to select event and field
+    const events = await loadAvailableEvents();
+    if (!events || events.length === 0) {
+      showToast("No events available", "info");
+      return;
+    }
+
+    const eventSelect = events
+      .map((e) => `<option value="${e.id}">${e.name}</option>`)
+      .join("");
+
+    // Prefetch payload schemas for events so we can render selectable field chips synchronously
+    const schemaMap = {};
+    await Promise.all(
+      events.map(async (ev) => {
+        try {
+          schemaMap[ev.id] = await fetchEventPayloadSchema(ev);
+        } catch (e) {
+          schemaMap[ev.id] = null;
+        }
+      })
+    );
+
+    // Expose schema map for the modal helpers
+    window.__customLogicEventSchemaMap = schemaMap;
+
+    // Helper to build fields HTML for a schema
+    function buildFieldsHtml(schema) {
+      if (!schema)
+        return '<div class="muted">No schema available for this event</div>';
+      const primary = schema.primaryFields || {};
+      const metadata = schema.metadataFields || {};
+      const parts = [];
+      Object.keys(primary).forEach((k) => {
+        const info = primary[k];
+        const title = info.description || k;
+        parts.push(
+          `<span style=\"background:#f0f3f5;padding:6px 10px;border-radius:12px;cursor:pointer;border:1px solid #e1e8ed; font-size:0.85rem;\" data-field=\"${k}\" title=\"${title}\" onclick=\"window.__customLogicToggleField(this)\">${k}</span>`
+        );
+      });
+      Object.keys(metadata).forEach((k) => {
+        const info = metadata[k];
+        const title = info.description || k;
+        parts.push(
+          `<span style=\"background:#f8fafb;padding:4px 8px;border-radius:12px;cursor:pointer;border:1px solid #e9eef2;color:#657786;font-size:0.8rem;\" data-field=\"${k}\" title=\"${title}\" onclick=\"window.__customLogicToggleField(this)\">${k}</span>`
+        );
+      });
+      if (parts.length === 0)
+        return '<div class="muted">No fields discovered</div>';
+      return `<div style=\"display:flex;flex-wrap:wrap;gap:6px;\">${parts.join(
+        ""
+      )}</div>`;
+    }
+
+    // Build initial fields HTML for first event
+    const firstSchemaHtml = buildFieldsHtml(schemaMap[events[0].id]);
+
+    const html = `
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; margin-bottom: 4px;">Event</label>
+        <select id="event-input-select" data-events='${JSON.stringify(
+          events
+        ).replace(
+          /</g,
+          "\\u003c"
+        )}' style="width: 100%; padding: 8px; border: 1px solid #e1e8ed; border-radius: 4px;" onchange="window.populateCustomLogicEventFields && window.populateCustomLogicEventFields(this)">
+          ${eventSelect}
+        </select>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <div id="event-fields-container" style="max-height:260px; overflow:auto; border:1px solid #e1e8ed; padding:8px; border-radius:4px; background:white">
+          ${firstSchemaHtml}
+        </div>
+      </div>
+    `;
+
+    // Provide helper functions used by the modal UI
+    window.populateCustomLogicEventFields = async function (selectEl) {
+      try {
+        const val = selectEl.value;
+        const container = document.getElementById("event-fields-container");
+        container.__chosenFields = [];
+        const schema =
+          window.__customLogicEventSchemaMap &&
+          window.__customLogicEventSchemaMap[val];
+        container.innerHTML = buildFieldsHtml(schema);
+      } catch (e) {
+        console.warn("populateCustomLogicEventFields error", e);
+      }
+    };
+
+    window.__customLogicToggleField = function (el) {
+      try {
+        const field = el.dataset.field;
+        // find container
+        let container = el.closest && el.closest("#event-fields-container");
+        if (!container)
+          container = document.getElementById("event-fields-container");
+        if (!container.__chosenFields) container.__chosenFields = [];
+        const idx = container.__chosenFields.indexOf(field);
+        if (idx === -1) {
+          container.__chosenFields.push(field);
+          el.style.background = "#667eea";
+          el.style.color = "white";
+          el.style.borderColor = "#667eea";
+        } else {
+          container.__chosenFields.splice(idx, 1);
+          el.style.background = "";
+          el.style.color = "";
+          el.style.borderColor = "";
+        }
+      } catch (e) {
+        console.warn("toggle field", e);
+      }
+    };
+
+    const result = await showCustomModal("Add Event Input", html, [
+      { label: "Add", value: "add", primary: true },
+      { label: "Cancel", value: null },
+    ]);
+
+    if (result === "add") {
+      const eventId = document.getElementById("event-input-select").value;
+      const event = events.find((e) => e.id === eventId);
+      // fields added via chips will populate into a temporary holder on the container element
+      const container = document.getElementById("event-fields-container");
+      const chosen =
+        container && container.__chosenFields ? container.__chosenFields : [];
+      if (!chosen || chosen.length === 0) {
+        // If none chosen, add the full event object as input
+        logicInputs.push({
+          type: "event",
+          eventId: event.id,
+          eventName: event.name || event.id,
+          field: null,
+        });
+      } else {
+        chosen.forEach((f) => {
+          logicInputs.push({
+            type: "event",
+            eventId: event.id,
+            eventName: event.name || event.id,
+            field: f,
+          });
+        });
+      }
+
+      renderInputsList();
+      updateAvailableVars();
+    }
+  }
+
+  async function showActionInputSelector() {
+    const actions = await loadAvailableActions();
+    if (!actions || actions.length === 0) {
+      showToast("No actions available", "info");
+      return;
+    }
+
+    const actionSelect = actions
+      .map((a) => `<option value="${a.id}">${a.name}</option>`)
+      .join("");
+    const html = `
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; margin-bottom: 4px;">Action</label>
+        <select id="action-input-select" style="width: 100%; padding: 8px; border: 1px solid #e1e8ed; border-radius: 4px;">
+          ${actionSelect}
+        </select>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; margin-bottom: 4px;">Result Field (leave empty to use full action result)</label>
+        <input type="text" id="action-field-input" placeholder="e.g., data[0].total" style="width: 100%; padding: 8px; border: 1px solid #e1e8ed; border-radius: 4px;" />
+      </div>
+      <div style="margin-bottom: 6px; color: #657786; font-size: 0.85rem">Alias is not required — action results will be exposed under <code>inputs.actions.<i>actionId</i></code> or as field path.</div>
+    `;
+
+    const result = await showCustomModal("Add Action Input", html, [
+      { label: "Add", value: "add", primary: true },
+      { label: "Cancel", value: null },
+    ]);
+
+    if (result === "add") {
+      const actionId = document.getElementById("action-input-select").value;
+      const action = actions.find((a) => a.id === actionId);
+      const field = document.getElementById("action-field-input").value.trim();
+
+      logicInputs.push({
+        type: "action",
+        actionId: action.id,
+        actionName: action.name || action.id,
+        field: field || null,
+      });
+
+      renderInputsList();
+      updateAvailableVars();
+    }
+  }
+
+  async function loadAvailableEvents() {
+    try {
+      // Primary source: runtime-discovered event registry
+      const r = await fetch("/api/event-registry");
+      if (r.ok) {
+        const dr = await r.json();
+        const reg = dr && dr.registry ? dr.registry : {};
+        const out = [];
+        Object.keys(reg).forEach((mod) => {
+          const m = reg[mod] || {};
+          Object.keys(m.events || {}).forEach((evName) => {
+            out.push({
+              id: evName,
+              name: evName,
+              description: "(discovered)",
+              target: mod,
+            });
+          });
+        });
+        return out;
+      }
+      // If registry endpoint not available or empty, return empty list
+      return [];
+    } catch (e) {
+      console.error("Failed to load events", e);
+      return [];
+    }
+  }
+
+  async function loadAvailableActions() {
+    try {
+      // Prefer the central actions endpoint used by the Actions panel
+      try {
+        const resA = await fetch("/api/actions");
+        if (resA.ok) {
+          const dataA = await resA.json();
+          console.debug("custom-logic: /api/actions ->", dataA);
+          if (dataA && dataA.ok) {
+            const arr = Object.values(dataA.actions || {}).map((a) => ({
+              id: a.id || a.name,
+              ...(a || {}),
+            }));
+            console.debug("custom-logic: actions count", arr.length);
+            if (arr.length) return arr;
+          }
+        }
+      } catch (e) {}
+
+      return [];
+    } catch (e) {
+      console.error("Failed to load actions", e);
+      return [];
+    }
+  }
+
+  async function testCustomLogic() {
+    const functionCode = document.getElementById("logic-function").value;
+    const testDataStr = document.getElementById("logic-test-data").value;
+
+    if (!functionCode.trim()) {
+      showToast("Function code is required", "error");
+      return;
+    }
+
+    let testData = {};
+    try {
+      testData = JSON.parse(testDataStr || "{}");
+    } catch (e) {
+      showToast("Invalid JSON in test data", "error");
+      return;
+    }
+
+    try {
+      const result = await executeCustomLogic(functionCode, {
+        inputs: testData,
+      });
+      const resultEl = document.getElementById("logic-test-result");
+      resultEl.style.display = "block";
+      resultEl.style.background = "#d4edda";
+      resultEl.style.border = "1px solid #c3e6cb";
+      resultEl.style.color = "#155724";
+      resultEl.innerHTML = `<strong>Result:</strong> <pre style="margin-top: 4px; background: #f8f9fa; padding: 6px; border-radius: 4px; color: #14171a;">${JSON.stringify(
+        result,
+        null,
+        2
+      )}</pre>`;
+    } catch (e) {
+      const resultEl = document.getElementById("logic-test-result");
+      resultEl.style.display = "block";
+      resultEl.style.background = "#f8d7da";
+      resultEl.style.border = "1px solid #f5c6cb";
+      resultEl.style.color = "#721c24";
+      resultEl.innerHTML = `<strong>Error:</strong> ${e.message}`;
+    }
+  }
+
+  async function executeCustomLogic(functionCode, context) {
+    // Create sandboxed function
+    const func = new Function("inputs", functionCode);
+    return func(context.inputs);
+  }
+
+  async function saveCustomLogic() {
+    const name = document.getElementById("logic-name").value.trim();
+    const description = document
+      .getElementById("logic-description")
+      .value.trim();
+    const functionCode = document.getElementById("logic-function").value.trim();
+
+    if (!name) {
+      showToast("Name is required", "error");
+      return;
+    }
+
+    if (!functionCode) {
+      showToast("Function code is required", "error");
+      return;
+    }
+
+    const logic = {
+      id: currentLogic ? currentLogic.id : generateId(),
+      name,
+      description,
+      inputs: logicInputs,
+      functionCode,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      const method = currentLogic ? "PUT" : "POST";
+      const url = currentLogic
+        ? `/api/custom-logic/${currentLogic.id}`
+        : "/api/custom-logic";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(logic),
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        showToast("Custom logic saved", "success");
+        await loadCustomLogics();
+        currentLogic = logic;
+      } else {
+        showToast("Failed to save: " + (data.error || "unknown"), "error");
+      }
+    } catch (e) {
+      showToast("Save error: " + e.message, "error");
+    }
+  }
+
+  async function deleteCurrentLogic() {
+    if (!currentLogic) return;
+    if (!confirm(`Delete "${currentLogic.name}"?`)) return;
+
+    try {
+      const res = await fetch(`/api/custom-logic/${currentLogic.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast("Deleted", "success");
+        await loadCustomLogics();
+        clearLogicEditor();
+        document.getElementById("custom-logic-empty-state").style.display =
+          "flex";
+        document.getElementById("custom-logic-editor").style.display = "none";
+      } else {
+        showToast("Delete failed", "error");
+      }
+    } catch (e) {
+      showToast("Delete error: " + e.message, "error");
+    }
+  }
+
+  function generateId() {
+    return (
+      "logic_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9)
+    );
+  }
+
+  async function showCustomModal(title, content, buttons) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.style.cssText =
+        "position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;";
+
+      const modal = document.createElement("div");
+      modal.style.cssText =
+        "background: white; border-radius: 8px; padding: 20px; min-width: 400px; max-width: 600px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);";
+
+      const titleEl = document.createElement("h3");
+      titleEl.textContent = title;
+      titleEl.style.cssText = "margin: 0 0 16px 0;";
+
+      const contentEl = document.createElement("div");
+      contentEl.innerHTML = content;
+
+      const buttonContainer = document.createElement("div");
+      buttonContainer.style.cssText =
+        "display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end;";
+
+      buttons.forEach((btn) => {
+        const button = document.createElement("button");
+        button.textContent = btn.label;
+        button.className = btn.primary
+          ? "btn btn-primary"
+          : "btn btn-secondary";
+        button.onclick = () => {
+          document.body.removeChild(overlay);
+          resolve(btn.value);
+        };
+        buttonContainer.appendChild(button);
+      });
+
+      modal.appendChild(titleEl);
+      modal.appendChild(contentEl);
+      modal.appendChild(buttonContainer);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      overlay.onclick = (e) => {
+        if (e.target === overlay) {
+          document.body.removeChild(overlay);
+          resolve(null);
+        }
+      };
+    });
+  }
+
+  // Action Test Runner - Test execute actions and select result fields with parser paths
+  window.showActionTestRunner = async function () {
+    const actions = await loadAvailableActions();
+    if (!actions || actions.length === 0) {
+      showToast("No actions available", "info");
+      return;
+    }
+
+    const actionSelect = actions
+      .map((a) => `<option value="${a.id}">${a.name || a.id}</option>`)
+      .join("");
+
+    const html = `
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 8px;">1. Select Action to Test</label>
+        <select id="test-action-selector" style="width: 100%; padding: 8px; border: 1px solid #e1e8ed; border-radius: 4px;">
+          <option value="">-- Choose an action --</option>
+          ${actionSelect}
+        </select>
+      </div>
+
+      <!-- Removed test parameters JSON input per UX decision; Custom Logic tester will use persisted executedQuery or action query directly -->
+
+      <div id="test-action-result-section" style="display:none; margin-bottom: 16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 8px;">3. Action Result</label>
+        <div style="background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 12px; max-height: 300px; overflow: auto;">
+          <pre id="test-action-result-display" style="margin: 0; font-size: 0.85rem; white-space: pre-wrap;"></pre>
+        </div>
+      </div>
+
+      <div id="test-action-fields-section" style="display:none; margin-bottom: 16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 8px;">4. Select Fields to Use as Variables</label>
+        <div style="font-size: 0.85rem; color: #657786; margin-bottom: 8px;">Click on fields below to add them as parser path variables:</div>
+        <div id="test-action-fields-tree" style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 12px; max-height: 300px; overflow: auto;"></div>
+        <div id="test-action-metadata-fields" style="margin-top:12px; background:#fff; border:1px dashed #e9eef2; padding:10px; border-radius:4px; display:none;">
+          <div style="font-weight:600; color:#14171a; margin-bottom:6px;">Metadata / Event Fields</div>
+          <div id="test-action-metadata-fields-list" style="max-height:200px; overflow:auto; font-size:0.9rem; color:#333"></div>
+        </div>
+      </div>
+
+      <div id="selected-parser-paths-section" style="display:none; margin-bottom: 16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 8px;">Selected Variables (Parser Paths)</label>
+        <div id="selected-parser-paths-list" style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 12px;"></div>
+      </div>
+    `;
+
+    // Track test state
+    window.__actionTestState = {
+      selectedAction: null,
+      testResult: null,
+      selectedPaths: new Map(),
+      // stash available actions so execute can reference them
+      availableActions: actions,
+    };
+
+    // Watch for action selection changes
+    setTimeout(() => {
+      const selector = document.getElementById("test-action-selector");
+      if (selector) {
+        selector.onchange = () => {
+          const actionId = selector.value;
+          if (actionId) {
+            window.__actionTestState.selectedAction = actionId;
+          } else {
+            window.__actionTestState.selectedAction = null;
+          }
+          // reset UI
+          const resultSec = document.getElementById(
+            "test-action-result-section"
+          );
+          const fieldsSec = document.getElementById(
+            "test-action-fields-section"
+          );
+          const selSec = document.getElementById(
+            "selected-parser-paths-section"
+          );
+          if (resultSec) resultSec.style.display = "none";
+          if (fieldsSec) fieldsSec.style.display = "none";
+          if (selSec) selSec.style.display = "none";
+
+          // Auto-run the test for the selected action and log debug info
+          try {
+            console.debug("action-test: selector changed, actionId=", actionId);
+            if (actionId) window.__executeTestAction();
+          } catch (e) {
+            console.error("action-test: auto-run failed", e);
+          }
+        };
+      }
+    }, 100);
+
+    // Show modal but don't block — we want to auto-run a saved sample if available
+    const modalPromise = showCustomModal(
+      "🧪 Test Action & Select Result Fields",
+      html,
+      [
+        { label: "Add Selected Variables", value: "save", primary: true },
+        { label: "Cancel", value: null },
+      ]
+    );
+
+    // After the modal is inserted into the DOM, try to auto-select an action
+    // that has a saved successful sample (or other sample fields) and run it.
+    setTimeout(() => {
+      try {
+        const selectorEl = document.getElementById("test-action-selector");
+        if (!selectorEl) return;
+
+        // Find an action with an explicit sample or with validated tests
+        const autoAction = actions.find((a) => {
+          if (!a) return false;
+          if (a.sample || a.successSample || a.exampleParams) return true;
+          if (
+            a.variableMappings &&
+            a.variableMappings._validation &&
+            a.variableMappings._validation.tested
+          )
+            return true;
+          if (
+            a.variableMappings &&
+            a.variableMappings.parserPaths &&
+            a.variableMappings.parserPaths.length > 0
+          )
+            return true;
+          return false;
+        });
+
+        if (!autoAction) return;
+
+        // select it in the UI
+        selectorEl.value = autoAction.id;
+
+        // run the test to populate preview and fields
+        try {
+          window.__executeTestAction();
+        } catch (e) {
+          console.warn("auto-run execute failed", e);
+        }
+      } catch (e) {
+        console.warn("auto-select sample failed", e);
+      }
+    }, 80);
+
+    const result = await modalPromise;
+
+    if (result === "save" && window.__actionTestState.selectedPaths.size > 0) {
+      // Add selected parser paths to logic inputs
+      const actionId = window.__actionTestState.selectedAction;
+      for (const [
+        path,
+        data,
+      ] of window.__actionTestState.selectedPaths.entries()) {
+        logicInputs.push({
+          type: "action",
+          actionId: actionId,
+          actionName: actionId,
+          field: null,
+          parserPath: path,
+          parserVarName: data.varName,
+          sampleValue: data.value,
+        });
+      }
+      renderInputsList();
+      updateAvailableVars();
+      showToast(
+        `Added ${window.__actionTestState.selectedPaths.size} parser path variable(s)`,
+        "success"
+      );
+      // Persist parser paths into action metadata variableMappings.parserPaths
+      try {
+        const parserArray = [];
+        for (const [p, d] of window.__actionTestState.selectedPaths.entries()) {
+          parserArray.push({
+            path: p,
+            varName: d.varName,
+            sampleValue: d.value,
+            field: d.field || null,
+          });
+        }
+        // Send partial update to action metadata
+        const updResp = await fetch(
+          `/api/actions/${encodeURIComponent(actionId)}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              variableMappings: { parserPaths: parserArray },
+            }),
+          }
+        );
+        const updJson = await updResp.json();
+        if (updJson && updJson.ok) {
+          showToast("Saved parser paths to action metadata", "success");
+        } else {
+          showToast(
+            "Failed to save parser paths: " +
+              (updJson && updJson.error ? updJson.error : "unknown"),
+            "error"
+          );
+        }
+      } catch (e) {
+        console.error("Failed to persist parser paths", e);
+        showToast("Failed to persist parser paths: " + e.message, "error");
+      }
+    }
+  };
+
+  window.__executeTestAction = async function () {
+    const actionId = window.__actionTestState.selectedAction;
+    if (!actionId) return;
+
+    try {
+      // Ensure we have access to the available actions (may be out of scope)
+      let actions =
+        (window.__actionTestState &&
+          window.__actionTestState.availableActions) ||
+        null;
+      if (!actions || !Array.isArray(actions)) {
+        try {
+          actions = await loadAvailableActions();
+        } catch (e) {
+          actions = [];
+        }
+      }
+
+      // Use stored executedQuery if available (saved by Actions editor), otherwise fall back to action.query/template
+      const action = actions.find((a) => a.id === actionId) || {};
+      const vm = action.variableMappings || {};
+      // ExampleOutputs may contain executedQuery saved earlier; prefer explicit executedQuery first
+      let queryText = (vm && vm.executedQuery) || null;
+      if (
+        !queryText &&
+        Array.isArray(vm._exampleOutputs) &&
+        vm._exampleOutputs.length > 0
+      ) {
+        // take the first exampleOutputs.executedQuery if present
+        for (const ex of vm._exampleOutputs) {
+          if (ex && ex.executedQuery) {
+            queryText = ex.executedQuery;
+            break;
+          }
+        }
+      }
+      if (!queryText)
+        queryText = action.sql || action.query || action.template || null;
+      if (!queryText) {
+        showToast("Action has no SQL defined", "error");
+        return;
+      }
+
+      // Execute using the stored query from action metadata. Do not require user-supplied JSON params here.
+      console.debug("action-test: executing action", { actionId, queryText });
+      const res = await fetch("/api/event/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: queryText, eventName: actionId }),
+      });
+      console.debug("action-test: fetch completed, status=", res.status);
+
+      let data;
+      try {
+        data = await res.json();
+        console.debug("action-test: response json", data);
+      } catch (parseErr) {
+        const txt = await res.text().catch(() => "<no body>");
+        console.error("action-test: non-json response", {
+          status: res.status,
+          body: txt,
+        });
+        throw new Error(
+          "Server returned non-JSON response: " +
+            (txt.length > 400 ? txt.substring(0, 400) + "..." : txt)
+        );
+      }
+
+      // Normalize response shape from /api/event/execute to the test UI
+      if (data && data.ok) {
+        const result = {
+          rows: data.data || data.rows || [],
+          rowCount:
+            data.rowCount != null
+              ? data.rowCount
+              : Array.isArray(data.data)
+              ? data.data.length
+              : 0,
+          sql: data.executedQuery || data.query || queryText,
+          actionId: actionId,
+        };
+        window.__actionTestState.testResult = result;
+        document.getElementById("test-action-result-display").textContent =
+          JSON.stringify(result, null, 2);
+        document.getElementById("test-action-result-section").style.display =
+          "block";
+        __renderActionResultFieldsTree(result);
+        document.getElementById("test-action-fields-section").style.display =
+          "block";
+        try {
+          showVariablePreviewFromActionResult(result);
+        } catch (e) {
+          console.warn("showVariablePreview error", e);
+        }
+
+        // Also render metadata/event fields if present on the action
+        try {
+          __renderActionMetadataFields(action);
+        } catch (e) {
+          console.warn("render metadata fields error", e);
+        }
+      } else {
+        const errMsg =
+          data && (data.error || data.message)
+            ? data.error || data.message
+            : "Unknown error";
+        const executed =
+          data && (data.executedQuery || data.query)
+            ? data.executedQuery || data.query
+            : null;
+        const display = executed
+          ? `${errMsg}\nExecutedQuery:\n${executed}`
+          : errMsg;
+        showToast("Action execution failed: " + display, "error");
+      }
+    } catch (e) {
+      console.error("executeTestAction error", e);
+      showToast("Failed to execute action: " + e.message, "error");
+    }
+  };
+
+  function __renderActionResultFieldsTree(result, parentPath = "", indent = 0) {
+    const container = document.getElementById("test-action-fields-tree");
+    if (indent === 0) container.innerHTML = "";
+
+    if (!result || typeof result !== "object") {
+      if (indent === 0)
+        container.innerHTML =
+          '<div style="color:#666; padding:8px;">No structured data to display</div>';
+      return;
+    }
+
+    const entries = Array.isArray(result)
+      ? result.slice(0, 10).map((v, i) => [i, v]) // Limit array items for performance
+      : Object.entries(result);
+
+    for (const [key, value] of entries) {
+      const path = parentPath ? `${parentPath}.${key}` : String(key);
+      const isObject = value && typeof value === "object";
+      const isArray = Array.isArray(value);
+      const displayValue = isObject
+        ? isArray
+          ? `[${value.length} items]`
+          : "{...}"
+        : JSON.stringify(value).substr(0, 50);
+
+      const fieldDiv = document.createElement("div");
+      fieldDiv.style.cssText = `margin-left:${
+        indent * 20
+      }px; padding:6px 8px; cursor:pointer; border-radius:4px; margin-bottom:2px; display:flex; justify-content:space-between; align-items:center;`;
+      fieldDiv.innerHTML = `
+        <div>
+          <span style="font-weight: 600; color: #1a73e8;">${key}</span>:
+          <span style="color: #666; font-size: 0.9rem;">${displayValue}</span>
+        </div>
+        <button class="btn btn-sm" onclick="window.__selectParserPath('${path.replace(
+          /'/g,
+          "\\'"
+        )}')" style="padding: 2px 8px; font-size: 0.75rem;">+ Add Variable</button>
+      `;
+      fieldDiv.onmouseover = () => (fieldDiv.style.background = "#f0f0f0");
+      fieldDiv.onmouseout = () => (fieldDiv.style.background = "transparent");
+      container.appendChild(fieldDiv);
+
+      // Recursively render nested objects (limit depth to prevent performance issues)
+      if (isObject && indent < 3) {
+        if (isArray && value.length > 0 && typeof value[0] === "object") {
+          __renderActionResultFieldsTree(value[0], `${path}[0]`, indent + 1);
+        } else if (!isArray && Object.keys(value).length < 20) {
+          __renderActionResultFieldsTree(value, path, indent + 1);
+        }
+      }
+    }
+  }
+
+  // Populate the Variable Preview panel from action result
+  function showVariablePreviewFromActionResult(result) {
+    const container = document.getElementById("variable-preview-list");
+    if (!container) return;
+    const rows = result && result.rows ? result.rows : null;
+    let sample = null;
+    if (Array.isArray(rows) && rows.length > 0) sample = rows[0];
+    else if (rows && typeof rows === "object") sample = rows;
+    else if (result && typeof result === "object") sample = result;
+
+    if (!sample || typeof sample !== "object") {
+      container.innerHTML =
+        '<div style="color:#666">No tabular preview available</div>';
+      return;
+    }
+
+    const parts = [];
+    Object.keys(sample)
+      .slice(0, 40)
+      .forEach((k) => {
+        let v = sample[k];
+        try {
+          v = JSON.stringify(v);
+        } catch (e) {
+          v = String(v);
+        }
+        if (v.length > 120) v = v.substring(0, 120) + "...";
+        parts.push(
+          `<div style="display:flex; justify-content:space-between; gap:12px; padding:4px 0; border-bottom:1px dashed #eee"><div style="font-family:monospace; color:#1a73e8">${k}</div><div style="color:#333; font-family:monospace">${v}</div></div>`
+        );
+      });
+
+    container.innerHTML =
+      parts.join("") || '<div style="color:#666">No preview fields</div>';
+  }
+
+  window.__selectParserPath = function (path) {
+    try {
+      const result = window.__actionTestState.testResult;
+      const value = __getNestedValue(result, path);
+      const defaultVarName = path
+        .split(".")
+        .pop()
+        .replace(/\[.*?\]/g, "");
+      const varName = prompt(
+        `Enter variable name for path "${path}":`,
+        defaultVarName || "var"
+      );
+      if (!varName) return;
+
+      window.__actionTestState.selectedPaths.set(path, {
+        varName,
+        value,
+        path,
+      });
+      __renderSelectedParserPaths();
+      document.getElementById("selected-parser-paths-section").style.display =
+        "block";
+    } catch (e) {
+      console.error("selectParserPath error", e);
+      showToast("Failed to select path: " + e.message, "error");
+    }
+  };
+
+  function __getNestedValue(obj, path) {
+    const parts = path.split(/\.|\[|\]/).filter(Boolean);
+    let current = obj;
+    for (const part of parts) {
+      if (current == null) return undefined;
+      current = current[part];
+    }
+    return current;
+  }
+
+  function __renderSelectedParserPaths() {
+    const container = document.getElementById("selected-parser-paths-list");
+    if (window.__actionTestState.selectedPaths.size === 0) {
+      container.innerHTML =
+        '<div style="color:#666; padding:8px;">No variables selected</div>';
+      return;
+    }
+
+    let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+    for (const [
+      path,
+      data,
+    ] of window.__actionTestState.selectedPaths.entries()) {
+      html += `
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #fff; border: 1px solid #ddd; border-radius: 4px;">
+          <div style="flex:1;">
+            <div style="font-weight: 600; color: #1a73e8; margin-bottom:4px;">${
+              data.varName
+            }</div>
+            <div style="font-size: 0.85rem; color: #666; font-family: monospace;">Path: ${path}</div>
+            <div style="font-size: 0.85rem; color: #888; margin-top:4px;">Sample: ${JSON.stringify(
+              data.value
+            )}</div>
+          </div>
+          <button class="btn btn-sm btn-danger" onclick="window.__removeParserPath('${path.replace(
+            /'/g,
+            "\\'"
+          )}')" style="padding: 4px 12px;">Remove</button>
+        </div>
+      `;
+    }
+    html += "</div>";
+    container.innerHTML = html;
+  }
+
+  // Render metadata/event payload schema fields for the selected action
+  function __renderActionMetadataFields(action) {
+    try {
+      const containerWrap = document.getElementById(
+        "test-action-metadata-fields"
+      );
+      const list = document.getElementById("test-action-metadata-fields-list");
+      if (
+        !action ||
+        !action.eventBindings ||
+        action.eventBindings.length === 0
+      ) {
+        if (containerWrap) containerWrap.style.display = "none";
+        return;
+      }
+
+      // We'll list fields from the first binding and include primary + metadata fields
+      const binding = action.eventBindings[0] || {};
+      const schema = binding.payloadSchema || {};
+      const primary = schema.primaryFields || {};
+      const metadata = schema.metadataFields || {};
+
+      const parts = [];
+      Object.keys(primary).forEach((k) => {
+        const info = primary[k] || {};
+        const sample = info.sample !== undefined ? info.sample : "";
+        const path = info.path || k;
+        // Build a candidate parser path using the event id + path
+        const candidate = `${binding.eventId}.${path}`;
+        parts.push({
+          label: k,
+          candidate,
+          sample,
+          field: k,
+          section: "primary",
+        });
+      });
+      Object.keys(metadata).forEach((k) => {
+        const info = metadata[k] || {};
+        const sample = info.sample !== undefined ? info.sample : "";
+        const path = info.path || k;
+        const candidate = `${binding.eventId}.${path}`;
+        parts.push({
+          label: k,
+          candidate,
+          sample,
+          field: k,
+          section: "metadata",
+        });
+      });
+
+      if (parts.length === 0) {
+        list.innerHTML =
+          '<div style="color:#666">No metadata fields available</div>';
+        if (containerWrap) containerWrap.style.display = "none";
+        return;
+      }
+
+      let html = "";
+      parts.forEach((p) => {
+        html += `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #f1f5f7;">
+            <div style="flex:1">
+              <div style="font-weight:600; color:#1a73e8">${p.label}</div>
+              <div style="font-size:0.85rem; color:#444; font-family:monospace">Path: ${
+                p.candidate
+              }</div>
+              <div style="font-size:0.85rem; color:#666; margin-top:4px">Sample: ${JSON.stringify(
+                p.sample
+              )}</div>
+            </div>
+            <div style="margin-left:8px">
+              <button class="btn btn-sm" onclick="window.__addMetadataParser('${p.candidate.replace(
+                /'/g,
+                "\\'"
+              )}', '${p.field.replace(/'/g, "\\'")}')">+ Add</button>
+            </div>
+          </div>
+        `;
+      });
+
+      list.innerHTML = html;
+      if (containerWrap) containerWrap.style.display = "block";
+    } catch (e) {
+      console.warn("__renderActionMetadataFields error", e);
+    }
+  }
+
+  // Add a metadata-derived parser path to selectedPaths (invoked from metadata UI)
+  window.__addMetadataParser = function (candidatePath, fieldName) {
+    try {
+      const defaultVar = fieldName || candidatePath.split(".").pop();
+      const varName = prompt(
+        `Enter variable name for path "${candidatePath}":`,
+        defaultVar || "var"
+      );
+      if (!varName) return;
+      const sampleVal =
+        window.__actionTestState && window.__actionTestState.testResult
+          ? __getNestedValue(window.__actionTestState.testResult, candidatePath)
+          : undefined;
+      window.__actionTestState.selectedPaths.set(candidatePath, {
+        varName,
+        value: sampleVal,
+        path: candidatePath,
+        field: fieldName,
+      });
+      __renderSelectedParserPaths();
+      document.getElementById("selected-parser-paths-section").style.display =
+        "block";
+    } catch (e) {
+      console.error("__addMetadataParser error", e);
+      showToast("Failed to add parser path: " + e.message, "error");
+    }
+  };
+
+  window.__removeParserPath = function (path) {
+    window.__actionTestState.selectedPaths.delete(path);
+    __renderSelectedParserPaths();
+  };
+
+  function showToast(message, type = "info") {
+    console.log(`[Toast ${type}]`, message);
+    alert(message);
+  }
+</script>

@@ -12,6 +12,7 @@ const processHtmlLLM = require("./generalAI.js");
 const queue = require('./services/queue');
 const taxonomyService = require('./services/taxonomyService');
 const rulesEngine = require('./services/rulesEngine');
+const customLogicEngine = require('./services/customLogicEngine');
 const workflowEngine = require('./services/workflowEngine');
 const executionOrchestrator = require('./services/executionOrchestrator');
 const eventBus = require('./services/eventBus');
@@ -2061,97 +2062,52 @@ app.get('/ai/health', async (req, res) => {
 // TAXONOMY API - The Business Language Layer
 // ============================================================================
 app.get('/api/taxonomy', async (req, res) => {
+  // Keep top-level taxonomy read endpoint available for the UI.
+  // Other taxonomy write/update/delete routes remain deprecated (410).
   try {
     const taxonomy = await taxonomyService.getTaxonomy();
-    res.json({ ok: true, taxonomy });
+    return res.json({ ok: true, taxonomy });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('/api/taxonomy error', e && e.stack ? e.stack : e);
+    return res.status(500).json({ ok: false, error: e && e.message ? e.message : String(e) });
   }
 });
 
 app.get('/api/taxonomy/concepts', async (req, res) => {
-  try {
-    const concepts = await taxonomyService.getConcepts();
-    res.json({ ok: true, concepts });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/concepts endpoint is deprecated.' });
 });
 
 app.post('/api/taxonomy/concepts', async (req, res) => {
-  try {
-    const concept = await taxonomyService.addConcept(req.body);
-    res.json({ ok: true, concept });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/concepts endpoint is deprecated.' });
 });
 
 app.put('/api/taxonomy/concepts/:id', async (req, res) => {
-  try {
-    const concept = await taxonomyService.updateConcept(req.params.id, req.body);
-    res.json({ ok: true, concept });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/concepts endpoint is deprecated.' });
 });
 
 app.delete('/api/taxonomy/concepts/:id', async (req, res) => {
-  try {
-    await taxonomyService.deleteConcept(req.params.id);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/concepts endpoint is deprecated.' });
 });
 
 app.get('/api/taxonomy/events', async (req, res) => {
-  try {
-    const events = await taxonomyService.getEvents();
-    res.json({ ok: true, events });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/events endpoint is deprecated. Use /api/event-registry.' });
 });
 
 app.post('/api/taxonomy/events', async (req, res) => {
-  try {
-    const event = await taxonomyService.addEvent(req.body);
-    res.json({ ok: true, event });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/events endpoint is deprecated.' });
 });
 
 // Update an existing event
 app.put('/api/taxonomy/events/:id', async (req, res) => {
-  try {
-    const id = req.params.id;
-    const updates = req.body || {};
-    const updated = await taxonomyService.updateEvent(id, updates);
-    res.json({ ok: true, event: updated });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/events endpoint is deprecated.' });
 });
 
 app.delete('/api/taxonomy/events/:id', async (req, res) => {
-  try {
-    const id = req.params.id;
-    await taxonomyService.deleteEvent(id);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/events endpoint is deprecated.' });
 });
 
 app.get('/api/taxonomy/actions', async (req, res) => {
-  try {
-    const actions = await taxonomyService.getActions();
-    res.json({ ok: true, actions });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/actions endpoint is deprecated. Use /api/actions.' });
 });
 
 // Backwards-compatible separate actions metadata endpoint (non-taxonomy)
@@ -2164,16 +2120,8 @@ app.get('/api/actions', async (req, res) => {
   }
 });
 
-app.post('/api/taxonomy/actions', async (req, res) => {
-  try {
-    const action = await taxonomyService.addAction(req.body);
-    res.json({ ok: true, action });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.put('/api/taxonomy/actions/:id', async (req, res) => {
+// Update an action metadata (partial updates supported)
+app.put('/api/actions/:id', async (req, res) => {
   try {
     const id = req.params.id;
     const updates = req.body || {};
@@ -2184,32 +2132,24 @@ app.put('/api/taxonomy/actions/:id', async (req, res) => {
   }
 });
 
+app.post('/api/taxonomy/actions', async (req, res) => {
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/actions endpoint is deprecated.' });
+});
+
+app.put('/api/taxonomy/actions/:id', async (req, res) => {
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/actions endpoint is deprecated.' });
+});
+
 app.delete('/api/taxonomy/actions/:id', async (req, res) => {
-  try {
-    const id = req.params.id;
-    await taxonomyService.deleteAction(id);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/actions endpoint is deprecated.' });
 });
 
 app.get('/api/taxonomy/capabilities', async (req, res) => {
-  try {
-    const capabilities = await taxonomyService.getCapabilities();
-    res.json({ ok: true, capabilities });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/capabilities endpoint is deprecated.' });
 });
 
 app.post('/api/taxonomy/capabilities', async (req, res) => {
-  try {
-    const capability = await taxonomyService.addCapability(req.body);
-    res.json({ ok: true, capability });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  res.status(410).json({ ok: false, error: 'Deprecated', message: 'The /api/taxonomy/capabilities endpoint is deprecated.' });
 });
 
 // ============================================================================
@@ -2288,6 +2228,75 @@ app.post('/api/rules/:id/evaluate', async (req, res) => {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
+
+// ============================================================================
+// CUSTOM LOGIC ENGINE API - The Function Layer
+// ============================================================================
+app.get('/api/custom-logic', async (req, res) => {
+  try {
+    const logics = customLogicEngine.getLogics();
+    res.json({ ok: true, logics });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/custom-logic/:id', async (req, res) => {
+  try {
+    const logic = customLogicEngine.getLogic(req.params.id);
+    if (!logic) return res.status(404).json({ ok: false, error: 'Logic not found' });
+    res.json({ ok: true, logic });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/custom-logic', async (req, res) => {
+  try {
+    const validation = customLogicEngine.validateFunction(req.body.functionCode, req.body.inputs);
+    if (!validation.valid) {
+      return res.status(400).json({ ok: false, error: validation.error });
+    }
+    const logic = await customLogicEngine.addLogic(req.body);
+    res.json({ ok: true, logic });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.put('/api/custom-logic/:id', async (req, res) => {
+  try {
+    const validation = customLogicEngine.validateFunction(req.body.functionCode, req.body.inputs);
+    if (!validation.valid) {
+      return res.status(400).json({ ok: false, error: validation.error });
+    }
+    const logic = await customLogicEngine.updateLogic(req.params.id, req.body);
+    res.json({ ok: true, logic });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/custom-logic/:id', async (req, res) => {
+  try {
+    await customLogicEngine.deleteLogic(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/custom-logic/:id/execute', async (req, res) => {
+  try {
+    const context = req.body.context || {};
+    const result = await customLogicEngine.execute(req.params.id, context, pool);
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// NOTE: /api/action/test-execute removed — use /api/event/execute for resolving action templates and executing SQL
 
 // ============================================================================
 // WORKFLOW ENGINE API - The Sequence Layer
@@ -2399,4 +2408,21 @@ app.post('/execute-sql', async (req, res) => {
     console.error('Error executing SQL:', error.message);
     res.status(500).json({ ok: false, error: error.message, details: error.stack });
   }
+});
+
+// Catch-all 404 JSON responder to avoid HTML/no-body responses for unknown routes
+app.use((req, res) => {
+  try {
+    console.warn(`[404] ${req.method} ${req.originalUrl}`);
+  } catch (e) {}
+  res.status(404).json({ ok: false, error: 'not_found', path: req.originalUrl });
+});
+
+// Global error handler to ensure JSON responses for unexpected errors
+app.use((err, req, res, next) => {
+  try {
+    console.error('Unhandled server error:', err && err.stack ? err.stack : err);
+  } catch (e) {}
+  if (res.headersSent) return next(err);
+  res.status(500).json({ ok: false, error: (err && err.message) || 'server_error' });
 });

@@ -1,0 +1,20 @@
+{
+  "ruleSets": [
+    {
+      "id": "gvuhbkj",
+      "name": "gvuhbkj",
+      "description": "ygvuhb",
+      "concept": "vuhb",
+      "rules": [
+        {
+          "join": "AND",
+          "table": "appsthink_crm",
+          "column": "email",
+          "operator": "in",
+          "value": "",
+          "action": ""
+        }
+      ]
+    }
+  ]
+}
