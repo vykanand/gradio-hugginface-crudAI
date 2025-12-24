@@ -2644,7 +2644,7 @@
               // Render comprehensive test results
               renderRealEventTestResults(testResults, allTestsPassed);
 
-              // Save validation metadata
+              // Save validation metadata and example outputs
               if (allTestsPassed) {
                 variableMappings._validation = {
                   tested: true,
@@ -2652,6 +2652,23 @@
                   samplesCount: testResults.length,
                   allPassed: true,
                 };
+
+                // Store example successful output from first test
+                const exampleOutputs = testResults
+                  .filter((t) => t.success)
+                  .slice(0, 1)
+                  .map((t) => ({
+                    eventName: t.eventName,
+                    sampleIndex: t.sampleIndex,
+                    testedAt: new Date().toISOString(),
+                    payload: t.payload,
+                    executedQuery: t.result.processedQuery,
+                    rowCount: t.result.rowCount,
+                    sampleData: Array.isArray(t.result.data) ? t.result.data.slice(0, 5) : t.result.data,
+                  }));
+
+                variableMappings._exampleOutputs = exampleOutputs;
+
                 showToast(
                   `✅ All ${testResults.length} tests passed! Ready to save.`,
                   "success"
@@ -3719,6 +3736,11 @@
             // Validate name doesn't exist (unless editing same action)
             if (!validateAndHighlightName()) {
               return;
+            }
+
+            // Include example outputs in metadata if available
+            if (variableMappings && variableMappings._exampleOutputs) {
+              data.exampleOutputs = variableMappings._exampleOutputs;
             }
             try {
               status.textContent = now ? "Saving..." : "Auto-saving...";
