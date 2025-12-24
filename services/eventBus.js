@@ -267,13 +267,14 @@ async function publishEvent(obj, opts) {
   try {
     const evt = (typeof obj === 'string') ? JSON.parse(obj) : (obj || {});
     opts = opts || {};
-    const headers = opts.headers || {};
+    const headers = Object.keys(opts.headers||{}).reduce(function(acc,k){ acc[k.toLowerCase()] = opts.headers[k]; return acc; }, {});
 
     // prefer client-provided id when present (client canonical envelope)
     const id = evt.id || uuidv4();
 
     // derive canonical fields and enrich from headers when missing
-    const canonicalEvent = evt.event || evt.name || evt.type || null;
+    // allow clients (UI CRUD) to supply event name via header 'X-Event-Name'
+    const canonicalEvent = (headers['x-event-name'] || headers['x-event'] || headers['event-name']) || evt.event || evt.name || evt.type || null;
     const moduleName = evt.domain || evt.module || (canonicalEvent ? String(canonicalEvent).split(':')[0] : 'unknown');
     const version = evt.version || 1;
     const ts = evt.ts || Date.now();
@@ -286,15 +287,24 @@ async function publishEvent(obj, opts) {
       role: headers['x-user-role'] || headers['x-role'] || null,
       group: headers['x-user-group'] || headers['x-group'] || null
     };
-    const actor = actorFromEvt || (actorFromHeaders.user || actorFromHeaders.role || actorFromHeaders.group ? actorFromHeaders : null);
+    // If the client marks the event as raw UI CRUD via header 'X-UI-CRUD', avoid enriching/overwriting payload actor info.
+    let actor = null;
+    if (headers['x-ui-crud']) {
+      actor = actorFromEvt || null;
+    } else {
+      actor = actorFromEvt || (actorFromHeaders.user || actorFromHeaders.role || actorFromHeaders.group ? actorFromHeaders : null);
+    }
 
+    // If incoming event already has a 'payload' field, it's a proper envelope - preserve it
+    const isProperEnvelope = (evt.payload !== undefined);
     const rec = {
       id,
       event: canonicalEvent || (moduleName + ':event'),
       module: moduleName,
       domain: evt.domain || moduleName,
       version: version,
-      detail: evt.detail || evt || {},
+      // Preserve payload if present, otherwise wrap entire event in detail for backward compat
+      ...(isProperEnvelope ? { payload: evt.payload } : { detail: evt.detail || evt || {} }),
       ts: ts,
       producer: producer,
       actor: actor,

@@ -1,7 +1,7 @@
 [
   {
     "id": "logic_example_test_action_one",
-    "name": "check phone number valid format",
+    "name": "check email and phone number valid format",
     "description": "Reads the result from CRM to delivery and checks for valid phone number",
     "inputs": [
       {
@@ -12,23 +12,37 @@
         "parserPath": "rows[0].phone_number",
         "parserVarName": "crmto delivery - phone_number",
         "sampleValue": "vedcsc"
+      },
+      {
+        "type": "action",
+        "actionId": "eefd103c-7eed-4045-ae2d-140b4a2bd226",
+        "actionName": "crm to extract contacts",
+        "field": null,
+        "parserPath": "rows[0].emails_value",
+        "parserVarName": "crm_to_extract_conta_rows_0_emails_value",
+        "sampleValue": "nfsaf@awfds.com"
       }
     ],
-    "functionCode": "try {\n  const crmToDeliveryPhoneNumber = inputs.actions['ef4212aa_0fbe_4e40_a6d0_ea00bbd66d63']['crmto_delivery_phone_number'];\n  const phoneNumberRegex = /^\\d{3}-\\d{3}-\\d{4}$/;\n  if (crmToDeliveryPhoneNumber && typeof crmToDeliveryPhoneNumber === 'string' && phoneNumberRegex.test(crmToDeliveryPhoneNumber)) {\n    return { isValid: true, phoneNumber: crmToDeliveryPhoneNumber };\n  }\n  return { isValid: false, phoneNumber: crmToDeliveryPhoneNumber, error: 'Invalid phone number format' };\n} catch (error) {\n  console.error('Logic error:', error);\n  return { isValid: false, error: error.message };\n}",
-    "updatedAt": "2025-12-24T16:08:44.017Z",
+    "functionCode": "try {\n  // Extract phone number from action result\n  const phoneNumber = inputs.actions?.['ef4212aa_0fbe_4e40_a6d0_ea00bbd66d63']?.['crmto_delivery_phone_number'];\n  \n  // Validate phone number format\n  if (!phoneNumber || typeof phoneNumber !== 'string') {\n    return { isValid: false, error: 'Phone number is required' };\n  }\n  \n  const phoneRegex = /^\\d{3}-\\d{3}-\\d{4}$/;\n  const isValid = phoneRegex.test(phoneNumber);\n  \n  return {\n    isValid,\n    phoneNumber,\n    error: isValid ? null : 'Invalid phone number format (expected: XXX-XXX-XXXX)'\n  };\n} catch (error) {\n  return { isValid: false, error: error.message };\n}",
+    "updatedAt": "2025-12-24T16:49:16.493Z",
     "exampleContext": {
+      "events": {},
       "actions": {
-        "test_action_one": [
-          {
-            "total": 120.5
-          }
-        ]
-      },
-      "events": {
-        "sample_event": {
-          "detail": {
-            "value": 30
-          }
+        "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63": {
+          "crmto_delivery_phone_number": "vedcsc"
+        },
+        "eefd103c-7eed-4045-ae2d-140b4a2bd226": {
+          "crm_to_extract_conta_rows_0_emails_value": "nfsaf@awfds.com"
+        }
+      }
+    },
+    "exampleContextUI": {
+      "actions": {
+        "ef4212aa_0fbe_4e40_a6d0_ea00bbd66d63": {
+          "crmto_delivery_phone_number": "vedcsc"
+        },
+        "eefd103c_7eed_4045_ae2d_140b4a2bd226": {
+          "crm_to_extract_conta_rows_0_emails_value": "nfsaf@awfds.com"
         }
       }
     }

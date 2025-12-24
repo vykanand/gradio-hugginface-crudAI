@@ -162,30 +162,125 @@
             Write a JavaScript function that returns a value. Available
             variables: <code id="available-vars">none</code>
           </div>
+          <!-- Enhanced Variable Preview with Input Shape Schema -->
           <div
             id="variable-preview"
             style="margin-top: 8px; font-size: 0.9rem; color: #333"
           >
-            <div style="font-weight: 600; margin-bottom: 6px; color: #14171a">
-              Variable Preview
-            </div>
             <div
-              id="variable-preview-list"
               style="
-                background: #f8f9fa;
-                border: 1px solid #e1e8ed;
-                padding: 8px;
-                border-radius: 4px;
-                color: #657786;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 6px;
               "
             >
-              No preview available
+              <div style="font-weight: 600; color: #14171a">
+                Input Shape & Preview
+              </div>
+              <button
+                class="btn btn-secondary"
+                onclick="refreshInputShapePreview()"
+                style="font-size: 0.75rem; padding: 2px 8px"
+                title="Refresh preview from current inputs"
+              >
+                🔄 Refresh
+              </button>
+            </div>
+
+            <!-- Input Shape Schema -->
+            <div
+              style="
+                background: #fff8e8;
+                border: 1px solid #f4d03f;
+                padding: 8px;
+                border-radius: 4px;
+                margin-bottom: 8px;
+              "
+            >
+              <div
+                style="
+                  font-weight: 600;
+                  font-size: 0.85rem;
+                  color: #856404;
+                  margin-bottom: 4px;
+                "
+              >
+                📋 Input Structure
+              </div>
+              <pre
+                id="input-shape-schema"
+                style="
+                  margin: 0;
+                  font-size: 0.75rem;
+                  color: #333;
+                  background: #fffbf0;
+                  padding: 6px;
+                  border-radius: 4px;
+                  overflow-x: auto;
+                  max-height: 200px;
+                "
+              >
+No inputs defined</pre
+              >
+            </div>
+
+            <!-- Variable Preview List -->
+            <div
+              style="
+                background: #e8f5e9;
+                border: 1px solid #4caf50;
+                padding: 8px;
+                border-radius: 4px;
+              "
+            >
+              <div
+                style="
+                  font-weight: 600;
+                  font-size: 0.85rem;
+                  color: #2e7d32;
+                  margin-bottom: 4px;
+                "
+              >
+                👁️ Sample Values Preview
+              </div>
+              <div
+                id="variable-preview-list"
+                style="
+                  background: #f1f8f4;
+                  border: 1px solid #c8e6c9;
+                  padding: 8px;
+                  border-radius: 4px;
+                  color: #333;
+                  max-height: 250px;
+                  overflow-y: auto;
+                "
+              >
+                No preview available
+              </div>
+            </div>
+
+            <!-- Type Validation Status -->
+            <div
+              id="input-validation-status"
+              style="
+                margin-top: 8px;
+                padding: 6px;
+                border-radius: 4px;
+                font-size: 0.8rem;
+                display: none;
+              "
+            >
+              <span id="validation-icon"></span>
+              <span id="validation-message"></span>
             </div>
           </div>
           <textarea
             id="logic-function"
             rows="12"
             placeholder="// Example:&#10;return inputs.eventField + inputs.actionResult;"
+            readonly
+            title="Auto-generated code (read-only)"
             style="
               width: 100%;
               padding: 8px;
@@ -193,6 +288,8 @@
               border-radius: 4px;
               font-family: 'Courier New', monospace;
               font-size: 0.85rem;
+              background: #f8f9fa;
+              cursor: not-allowed;
             "
           ></textarea>
           <div style="display: flex; gap: 8px; margin-top: 8px">
@@ -429,9 +526,52 @@
 
     // If exampleContext is provided, prefill the test data textarea
     try {
+      const ctx = logic.exampleContext || logic.exampleContextUI || {};
+
+      // Helper to attempt multiple key forms for lookups
+      const getActionCtx = (actionsObj, inp) => {
+        if (!actionsObj) return null;
+        const candidates = [];
+        const aid = inp.actionId || inp.actionName || inp.source;
+        const actVar = normalizeVarName(aid);
+        const parserVar = inp.parserVarName
+          ? normalizeVarName(inp.parserVarName)
+          : null;
+        // try original id
+        candidates.push(aid);
+        // underscore variant
+        candidates.push(aid && aid.replace(/-/g, "_"));
+        // normalized id
+        candidates.push(actVar);
+        // parser var as top-level under actions[aid]
+        // also check UI-style keys
+        for (const c of candidates) {
+          if (!c) continue;
+          if (actionsObj[c] !== undefined) return actionsObj[c];
+        }
+        return null;
+      };
+
+      const getEventCtx = (eventsObj, inp) => {
+        if (!eventsObj) return null;
+        const eid = inp.eventId || inp.eventName || inp.source;
+        const evVar = normalizeVarName(inp.eventName || inp.eventId || eid);
+        const candidates = [
+          eid,
+          eid && eid.replace(/-/g, "_"),
+          evVar,
+          inp.eventName,
+          inp.eventId,
+        ];
+        for (const c of candidates) {
+          if (!c) continue;
+          if (eventsObj[c] !== undefined) return eventsObj[c];
+        }
+        return null;
+      };
+
       if (logic.exampleContext) {
         const testInputs = {};
-        const ctx = logic.exampleContext || {};
         const extract = (obj, path) => {
           if (!path) return obj;
           const parts = path.split(".");
@@ -450,22 +590,16 @@
 
         (logic.inputs || []).forEach((inp) => {
           if (inp.type === "event") {
-            const ev =
-              (ctx.events && ctx.events[inp.eventId]) ||
-              (ctx.events && ctx.events[inp.source]) ||
-              {};
+            const ev = getEventCtx(ctx.events, inp) || {};
             const evName = inp.eventName || inp.eventId || inp.source;
             testInputs[evName] = testInputs[evName] || {};
             if (!inp.field) {
-              // full event object
               testInputs[evName] = ev;
             } else {
               testInputs[evName][inp.field] = extract(ev, inp.field || "");
             }
           } else if (inp.type === "action") {
-            const act =
-              (ctx.actions && ctx.actions[inp.actionId]) ||
-              (ctx.actions && ctx.actions[inp.source]);
+            const act = getActionCtx(ctx.actions, inp) || null;
             testInputs.actions = testInputs.actions || {};
             const aid = inp.actionId || inp.actionName || inp.source;
             if (Array.isArray(act) && act.length > 0) {
@@ -563,6 +697,8 @@
     const varsEl = document.getElementById("available-vars");
     if (!logicInputs || logicInputs.length === 0) {
       varsEl.textContent = "none";
+      // Also update schema preview
+      refreshInputShapePreview();
       return;
     }
 
@@ -585,6 +721,9 @@
       }
     });
     varsEl.textContent = parts.join(", ");
+
+    // Refresh input shape preview whenever inputs change
+    refreshInputShapePreview();
   }
 
   async function showEventInputSelector() {
@@ -899,11 +1038,207 @@
     }
   }
 
+  // ==================== BULLETPROOF INPUT PARSER ====================
+
+  /**
+   * Parse and validate inputs for execution with 100% reliability
+   * This function ensures the inputs object EXACTLY matches the schema
+   */
+  function parseInputsForExecution(rawContext, inputDefinitions) {
+    const inputs = {};
+    const errors = [];
+    const warnings = [];
+
+    try {
+      // Build schema for validation
+      const schema = buildInputShapeSchema(inputDefinitions);
+
+      // Process event inputs
+      const eventInputs = inputDefinitions.filter((i) => i.type === "event");
+      eventInputs.forEach((inp) => {
+        try {
+          const eventVarName = normalizeVarName(inp.eventName || inp.eventId);
+          const eventId = inp.eventId || inp.eventName;
+
+          // Find event data in raw context
+          let eventData = null;
+          if (rawContext.events && rawContext.events[eventId]) {
+            eventData = rawContext.events[eventId];
+          } else if (rawContext[eventVarName]) {
+            eventData = rawContext[eventVarName];
+          } else if (rawContext[eventId]) {
+            eventData = rawContext[eventId];
+          } else if (rawContext[inp.eventName]) {
+            eventData = rawContext[inp.eventName];
+          }
+
+          if (eventData === null || eventData === undefined) {
+            warnings.push(`Event data not found for: ${eventVarName}`);
+            eventData = {};
+          }
+
+          // Initialize event object in inputs
+          if (!inputs[eventVarName]) {
+            inputs[eventVarName] = {};
+          }
+
+          // Extract specific field or use full event
+          if (inp.field) {
+            const fieldVarName = normalizeVarName(inp.field);
+            const value = extractFieldValue(eventData, inp.field);
+            inputs[eventVarName][fieldVarName] = value;
+          } else {
+            inputs[eventVarName] = eventData;
+          }
+        } catch (e) {
+          errors.push(
+            `Failed to parse event input ${inp.eventName}: ${e.message}`
+          );
+        }
+      });
+
+      // Process action inputs
+      const actionInputs = inputDefinitions.filter((i) => i.type === "action");
+      if (actionInputs.length > 0) {
+        inputs.actions = inputs.actions || {};
+
+        actionInputs.forEach((inp) => {
+          try {
+            const actionVarName = normalizeVarName(inp.actionId);
+            const actionId = inp.actionId;
+
+            // Find action data in raw context
+            let actionData = null;
+            if (rawContext.actions && rawContext.actions[actionId]) {
+              actionData = rawContext.actions[actionId];
+            } else if (
+              rawContext.actions &&
+              rawContext.actions[actionVarName]
+            ) {
+              actionData = rawContext.actions[actionVarName];
+            } else if (rawContext[actionVarName]) {
+              actionData = rawContext[actionVarName];
+            } else if (rawContext[actionId]) {
+              actionData = rawContext[actionId];
+            }
+
+            if (actionData === null || actionData === undefined) {
+              warnings.push(`Action data not found for: ${actionVarName}`);
+              actionData = {};
+            }
+
+            // Initialize action object in inputs.actions
+            if (!inputs.actions[actionVarName]) {
+              inputs.actions[actionVarName] = {};
+            }
+
+            // Extract specific field, parser path, or use full action
+            if (inp.parserPath && inp.parserVarName) {
+              const parserVarName = normalizeVarName(inp.parserVarName);
+              const value = extractFieldValue(actionData, inp.parserPath);
+              inputs.actions[actionVarName][parserVarName] = value;
+            } else if (inp.field) {
+              const fieldVarName = normalizeVarName(inp.field);
+              const value = extractFieldValue(actionData, inp.field);
+              inputs.actions[actionVarName][fieldVarName] = value;
+            } else {
+              inputs.actions[actionVarName] = actionData;
+            }
+          } catch (e) {
+            errors.push(
+              `Failed to parse action input ${inp.actionId}: ${e.message}`
+            );
+          }
+        });
+      }
+
+      // Validate against schema
+      const validation = validateInputsAgainstSchema(inputs, schema);
+      if (!validation.valid) {
+        errors.push(...validation.errors);
+      }
+      warnings.push(...validation.warnings);
+
+      return {
+        inputs,
+        valid: errors.length === 0,
+        errors,
+        warnings,
+        schema,
+      };
+    } catch (e) {
+      return {
+        inputs: {},
+        valid: false,
+        errors: [`Critical parsing error: ${e.message}`],
+        warnings,
+        schema: null,
+      };
+    }
+  }
+
+  /**
+   * Extract field value from object using dot notation or array indices
+   * Handles paths like "data.user.name" or "rows[0].phone_number"
+   */
+  function extractFieldValue(obj, path) {
+    if (!obj || !path) return obj;
+
+    try {
+      const parts = path.split(/\.|\[/).map((p) => p.replace(/\]$/, ""));
+      let value = obj;
+
+      for (const part of parts) {
+        if (value === null || value === undefined) return null;
+
+        // Check if part is array index
+        if (/^\d+$/.test(part)) {
+          value = value[parseInt(part, 10)];
+        } else {
+          value = value[part];
+        }
+      }
+
+      return value;
+    } catch (e) {
+      console.warn(`Failed to extract field ${path}:`, e);
+      return null;
+    }
+  }
+
   async function executeCustomLogic(functionCode, context) {
+    // Parse and validate inputs with 100% reliability
+    const parsed = parseInputsForExecution(context, logicInputs);
+
+    // Show warnings if any
+    if (parsed.warnings.length > 0) {
+      console.warn("Input parsing warnings:", parsed.warnings);
+    }
+
+    // Fail if parsing errors occurred
+    if (!parsed.valid) {
+      const error = new Error(
+        `Input parsing failed:\n${parsed.errors.join("\n")}`
+      );
+      error.parsingErrors = parsed.errors;
+      throw error;
+    }
+
+    // Validate against schema before execution
+    if (parsed.schema) {
+      const validation = validateInputsAgainstSchema(
+        parsed.inputs,
+        parsed.schema
+      );
+      if (!validation.valid) {
+        console.warn("Input validation warnings:", validation.errors);
+      }
+    }
+
     // Create sandboxed function with enhanced error context
     try {
       const func = new Function("inputs", functionCode);
-      const result = func(context.inputs);
+      const result = func(parsed.inputs);
 
       // Handle promises if the code is async
       if (result && typeof result.then === "function") {
@@ -953,11 +1288,48 @@
       const testDataStr =
         document.getElementById("logic-test-data").value || "";
       if (testDataStr) {
+        let uiTestData = null;
         try {
-          logic.exampleContext = JSON.parse(testDataStr);
+          uiTestData = JSON.parse(testDataStr);
         } catch (e) {
-          // If parsing fails, store raw string as fallback
           logic.exampleContextRaw = testDataStr;
+        }
+
+        // Build an engine-friendly exampleContext (events/actions maps)
+        try {
+          const engineCtx = { events: {}, actions: {} };
+          if (uiTestData) {
+            for (const inp of logicInputs || []) {
+              if (inp.type === "event") {
+                const eid = inp.eventId || inp.eventName || inp.source;
+                const evtVar = normalizeVarName(
+                  inp.eventName || inp.eventId || eid
+                );
+                const v =
+                  uiTestData[evtVar] ??
+                  uiTestData[inp.eventName] ??
+                  uiTestData[inp.eventId] ??
+                  null;
+                engineCtx.events[eid] = v;
+              } else if (inp.type === "action") {
+                const aid = inp.actionId || inp.actionName || inp.source;
+                const actVar = normalizeVarName(aid);
+                const v =
+                  (uiTestData.actions &&
+                    (uiTestData.actions[actVar] ?? uiTestData.actions[aid])) ??
+                  null;
+                engineCtx.actions[aid] = v;
+              }
+            }
+          }
+
+          // Save both forms: engine-oriented and UI-oriented
+          logic.exampleContext = engineCtx;
+          if (uiTestData) logic.exampleContextUI = uiTestData;
+        } catch (e) {
+          console.warn("Failed to build engine exampleContext:", e);
+          if (!logic.exampleContext && uiTestData)
+            logic.exampleContext = uiTestData;
         }
       }
     } catch (e) {
@@ -1102,6 +1474,14 @@
         <label style="display: block; font-weight: 600; margin-bottom: 8px;">3. Action Result</label>
         <div style="background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 12px; max-height: 300px; overflow: auto;">
           <pre id="test-action-result-display" style="margin: 0; font-size: 0.85rem; white-space: pre-wrap;"></pre>
+        </div>
+      </div>
+      <div id="test-action-table-section" style="display:none; margin-bottom:16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 8px;">3b. Result Table (select cells to build output shape)</label>
+        <div id="test-action-table-container" style="max-height:300px; overflow:auto; background:#fff; border:1px solid #e1e8ed; border-radius:6px; padding:8px"></div>
+        <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+          <button class="btn btn-primary" id="save-output-shape-btn" style="display:none;">💾 Save Output Shape</button>
+          <div style="color:#657786; font-size:0.85rem">Select the cells you want to include in the output POJO, then click Save Output Shape.</div>
         </div>
       </div>
 
@@ -1408,6 +1788,7 @@
       const reqBody = { query: queryText, eventName: eventNameForRequest };
       if (payloadForRequest) reqBody.payload = payloadForRequest;
 
+      console.debug("action-test: reqBody", reqBody);
       const res = await fetch("/api/event/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1463,6 +1844,12 @@
           __renderActionMetadataFields(action);
         } catch (e) {
           console.warn("render metadata fields error", e);
+        }
+        // Render selectable table for output shape selection
+        try {
+          __renderActionResultTable(result);
+        } catch (e) {
+          console.warn("__renderActionResultTable error", e);
         }
       } else {
         const errMsg =
@@ -1685,6 +2072,159 @@
     }
     html += "</div>";
     container.innerHTML = html;
+  }
+
+  // Render a selectable table from action test result so user can pick cells
+  function __renderActionResultTable(result) {
+    const container = document.getElementById("test-action-table-container");
+    const section = document.getElementById("test-action-table-section");
+    const saveBtn = document.getElementById("save-output-shape-btn");
+    if (!container || !section || !saveBtn) return;
+    container.innerHTML = "";
+    section.style.display = "none";
+    saveBtn.style.display = "none";
+
+    const rows = result && result.rows ? result.rows : null;
+    if (!rows || !Array.isArray(rows) || rows.length === 0) return;
+
+    // Build table with selectable cells
+    const columns = Object.keys(rows[0] || {});
+    const table = document.createElement("table");
+    table.style.cssText =
+      "width:100%; border-collapse:collapse; font-size:0.85rem;";
+
+    // header
+    const thead = document.createElement("thead");
+    const htr = document.createElement("tr");
+    htr.style.background = "#f8f9fa";
+    columns.forEach((col) => {
+      const th = document.createElement("th");
+      th.style.cssText =
+        "padding:8px; text-align:left; border-bottom:2px solid #e1e8ed;";
+      th.textContent = col;
+      htr.appendChild(th);
+    });
+    thead.appendChild(htr);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    rows.slice(0, 200).forEach((row, rIdx) => {
+      const tr = document.createElement("tr");
+      columns.forEach((col) => {
+        const td = document.createElement("td");
+        td.style.cssText =
+          "padding:8px; border-bottom:1px solid #eef2f7; cursor:pointer; user-select:none;";
+        const val =
+          row[col] !== null && row[col] !== undefined ? row[col] : null;
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.dataset.col = col;
+        checkbox.dataset.row = String(rIdx);
+        checkbox.style.marginRight = "8px";
+
+        // display value
+        const disp = document.createElement("span");
+        disp.style.fontFamily = "monospace";
+        disp.textContent = val === null ? "<NULL>" : String(val);
+
+        td.appendChild(checkbox);
+        td.appendChild(disp);
+
+        // Clicking cell toggles checkbox
+        td.addEventListener("click", (e) => {
+          // ignore clicks directly on input to avoid double toggle
+          if (e.target && e.target.tagName === "INPUT") return;
+          checkbox.checked = !checkbox.checked;
+        });
+
+        tbody.appendChild(tr);
+        tr.appendChild(td);
+      });
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    // show section and save button
+    section.style.display = "block";
+    saveBtn.style.display = "inline-block";
+
+    // wire save button
+    saveBtn.onclick = async function () {
+      try {
+        const actionId = window.__actionTestState.selectedAction;
+        if (!actionId) {
+          showToast("No action selected", "error");
+          return;
+        }
+
+        // Gather selected cells and build POJO using first selected row preference
+        const checked = Array.from(
+          container.querySelectorAll("input[type=checkbox]:checked")
+        );
+        if (checked.length === 0) {
+          showToast("No cells selected", "error");
+          return;
+        }
+
+        // Build mapping: use column names as keys, prefer first checked row for each column
+        const output = {};
+        // group by column
+        const byCol = {};
+        checked.forEach((ch) => {
+          const col = ch.dataset.col;
+          const rowIdx = Number(ch.dataset.row);
+          if (!byCol[col]) byCol[col] = [];
+          byCol[col].push(rowIdx);
+        });
+
+        for (const col of Object.keys(byCol)) {
+          const rowsIdx = byCol[col].sort((a, b) => a - b);
+          const pickIdx = rowsIdx[0];
+          const row = rows[pickIdx];
+          const val = row ? row[col] : null;
+          output[col] = val === undefined ? null : val;
+        }
+
+        // Build output shape metadata: include types and example values
+        const outputShape = { properties: {}, example: {} };
+        for (const [k, v] of Object.entries(output)) {
+          outputShape.properties[k] = { type: inferType(v) };
+          outputShape.example[k] = v === undefined ? null : v;
+        }
+
+        // Persist to action metadata via PUT /api/actions/:id
+        const res = await fetch(
+          `/api/actions/${encodeURIComponent(actionId)}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ variableMappings: { outputShape } }),
+          }
+        );
+        const data = await res.json();
+        if (res.ok && data && data.ok) {
+          showToast("Output shape saved to action metadata", "success");
+          // update local action list if present
+          try {
+            const acts = window.__actionTestState.availableActions || [];
+            const act = acts.find((a) => a && a.id === actionId);
+            if (act) act.variableMappings = act.variableMappings || {};
+            if (act) act.variableMappings.outputShape = outputShape;
+          } catch (e) {}
+        } else {
+          console.error("Save output shape failed", data);
+          showToast(
+            "Failed to save output shape: " +
+              (data && data.error ? data.error : "unknown"),
+            "error"
+          );
+        }
+      } catch (e) {
+        console.error("save output shape error", e);
+        showToast("Failed saving output shape: " + e.message, "error");
+      }
+    };
   }
 
   function addParserPathToLogicInputs(path, entry) {
@@ -2030,6 +2570,320 @@
     return normalized;
   }
 
+  // ==================== INPUT SHAPE SCHEMA SYSTEM ====================
+
+  /**
+   * Build comprehensive input shape schema with type information
+   * This creates a strict contract for what the function will receive
+   */
+  function buildInputShapeSchema(inputs) {
+    const schema = {
+      type: "object",
+      properties: {},
+      required: [],
+      description: "Input structure for custom logic function",
+    };
+
+    // Group inputs by type
+    const eventInputs = inputs.filter((i) => i.type === "event");
+    const actionInputs = inputs.filter((i) => i.type === "action");
+
+    // Build event properties
+    eventInputs.forEach((inp) => {
+      const eventVarName = normalizeVarName(inp.eventName || inp.eventId);
+
+      if (!schema.properties[eventVarName]) {
+        schema.properties[eventVarName] = {
+          type: "object",
+          description: `Event: ${inp.eventName || inp.eventId}`,
+          properties: {},
+          source: "event",
+          sourceId: inp.eventId,
+        };
+        schema.required.push(eventVarName);
+      }
+
+      if (inp.field) {
+        const fieldVarName = normalizeVarName(inp.field);
+        schema.properties[eventVarName].properties[fieldVarName] = {
+          type: inferType(inp.sampleValue || null),
+          description: `Field: ${inp.field}`,
+          path: inp.field,
+          sample: inp.sampleValue,
+        };
+      }
+    });
+
+    // Build action properties
+    if (actionInputs.length > 0) {
+      schema.properties.actions = {
+        type: "object",
+        description: "Action results",
+        properties: {},
+        source: "actions",
+      };
+      schema.required.push("actions");
+
+      actionInputs.forEach((inp) => {
+        const actionVarName = normalizeVarName(inp.actionId);
+
+        if (!schema.properties.actions.properties[actionVarName]) {
+          schema.properties.actions.properties[actionVarName] = {
+            type: "object",
+            description: `Action: ${inp.actionName || inp.actionId}`,
+            properties: {},
+            source: "action",
+            sourceId: inp.actionId,
+          };
+        }
+
+        if (inp.parserVarName) {
+          const parserVarName = normalizeVarName(inp.parserVarName);
+          schema.properties.actions.properties[actionVarName].properties[
+            parserVarName
+          ] = {
+            type: inferType(inp.sampleValue),
+            description: `Parser path: ${inp.parserPath}`,
+            path: inp.parserPath,
+            sample: inp.sampleValue,
+          };
+        } else if (inp.field) {
+          const fieldVarName = normalizeVarName(inp.field);
+          schema.properties.actions.properties[actionVarName].properties[
+            fieldVarName
+          ] = {
+            type: inferType(inp.sampleValue),
+            description: `Field: ${inp.field}`,
+            path: inp.field,
+            sample: inp.sampleValue,
+          };
+        } else {
+          // Full action result
+          schema.properties.actions.properties[actionVarName].type = inferType(
+            inp.sampleValue
+          );
+          schema.properties.actions.properties[actionVarName].sample =
+            inp.sampleValue;
+        }
+      });
+    }
+
+    return schema;
+  }
+
+  /**
+   * Infer JavaScript type from sample value
+   */
+  function inferType(value) {
+    if (value === null || value === undefined) return "any";
+    if (Array.isArray(value)) return "array";
+    return typeof value;
+  }
+
+  /**
+   * Generate human-readable TypeScript-style interface from schema
+   */
+  function schemaToInterface(schema) {
+    if (!schema || !schema.properties) return "// No inputs defined";
+
+    let lines = ["interface Inputs {"];
+
+    for (const [key, prop] of Object.entries(schema.properties)) {
+      const isRequired = schema.required && schema.required.includes(key);
+      const optional = isRequired ? "" : "?";
+
+      if (prop.type === "object" && prop.properties) {
+        lines.push(`  ${key}${optional}: {`);
+        for (const [subKey, subProp] of Object.entries(prop.properties)) {
+          const subType = subProp.type || "any";
+          const desc = subProp.description ? ` // ${subProp.description}` : "";
+          const sample =
+            subProp.sample !== undefined
+              ? ` = ${JSON.stringify(subProp.sample)}`
+              : "";
+          lines.push(`    ${subKey}: ${subType};${desc}${sample}`);
+        }
+        lines.push(`  };`);
+      } else {
+        const propType = prop.type || "any";
+        const desc = prop.description ? ` // ${prop.description}` : "";
+        lines.push(`  ${key}${optional}: ${propType};${desc}`);
+      }
+    }
+
+    lines.push("}");
+    return lines.join("\n");
+  }
+
+  /**
+   * Validate input structure against schema
+   */
+  function validateInputsAgainstSchema(inputs, schema) {
+    const errors = [];
+    const warnings = [];
+
+    if (!schema || !schema.properties) {
+      return { valid: true, errors, warnings };
+    }
+
+    // Check required properties
+    for (const reqKey of schema.required || []) {
+      if (!inputs || inputs[reqKey] === undefined) {
+        errors.push(`Missing required input: ${reqKey}`);
+      }
+    }
+
+    // Validate types
+    for (const [key, value] of Object.entries(inputs || {})) {
+      const schemaProp = schema.properties[key];
+      if (!schemaProp) {
+        warnings.push(`Unexpected input property: ${key}`);
+        continue;
+      }
+
+      const expectedType = schemaProp.type;
+      const actualType = Array.isArray(value) ? "array" : typeof value;
+
+      if (expectedType !== "any" && expectedType !== actualType) {
+        errors.push(
+          `Type mismatch for ${key}: expected ${expectedType}, got ${actualType}`
+        );
+      }
+
+      // Validate nested properties
+      if (
+        schemaProp.type === "object" &&
+        schemaProp.properties &&
+        typeof value === "object"
+      ) {
+        for (const [subKey, subValue] of Object.entries(value || {})) {
+          const subSchemaProp = schemaProp.properties[subKey];
+          if (!subSchemaProp) {
+            warnings.push(`Unexpected nested property: ${key}.${subKey}`);
+            continue;
+          }
+
+          const subExpectedType = subSchemaProp.type;
+          const subActualType = Array.isArray(subValue)
+            ? "array"
+            : typeof subValue;
+
+          if (subExpectedType !== "any" && subExpectedType !== subActualType) {
+            errors.push(
+              `Type mismatch for ${key}.${subKey}: expected ${subExpectedType}, got ${subActualType}`
+            );
+          }
+        }
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
+
+  /**
+   * Refresh the input shape preview panel
+   */
+  function refreshInputShapePreview() {
+    try {
+      if (!logicInputs || logicInputs.length === 0) {
+        document.getElementById("input-shape-schema").textContent =
+          "// No inputs defined";
+        document.getElementById("validation-icon").textContent = "";
+        document.getElementById("validation-message").textContent = "";
+        document.getElementById("input-validation-status").style.display =
+          "none";
+        return;
+      }
+
+      // Build schema
+      const schema = buildInputShapeSchema(logicInputs);
+
+      // Generate interface representation
+      const interfaceStr = schemaToInterface(schema);
+      document.getElementById("input-shape-schema").textContent = interfaceStr;
+
+      // Show validation status
+      const statusEl = document.getElementById("input-validation-status");
+      statusEl.style.display = "block";
+      statusEl.style.background = "#d4edda";
+      statusEl.style.border = "1px solid #c3e6cb";
+      statusEl.style.color = "#155724";
+
+      document.getElementById("validation-icon").textContent = "✅ ";
+      document.getElementById(
+        "validation-message"
+      ).textContent = `Input shape defined: ${logicInputs.length} variable${
+        logicInputs.length > 1 ? "s" : ""
+      }`;
+
+      // Also update the variable preview with structured view
+      updateStructuredPreview(schema);
+    } catch (e) {
+      console.error("Failed to refresh input shape preview:", e);
+      const statusEl = document.getElementById("input-validation-status");
+      statusEl.style.display = "block";
+      statusEl.style.background = "#f8d7da";
+      statusEl.style.border = "1px solid #f5c6cb";
+      statusEl.style.color = "#721c24";
+
+      document.getElementById("validation-icon").textContent = "❌ ";
+      document.getElementById(
+        "validation-message"
+      ).textContent = `Error: ${e.message}`;
+    }
+  }
+
+  /**
+   * Update variable preview with structured hierarchical view
+   */
+  function updateStructuredPreview(schema) {
+    const container = document.getElementById("variable-preview-list");
+    if (!container) return;
+
+    const parts = [];
+
+    const renderProperty = (key, prop, path = "") => {
+      const fullPath = path ? `${path}.${key}` : key;
+      const type = prop.type || "any";
+      const sample =
+        prop.sample !== undefined ? JSON.stringify(prop.sample) : "null";
+
+      return `
+        <div style="margin-bottom: 4px; padding: 4px; border-left: 3px solid #4caf50;">
+          <div style="display: flex; justify-content: space-between; gap: 8px;">
+            <span style="font-family: monospace; color: #1a73e8; font-weight: 600;">${fullPath}</span>
+            <span style="font-family: monospace; color: #666; font-size: 0.85rem;">${type}</span>
+          </div>
+          <div style="color: #555; font-size: 0.75rem; margin-top: 2px;">
+            Sample: <code style="background: #f5f5f5; padding: 2px 4px; border-radius: 2px;">${sample}</code>
+          </div>
+        </div>
+      `;
+    };
+
+    for (const [key, prop] of Object.entries(schema.properties || {})) {
+      if (prop.type === "object" && prop.properties) {
+        parts.push(
+          `<div style="margin-bottom: 8px;"><strong>${key}:</strong></div>`
+        );
+        for (const [subKey, subProp] of Object.entries(prop.properties)) {
+          parts.push(renderProperty(subKey, subProp, key));
+        }
+      } else {
+        parts.push(renderProperty(key, prop));
+      }
+    }
+
+    container.innerHTML =
+      parts.length > 0
+        ? parts.join("")
+        : '<div style="color:#666; padding: 8px;">No variables available</div>';
+  }
+
   // Build comprehensive context from all input variables
   async function buildLogicInputContext() {
     const context = {
@@ -2083,6 +2937,48 @@
           accessPath = `inputs.actions['${actionVarName}']`;
         }
 
+        // Derive a strong sample value for this input using multiple fallbacks
+        let resolvedSample = null;
+        if (input.sampleValue !== undefined) {
+          resolvedSample = input.sampleValue;
+        } else if (
+          actionInfo &&
+          actionInfo.sample !== undefined &&
+          actionInfo.sample !== null
+        ) {
+          // If parserPath present, try to extract specific sample value
+          if (input.parserPath) {
+            resolvedSample = extractFieldValue(
+              actionInfo.sample,
+              input.parserPath
+            );
+            // If extract yields null/undefined, try representative sample from result
+            if (resolvedSample === null || resolvedSample === undefined) {
+              resolvedSample = findRepresentativeSample(actionInfo.sample);
+            }
+          } else if (input.field) {
+            resolvedSample = extractFieldValue(actionInfo.sample, input.field);
+            if (resolvedSample === null || resolvedSample === undefined) {
+              resolvedSample = findRepresentativeSample(actionInfo.sample);
+            }
+          } else {
+            // No field specified: try to find a primitive representative sample
+            resolvedSample =
+              findRepresentativeSample(actionInfo.sample) || actionInfo.sample;
+          }
+        } else {
+          // As last resort, try global action test state (if user ran a test earlier)
+          try {
+            const globalTest =
+              window.__actionTestState && window.__actionTestState.testResult;
+            if (globalTest && globalTest[actionVarName]) {
+              resolvedSample =
+                findRepresentativeSample(globalTest[actionVarName]) ||
+                globalTest[actionVarName];
+            }
+          } catch (e) {}
+        }
+
         context.variables.push({
           type: "action",
           name: input.actionName || input.actionId,
@@ -2094,10 +2990,7 @@
           varName: actionVarName,
           accessPath: accessPath,
           schema: actionInfo.schema,
-          sample:
-            input.sampleValue !== undefined
-              ? input.sampleValue
-              : actionInfo.sample,
+          sample: resolvedSample,
           resultStructure: actionInfo.resultStructure,
         });
         context.actions[input.actionId] = actionInfo;
@@ -2157,22 +3050,50 @@
         let sample = null;
         let resultStructure = null;
 
-        // Try to get sample from various sources
-        if (action.successSample) {
-          sample = action.successSample;
-          resultStructure = extractStructure(sample);
-        } else if (action.sample) {
-          sample = action.sample;
-          resultStructure = extractStructure(sample);
-        } else if (
-          action.variableMappings &&
-          action.variableMappings._exampleOutputs
-        ) {
-          const examples = action.variableMappings._exampleOutputs;
-          if (Array.isArray(examples) && examples.length > 0) {
-            sample = examples[0].result || examples[0];
-            resultStructure = extractStructure(sample);
+        // Try to get sample from various sources (ordered heuristics)
+        const candidateSources = [
+          "successSample",
+          "sample",
+          "lastResult",
+          "lastRunResult",
+          "_lastResult",
+          "exampleResult",
+        ];
+
+        for (const key of candidateSources) {
+          if (action[key] !== undefined && action[key] !== null) {
+            sample = action[key];
+            break;
           }
+        }
+
+        // Check variableMappings examples and parser-provided examples
+        if (!sample && action.variableMappings) {
+          if (action.variableMappings._exampleOutputs) {
+            const examples = action.variableMappings._exampleOutputs;
+            if (Array.isArray(examples) && examples.length > 0) {
+              sample = examples[0].result || examples[0];
+            }
+          }
+
+          if (!sample && action.variableMappings.parserExamples) {
+            // parserExamples: { path: value }
+            const pe = action.variableMappings.parserExamples;
+            const keys = Object.keys(pe || {});
+            if (keys.length > 0) sample = pe[keys[0]];
+          }
+        }
+
+        // If still no sample, attempt to read from action.lastSuccessfulRun or metadata
+        if (!sample && action.metadata && action.metadata.lastSuccessfulRun) {
+          sample =
+            action.metadata.lastSuccessfulRun.result ||
+            action.metadata.lastSuccessfulRun;
+        }
+
+        // If we found a sample, derive result structure
+        if (sample !== null && sample !== undefined) {
+          resultStructure = extractStructure(sample);
         }
 
         return { schema: null, sample, resultStructure, action };
@@ -2186,34 +3107,125 @@
 
   // Extract structure from sample data
   function extractStructure(sample) {
-    if (!sample || typeof sample !== "object") return null;
+    if (sample === null || sample === undefined) return null;
 
     const structure = {};
 
     if (Array.isArray(sample)) {
+      structure.type = "array";
+      structure.length = sample.length;
       if (sample.length > 0) {
-        structure.type = "array";
-        structure.itemType = typeof sample[0];
-        structure.length = sample.length;
-        if (typeof sample[0] === "object") {
-          structure.fields = Object.keys(sample[0]);
+        // analyze first N items to infer itemType
+        const first = sample[0];
+        structure.itemType = inferType(first);
+        if (typeof first === "object" && first !== null) {
+          structure.fields = Object.keys(first);
+          // include nested field types for clarity
+          structure.fieldTypes = {};
+          Object.keys(first).forEach((k) => {
+            structure.fieldTypes[k] = inferType(first[k]);
+          });
         }
       }
-    } else {
+    } else if (typeof sample === "object") {
       structure.type = "object";
       structure.fields = Object.keys(sample);
+      structure.fieldTypes = {};
+      Object.keys(sample).forEach((k) => {
+        structure.fieldTypes[k] = inferType(sample[k]);
+      });
+    } else {
+      structure.type = inferType(sample);
     }
 
     return structure;
   }
 
+  /**
+   * Find a representative primitive sample inside a nested object/array
+   * Scans breadth-first up to a reasonable depth and prefers non-null primitives
+   */
+  function findRepresentativeSample(sample, maxDepth = 4) {
+    try {
+      if (sample === null || sample === undefined) return null;
+      if (typeof sample !== "object") return sample;
+
+      const queue = [{ value: sample, depth: 0 }];
+
+      while (queue.length > 0) {
+        const { value, depth } = queue.shift();
+        if (depth > maxDepth) continue;
+
+        if (Array.isArray(value)) {
+          for (let i = 0; i < Math.min(value.length, 6); i++) {
+            const item = value[i];
+            if (item === null || item === undefined) continue;
+            if (typeof item !== "object") return item;
+            queue.push({ value: item, depth: depth + 1 });
+          }
+        } else if (typeof value === "object") {
+          for (const k of Object.keys(value)) {
+            const v = value[k];
+            if (v === null || v === undefined) continue;
+            if (typeof v !== "object") return v;
+            queue.push({ value: v, depth: depth + 1 });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("findRepresentativeSample failed:", e);
+    }
+    return null;
+  }
+
   // Build AI prompt with description and comprehensive context
   function buildAIPrompt(description, context) {
-    let prompt = `You are an expert JavaScript developer. Generate a JavaScript function body based on the following requirements:\n\n`;
+    let prompt = `You are an expert JavaScript developer. Generate a SIMPLE, SINGLE JavaScript function body for the Custom Logic Engine.\n\n`;
+
+    prompt += `=== CUSTOM LOGIC ENGINE EXECUTION MODEL ===\n\n`;
+    prompt += `The Custom Logic Engine executes your code using:\n`;
+    prompt += `  const func = new Function("inputs", yourCodeHere);\n`;
+    prompt += `  const result = func(inputs);\n\n`;
+
+    prompt += `CONSTRAINTS:\n`;
+    prompt += `• Your code is the FUNCTION BODY ONLY (no 'function' keyword, no declaration)\n`;
+    prompt += `• You receive exactly ONE parameter: 'inputs' object\n`;
+    prompt += `• You MUST return a value (object, array, string, number, or boolean)\n`;
+    prompt += `• The engine supports both sync and async execution\n`;
+    prompt += `• NO external modules, NO require(), NO imports\n`;
+    prompt += `• ONLY use standard JavaScript built-ins (Math, Date, String, Array, Object, JSON, etc.)\n\n`;
+
+    // ===== ADD INPUT SHAPE SCHEMA =====
+    prompt += `=== INPUT SHAPE SCHEMA (STRICT CONTRACT) ===\n\n`;
+
+    try {
+      const schema = buildInputShapeSchema(logicInputs);
+      const interfaceStr = schemaToInterface(schema);
+      prompt += `This is the EXACT structure of the 'inputs' parameter you will receive:\n\n`;
+      prompt += `${interfaceStr}\n\n`;
+      prompt += `CRITICAL:\n`;
+      prompt += `• You MUST ONLY access properties defined in this schema\n`;
+      prompt += `• Use EXACT property names as shown above\n`;
+      prompt += `• Types are enforced - check the type annotations\n`;
+      prompt += `• Sample values are provided for reference\n`;
+      prompt += `• Use bracket notation: inputs['propertyName']['nestedProperty']\n\n`;
+    } catch (e) {
+      console.warn("Failed to build input shape schema for AI prompt:", e);
+    }
+    // ===== END INPUT SHAPE SCHEMA =====
+
+    prompt += `=== GRAMMAR AND STRUCTURE ===\n\n`;
+    prompt += `INPUTS OBJECT STRUCTURE:\n`;
+    prompt += `{\n`;
+    prompt += `  "eventName": { ...eventPayload },           // Event data\n`;
+    prompt += `  "actions": {                                // Action results\n`;
+    prompt += `    "actionId": { ...actionResult }\n`;
+    prompt += `  }\n`;
+    prompt += `}\n\n`;
 
     prompt += `DESCRIPTION:\n${description}\n\n`;
 
-    prompt += `AVAILABLE INPUT VARIABLES (use bracket notation for safety):\n`;
+    prompt += `AVAILABLE INPUT VARIABLES:\n`;
     context.variables.forEach((v, idx) => {
       prompt += `${idx + 1}. ${v.accessPath}\n`;
       prompt += `   Type: ${v.type}\n`;
@@ -2229,46 +3241,77 @@
       prompt += `\n`;
     });
 
-    prompt += `\nCRITICAL SYNTAX RULES:\n`;
-    prompt += `1. ALWAYS use bracket notation for property access: inputs['propertyName'] or inputs.actions['actionId']['fieldName']\n`;
-    prompt += `2. DO NOT use subtraction operator (-) when accessing properties\n`;
-    prompt += `3. DO NOT use undefined variables - only use the exact access paths listed above\n`;
-    prompt += `4. Property names with special characters MUST use bracket notation\n`;
-    prompt += `5. Use optional chaining (?.) for safe property access\n\n`;
+    prompt += `\n=== MANDATORY SYNTAX RULES ===\n\n`;
+    prompt += `1. PROPERTY ACCESS: Use bracket notation for all property access\n`;
+    prompt += `   ✓ inputs['eventName']['field']\n`;
+    prompt += `   ✓ inputs.actions['actionId']['field']\n`;
+    prompt += `   ✗ inputs.field - variableName  (This is SUBTRACTION, not property access!)\n\n`;
 
-    prompt += `\nREQUIREMENTS:\n`;
-    prompt += `1. Write ONLY the JavaScript function body (no function declaration, no 'function' keyword)\n`;
-    prompt += `2. Use ONLY the input variables listed above with EXACT access paths\n`;
-    prompt += `3. The code must be production-ready, error-free JavaScript (ES2024+)\n`;
-    prompt += `4. Include proper error handling with try-catch\n`;
-    prompt += `5. Return a meaningful value (object, array, string, number, or boolean)\n`;
-    prompt += `6. Add brief inline comments for complex logic\n`;
-    prompt += `7. Handle null/undefined values gracefully using optional chaining\n`;
-    prompt += `8. Use modern JavaScript syntax (const/let, arrow functions, destructuring, etc.)\n\n`;
+    prompt += `2. VARIABLE REFERENCES: ONLY use variables from the "AVAILABLE INPUT VARIABLES" list above\n`;
+    prompt += `   ✓ const value = inputs.actions['actionId']['phone_number'];\n`;
+    prompt += `   ✗ const value = someUndefinedVariable;\n\n`;
 
-    prompt += `RESPONSE FORMAT:\n`;
-    prompt += `Provide ONLY the JavaScript code block without any markdown formatting, explanations, or comments outside the code.\n`;
-    prompt += `The code should start directly with JavaScript statements and end with a return statement.\n\n`;
+    prompt += `3. NULL SAFETY: Always check for null/undefined before accessing nested properties\n`;
+    prompt += `   ✓ const value = inputs.actions?.['actionId']?.['field'] || null;\n`;
+    prompt += `   ✓ if (inputs.actions && inputs.actions['actionId']) { ... }\n\n`;
 
-    prompt += `CORRECT EXAMPLE:\n`;
+    prompt += `4. SIMPLE LOGIC: Keep logic simple and focused - ONE clear purpose\n`;
+    prompt += `   ✓ Validate one field\n`;
+    prompt += `   ✓ Transform one value\n`;
+    prompt += `   ✓ Compare two values\n`;
+    prompt += `   ✗ Complex multi-step workflows\n`;
+    prompt += `   ✗ Database operations\n`;
+    prompt += `   ✗ Network requests\n\n`;
+
+    prompt += `5. ERROR HANDLING: Wrap in try-catch, return structured error objects\n`;
+    prompt += `   ✓ try { ...logic... } catch (error) { return { error: error.message }; }\n\n`;
+
+    prompt += `6. RETURN VALUE: Always return something meaningful\n`;
+    prompt += `   ✓ return { isValid: true, value: result };\n`;
+    prompt += `   ✓ return processedValue;\n`;
+    prompt += `   ✗ No return statement\n`;
+    prompt += `   ✗ return undefined;\n\n`;
+
+    prompt += `=== RESPONSE FORMAT ===\n\n`;
+    prompt += `Provide ONLY the JavaScript code block.\n`;
+    prompt += `• NO markdown formatting (no \`\`\`javascript)\n`;
+    prompt += `• NO explanations before or after the code\n`;
+    prompt += `• NO function declaration\n`;
+    prompt += `• Start directly with JavaScript statements\n`;
+    prompt += `• End with a return statement\n\n`;
+
+    prompt += `=== CORRECT EXAMPLE ===\n\n`;
     prompt += `try {\n`;
-    prompt += `  const phoneNumber = inputs.actions['actionId']['phone_number'];\n`;
-    prompt += `  const regex = /^\\d{3}-\\d{3}-\\d{4}$/;\n`;
-    prompt += `  if (phoneNumber && typeof phoneNumber === 'string' && regex.test(phoneNumber)) {\n`;
-    prompt += `    return { isValid: true, phoneNumber };\n`;
+    prompt += `  // Extract phone number from action result\n`;
+    prompt += `  const phoneNumber = inputs.actions?.['actionId']?.['phone_number'];\n`;
+    prompt += `  \n`;
+    prompt += `  // Validate phone number format\n`;
+    prompt += `  if (!phoneNumber || typeof phoneNumber !== 'string') {\n`;
+    prompt += `    return { isValid: false, error: 'Phone number is required' };\n`;
     prompt += `  }\n`;
-    prompt += `  return { isValid: false, phoneNumber, error: 'Invalid format' };\n`;
+    prompt += `  \n`;
+    prompt += `  const phoneRegex = /^\\d{3}-\\d{3}-\\d{4}$/;\n`;
+    prompt += `  const isValid = phoneRegex.test(phoneNumber);\n`;
+    prompt += `  \n`;
+    prompt += `  return {\n`;
+    prompt += `    isValid,\n`;
+    prompt += `    phoneNumber,\n`;
+    prompt += `    error: isValid ? null : 'Invalid phone number format (expected: XXX-XXX-XXXX)'\n`;
+    prompt += `  };\n`;
     prompt += `} catch (error) {\n`;
     prompt += `  console.error('Logic error:', error);\n`;
     prompt += `  return { isValid: false, error: error.message };\n`;
     prompt += `}\n\n`;
 
-    prompt += `WRONG EXAMPLES (DO NOT DO THIS):\n`;
-    prompt += `❌ inputs.actions.actionId.field - propertyName  // This is subtraction, NOT property access!\n`;
-    prompt += `❌ inputs.actions.actionId.crmToDelivery - phone_number  // Syntax error!\n`;
-    prompt += `❌ inputs.eventName.field  // Unsafe if names have special chars\n\n`;
+    prompt += `=== WRONG EXAMPLES (DO NOT DO THIS) ===\n\n`;
+    prompt += `❌ function validatePhone(inputs) { ... }  // NO function declaration!\n`;
+    prompt += `❌ const result = inputs.field - variableName;  // Subtraction operator is NOT property access!\n`;
+    prompt += `❌ inputs.actions.actionId.crmToDelivery - phone_number;  // Syntax error!\n`;
+    prompt += `❌ const axios = require('axios');  // NO external modules!\n`;
+    prompt += `❌ await fetch('...');  // NO network requests!\n`;
+    prompt += `❌ return;  // MUST return a value!\n\n`;
 
-    prompt += `NOW GENERATE THE JAVASCRIPT CODE:`;
+    prompt += `NOW GENERATE THE JAVASCRIPT CODE FOLLOWING ALL RULES ABOVE:`;
 
     return prompt;
   }
@@ -2392,11 +3435,19 @@
             testData.actions[actionVarName] = {};
           }
 
-          if (variable.parserVarName && variable.sample !== undefined) {
+          if (
+            variable.parserVarName &&
+            variable.sample !== undefined &&
+            variable.sample !== null
+          ) {
             // Use parser path variable with normalized name
             const parserVarName = normalizeVarName(variable.parserVarName);
             testData.actions[actionVarName][parserVarName] = variable.sample;
-          } else if (variable.field && variable.sample) {
+          } else if (
+            variable.field &&
+            variable.sample !== undefined &&
+            variable.sample !== null
+          ) {
             // Extract specific field with normalized name
             const fieldVarName =
               variable.fieldVarName || normalizeVarName(variable.field);
@@ -2406,9 +3457,23 @@
                 ? variable.sample[variable.field]
                 : variable.sample;
             testData.actions[actionVarName][fieldVarName] = fieldValue;
-          } else if (variable.sample !== undefined) {
+          } else if (
+            variable.sample !== undefined &&
+            variable.sample !== null
+          ) {
             // Use full action result
             testData.actions[actionVarName] = variable.sample;
+          } else {
+            // Try to fallback to full action sample from context if available
+            try {
+              const act = context.actions && context.actions[variable.actionId];
+              const fallback =
+                act && (act.sample || (act.action && act.action.sample));
+              const rep = fallback ? findRepresentativeSample(fallback) : null;
+              if (rep !== null && rep !== undefined) {
+                testData.actions[actionVarName] = rep;
+              }
+            } catch (e) {}
           }
         }
       }

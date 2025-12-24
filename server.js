@@ -398,6 +398,12 @@ app.post('/api/event/execute', async (req, res) => {
     // Resolve query using payload and optional binding (best-effort resolver returns executed text + error)
     let processedQuery;
     try {
+      // Debug: log binding + whether server has global eventBindings loaded
+      try {
+        const globalCount = (globalThis.eventBindings && Array.isArray(globalThis.eventBindings)) ? globalThis.eventBindings.length : 0;
+        console.debug('event-execute: incoming binding=', binding, 'globalBindingsCount=', globalCount);
+      } catch (dbgErr) {}
+
       if (!globalThis.eventBridge || !globalThis.eventBridge.tryResolveQuery) {
         // Fallback to existing resolveQuery (will throw on missing fields)
         processedQuery = globalThis.eventBridge.resolveQuery(query, payload, binding, []);
@@ -405,6 +411,11 @@ app.post('/api/event/execute', async (req, res) => {
         const out = globalThis.eventBridge.tryResolveQuery(query, payload, binding, []);
         if (out && out.error) {
           console.error('Template resolution failed:', out.error);
+          // include diagnostics about binding and available global bindings
+          try {
+            const globalCount = (globalThis.eventBindings && Array.isArray(globalThis.eventBindings)) ? globalThis.eventBindings.length : 0;
+            console.error('Template resolution diagnostics: binding=', binding, 'globalBindingsCount=', globalCount, 'sqlPreview=', out.sql);
+          } catch (diagErr) {}
           executedQuery = out.sql || null;
           return res.status(400).json({ ok: false, error: 'Template resolution failed', details: out.error, executedQuery });
         }

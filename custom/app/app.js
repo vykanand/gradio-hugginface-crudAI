@@ -103,6 +103,46 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       setTimeout(() => { try { el.style.opacity = '0'; el.style.transition = 'opacity 300ms'; setTimeout(()=>{ try{ container.removeChild(el); }catch(e){} }, 350); } catch(e){} }, timeout || 4000);
     } catch (e) { console.warn('showToast failed', e); }
   }
+
+  // Simple processing overlay helpers
+  // Use these to indicate background processing during network requests.
+  function showProcessingOverlay(msg) {
+    try {
+      var id = 'processing-overlay';
+      if (document.getElementById(id)) return;
+      var o = document.createElement('div');
+      o.id = id;
+      o.style.position = 'fixed';
+      o.style.left = '0';
+      o.style.top = '0';
+      o.style.width = '100%';
+      o.style.height = '100%';
+      o.style.background = 'rgba(255,255,255,0.95)';
+      o.style.zIndex = '100000';
+      o.style.display = 'flex';
+      o.style.alignItems = 'center';
+      o.style.justifyContent = 'center';
+
+      var box = document.createElement('div');
+      box.style.padding = '18px 24px';
+      box.style.background = 'transparent';
+      box.style.color = '#222';
+      box.style.fontSize = '16px';
+      box.style.fontFamily = 'sans-serif';
+      box.style.borderRadius = '6px';
+      box.textContent = msg || 'Processing...';
+
+      o.appendChild(box);
+      document.body.appendChild(o);
+    } catch (e) { console.warn('showProcessingOverlay failed', e); }
+  }
+
+  function hideProcessingOverlay() {
+    try {
+      var el = document.getElementById('processing-overlay');
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch (e) { console.warn('hideProcessingOverlay failed', e); }
+  }
   // deepcode ignore JS-0002: Development logging for API endpoint debugging
   if (typeof console !== 'undefined') console.log('API Base URL:', $scope.url);
   const passphrase = "yug";
@@ -1446,6 +1486,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     }
 
     //post req start
+    try { showProcessingOverlay('Processing...'); } catch(e){}
     $http({
       method: "POST",
       url: url,
@@ -1469,15 +1510,38 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         try {
           var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
           var addAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'add'; });
-          if (addAction && addAction.event) $scope.dispatchModuleEvent(addAction.event, { response: response, module: mod });
-          ($scope.moduleEvents.fields || []).forEach(function(f){ if (!f) return; if (f.addEvent) $scope.dispatchModuleEvent(f.addEvent, { field: f.name, module: mod }); });
+          if (addAction && addAction.event) {
+            // Simplified payload - just the POJO data from UI
+            $scope.dispatchModuleEvent(addAction.event, addata);
+          }
+          // NOTE: Per-field add events were originally emitted here on submit.
+          // Commenting out to avoid duplicate events because per-field events
+          // are already emitted on focus/field changes. Revert by restoring
+          // the line below if you want submit-triggered per-field events.
+          // ($scope.moduleEvents.fields || []).forEach(function(f){ if (!f) return; if (f.addEvent) { var fp = {}; fp[f.name] = addata[f.name]; $scope.dispatchModuleEvent(f.addEvent, fp); } });
         } catch(e) { console.warn('emit add events error', e); }
-        window.top.postMessage("success^Created Successfully", "*");
-        // window.location.reload(); // temporarily disabled for in-page debugging
+        try { hideProcessingOverlay(); } catch(e){}
+        // After dispatching module events, notify parent and then reload to ensure
+        // listeners have time to process the events. Use a small delay greater than
+        // the dispatchModuleEvent default (300ms).
+        setTimeout(function(){
+          try { window.top.postMessage("success^Created Successfully", "*"); } catch(e){}
+          try { window.location.reload(); } catch(e){}
+        }, 500);
       })
       .catch(function onError(response) {
-        window.top.postMessage("error^Some Error Occured", "*");
-        // window.location.reload(); // temporarily disabled for in-page debugging
+        try { hideProcessingOverlay(); } catch(e){}
+        // Dispatch error event with complete payload
+        try {
+          var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
+          var addAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'add'; });
+          if (addAction && addAction.event) {
+            // Simplified payload - just the POJO data from UI
+            $scope.dispatchModuleEvent(addAction.event, addata);
+          }
+        } catch(e) { console.warn('emit add error event failed', e); }
+        try { window.top.postMessage("error^Some Error Occured", "*"); } catch(e){}
+        try { window.location.reload(); } catch(e){}
       });
   };
 
@@ -1606,6 +1670,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     console.log("POST URL:", $scope.url);
 
     //post req start
+    try { showProcessingOverlay('Processing...'); } catch(e){}
     $http({
       method: "POST",
       url: $scope.url,
@@ -1624,31 +1689,52 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       data: eddata,
     })
       .success(function (response) {
+        try { hideProcessingOverlay(); } catch(e){}
         console.log(response);
         // alert('Edited successfully');
         window.top.postMessage("success^Edited Successfully", "*");
         try {
           var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
           var updAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'update'; });
-          if (updAction && updAction.event) $scope.dispatchModuleEvent(updAction.event, { response: response, module: mod });
-          var prevStored = {};
-          try { prevStored = JSON.parse(localStorage.getItem('editDto') || '{}'); } catch(e) { prevStored = {}; }
+          if (updAction && updAction.event) {
+            // Simplified payload - just the POJO data from UI
+            $scope.dispatchModuleEvent(updAction.event, eddata);
+          }
+          // NOTE: Per-field edit events were originally emitted here on submit.
+          // Commenting out to avoid duplicate events because per-field events
+          // are already emitted on focus/field changes. Revert by restoring
+          // the block below if you want submit-triggered per-field events.
+          /*
           ($scope.moduleEvents.fields || []).forEach(function(f){
             if (!f) return;
             if (!f.editEvent) return;
-            var prevVal = prevStored.hasOwnProperty(f.name) ? prevStored[f.name] : (prevStored[$scope._normalizeFieldKey(f.name)] || null);
             var newVal = ($scope.edls && typeof $scope.edls[f.name] !== 'undefined') ? $scope.edls[f.name] : null;
-            $scope.dispatchModuleEvent(f.editEvent, { field: f.name, prev: prevVal, value: newVal, module: mod });
+            var fp = {}; fp[f.name] = newVal;
+            $scope.dispatchModuleEvent(f.editEvent, fp);
           });
+          */
         } catch(e) { console.warn('emit edit events error', e); }
-        // notie.alert({ type: 'success', text: 'Edited Successfully', stay: false })
-        // window.location.reload(); // temporarily disabled for in-page debugging
+        // After dispatching module events, notify parent and then reload so
+        // listeners can react to the edit events first.
+        setTimeout(function(){
+          try { window.top.postMessage("success^Edited Successfully", "*"); } catch(e){}
+          try { window.location.reload(); } catch(e){}
+        }, 500);
       })
       .catch(function onError(response) {
+        try { hideProcessingOverlay(); } catch(e){}
         // alert('Some error occured');
-        window.top.postMessage("error^Some Error Occured", "*");
-        // notie.alert({ type: 'error', text: 'Some error occured', stay: false })
-        // window.location.reload(); // temporarily disabled for in-page debugging
+        // Dispatch error event with complete payload
+        try {
+          var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
+          var updAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'update'; });
+          if (updAction && updAction.event) {
+            // Simplified payload - just the POJO data from UI
+            $scope.dispatchModuleEvent(updAction.event, eddata);
+          }
+        } catch(e) { console.warn('emit edit error event failed', e); }
+        try { window.top.postMessage("error^Some Error Occured", "*"); } catch(e){}
+        try { window.location.reload(); } catch(e){}
       });
     //post req ends
   };
@@ -1855,10 +1941,17 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       try {
         var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
         var delAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'delete'; });
-        if (delAction && delAction.event) $scope.dispatchModuleEvent(delAction.event, { response: response, module: mod, deletedId: id });
+        if (delAction && delAction.event) {
+          // Simplified payload - just the record ID
+          $scope.dispatchModuleEvent(delAction.event, { id: id });
+        }
       } catch(e) { console.warn('emit delete events error', e); }
-      window.top.postMessage("success^Deleted Successfully", "*");
-      // window.location.reload(); // temporarily disabled for in-page debugging
+      // After dispatching delete events, notify parent and reload so listeners
+      // have a chance to process the deletion.
+      setTimeout(function(){
+        try { window.top.postMessage("success^Deleted Successfully", "*"); } catch(e){}
+        try { window.location.reload(); } catch(e){}
+      }, 500);
     });
     // //post req ends
   };
@@ -2043,43 +2136,44 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
               try {
                 var incoming = (e && e.type) ? e.type : (listenerName);
                 var normalizedListener = incoming.endsWith('-listener') ? incoming : (incoming + '-listener');
-                var payload = (e && e.detail) ? JSON.stringify(e.detail) : '{}';
+                var payload = (e && e.payload) ? JSON.stringify(e.payload) : '{}';
                 if ($scope._lastReceivedEvent[normalizedListener] === payload) return; // drop duplicate
                 $scope._lastReceivedEvent[normalizedListener] = payload;
-                console.log('====EVENT RECEIVED====', incoming, e && e.detail ? e.detail : null);
-                try { window.top.postMessage('orchestrator_event^' + normalizedListener + '^' + payload, '*'); } catch(err){ /* ignore */ }
+                console.log('====EVENT RECEIVED====', incoming, e && e.payload ? e.payload : null);
+                // Do NOT post events to parent frames - this was causing notification alerts
+                // when dynamic field focus/changes occurred. Events are dispatched locally
+                // via CustomEvent; stop forwarding to window.top to avoid UX interruptions.
+                // try { window.top.postMessage('orchestrator_event^' + normalizedListener + '^' + payload, '*'); } catch(err){ /* ignore */ }
 
                 // Also forward to orchestrator server directly so events are discovered
                 try {
-                  var payloadObj = (e && e.detail) ? e.detail : {};
-                  // If this looks like a persisted/orchestrator-originated event (has an id), skip forwarding to avoid echo loops
-                  if (payloadObj && (payloadObj.id || payloadObj._evtId || payloadObj.__persisted)) {
-                    try { console.debug('Skipping forward for orchestrator-originated event', payloadObj && payloadObj.id); } catch(e){}
+                  // Keep payload as clean POJO - envelope builder handles actor separately
+                  var payloadObj = (e && e.payload) ? e.payload : {};
+                  // If this looks like a persisted/orchestrator-originated event (has envelope.id), skip forwarding to avoid echo loops
+                  if (e && (e.id || e._evtId || e.__persisted)) {
+                    try { console.debug('Skipping forward for orchestrator-originated event', e.id); } catch(ex){}
                   } else {
                     // Build a canonical event name: <module>[:field:<field>]:<action>
                     var forwardEvent = normalizedListener.replace(/-listener$/, '');
                     try {
-                      // prefer explicit module in payload, else use configured module
-                      var fmodule = payloadObj && payloadObj.module ? String(payloadObj.module) : ($scope.moduleEvents && $scope.moduleEvents.module ? String($scope.moduleEvents.module) : (localStorage.getItem('headinfo')||'module'));
+                      // prefer explicit module from envelope or configured module
+                      var fmodule = (e && e.module) ? String(e.module) : ($scope.moduleEvents && $scope.moduleEvents.module ? String($scope.moduleEvents.module) : (localStorage.getItem('headinfo')||'module'));
                       fmodule = fmodule.toString();
                       // determine action: look for common action tokens
                       var action = null;
-                      if (/(:added$)|(^add$)|(:add$)/i.test(forwardEvent) || (payloadObj && payloadObj.action === 'add')) action = 'added';
-                      else if (/(:edited$)|(:edit$)|(^edit$)/i.test(forwardEvent) || (payloadObj && payloadObj.action === 'edit')) action = 'edited';
-                      else if (/(:deleted$)|(:delete$)|(^delete$)/i.test(forwardEvent) || (payloadObj && payloadObj.action === 'delete')) action = 'deleted';
+                      if (/(:added$)|(^add$)|(:add$)/i.test(forwardEvent)) action = 'added';
+                      else if (/(:edited$)|(:edit$)|(^edit$)/i.test(forwardEvent)) action = 'edited';
+                      else if (/(:deleted$)|(:delete$)|(^delete$)/i.test(forwardEvent)) action = 'deleted';
                       else {
                         // fallback to last token after ':'
                         var toks = forwardEvent.split(':');
                         action = toks.length ? toks[toks.length-1] : 'event';
                       }
-                      // determine field if present in payload or in event naming
+                      // determine field if present in event naming
                       var field = null;
-                      if (payloadObj && payloadObj.field) field = String(payloadObj.field);
-                      else {
-                        // try to parse patterns like module:field:<name>:action
-                        var m = forwardEvent.match(/^[^:]+:field:([^:]+)(?::|$)/i);
-                        if (m && m[1]) field = m[1];
-                      }
+                      // try to parse patterns like module:field:<name>:action
+                      var m = forwardEvent.match(/^[^:]+:field:([^:]+)(?::|$)/i);
+                      if (m && m[1]) field = m[1];
                       var canonicalEvent = null;
                       if (field) canonicalEvent = fmodule + ':field:' + field + ':' + action;
                       else canonicalEvent = fmodule + ':' + action;
@@ -2090,7 +2184,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                       event: forwardEvent,
                       listener: normalizedListener,
                       module: (forwardEvent && String(forwardEvent).split(':')[0]) || null,
-                      detail: payloadObj
+                      payload: payloadObj
                     };
 
                     // Rate-limit: minimum interval between forwards for same event name (ms)
@@ -2111,58 +2205,66 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                         $scope._forwardLastTime[forwardEvent] = now;
                         $scope._forwardPayloadCache[payloadKey] = now;
                         if (typeof orchestratorBase === 'string' && orchestratorBase) {
-                              // build envelope with controlled vocabulary and audit
+                              // Build proper envelope and send to orchestrator
                               function uuidv4(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0,v=c=='x'?r:(r&0x3|0x8);return v.toString(16);}); }
-                              var envelope = (function(){
+                              var envelope = null;
+                              try {
                                 var now = Date.now();
                                 var id = uuidv4();
-                                var domain = forwardPayload.module || (localStorage.getItem('headinfo')||'module');
-                                var entity = (forwardPayload && forwardPayload.detail && forwardPayload.detail.entity) ? String(forwardPayload.detail.entity) : null;
-                                var entityId = (forwardPayload && forwardPayload.detail && (forwardPayload.detail.entityId || forwardPayload.detail.id)) ? (forwardPayload.detail.entityId || forwardPayload.detail.id) : null;
-                                // canonical event (already normalized earlier), ensure lowercase domain
-                                var eventName = (forwardPayload && forwardPayload.event) ? String(forwardPayload.event) : (domain + ':event');
-                                return {
+                                var domain = (forwardEvent && String(forwardEvent).split(':')[0]) || (localStorage.getItem('headinfo')||'module');
+                                // Build actor from stored userdat
+                                var a = null;
+                                try {
+                                  var ud = localStorage.getItem('userdat');
+                                  if (ud) {
+                                    try {
+                                      var uj = JSON.parse(ud);
+                                      a = {
+                                        user: uj.username || uj.user || uj.name || uj.id || null,
+                                        role: uj.role || null,
+                                        group: uj.group || uj.org || null,
+                                        organization: uj.organization || uj.organisation || null
+                                      };
+                                    } catch(e) { a = null; }
+                                  }
+                                } catch(e) { a = null; }
+                                if (!a) {
+                                  a = {
+                                    user: localStorage.getItem('username') || null,
+                                    role: localStorage.getItem('user_role') || localStorage.getItem('role') || null,
+                                    group: localStorage.getItem('user_group') || null,
+                                    organization: null
+                                  };
+                                }
+                              envelope = {
                                   id: id,
-                                  event: eventName,
+                                  event: forwardEvent,
                                   version: 1,
                                   domain: String(domain),
-                                  entity: entity || null,
-                                  entityId: entityId || null,
+                                  module: String(domain),
+                                  entity: null,
+                                  entityId: null,
                                   ts: now,
                                   producer: { service: 'crud-ui', instance: (location.hostname + ':' + (location.port||'')) },
-                                  actor: (function(){ try {
-                                    var a = null;
-                                    var ud = localStorage.getItem('userdat');
-                                    if (ud) {
-                                      try { var uj = JSON.parse(ud); a = { user: uj.username || uj.user || uj.name || uj.id || null, role: uj.role || null, group: uj.group || uj.org || null }; } catch(e) { a = null; }
-                                    }
-                                    if (!a) {
-                                      a = { user: localStorage.getItem('username') || null, role: localStorage.getItem('user_role') || localStorage.getItem('role') || null, group: localStorage.getItem('user_group') || null };
-                                    }
-                                    return a;
-                                  } catch(e){ return null; } })(),
-                                  detail: forwardPayload.detail || {}
+                                  actor: a,
+                                  payload: payloadObj || {}
                                 };
-                              })();
-
-                              // include user role headers when available so server can populate actor fields
-                              var hdrs = { 'Content-Type': 'application/json' };
-                              try {
-                                if (envelope && envelope.actor) {
-                                  if (envelope.actor.user) hdrs['X-User'] = envelope.actor.user;
-                                  if (envelope.actor.role) hdrs['X-User-Role'] = envelope.actor.role;
-                                  if (envelope.actor.group) hdrs['X-User-Group'] = envelope.actor.group;
-                                }
-                              } catch(e){}
-
-                              fetch((orchestratorBase.replace(/\/$/, '') + '/api/orchestrator/event'), {
-                                method: 'POST',
-                                headers: hdrs,
-                                body: JSON.stringify(envelope)
-                              }).then(function(resp){
-                                try { console.log('Forwarded event response status', resp && resp.status); } catch(e){}
-                                return resp.json().catch(function(){ try { return resp.text ? resp.text() : null; } catch(e){ return null; } });
-                              }).then(function(j){ try { console.log('Forwarded event body', j); } catch(e){} if (j && j.ok) { try{ showToast && showToast('Event forwarded', 'success'); }catch(e){} } }).catch(function(err){ try{ console.warn('forward event failed', err); }catch(e){} });
+                                console.log('Built envelope for forwarding:', JSON.stringify(envelope, null, 2));
+                              } catch(envErr) { console.warn('envelope build error', envErr); }
+                              if (envelope) {
+                                try {
+                                  fetch(orchestratorBase.replace(/\/$/, '') + '/api/orchestrator/event', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(envelope)
+                                  }).then(function(resp){
+                                    try { console.log('Forwarded event response status', resp && resp.status); } catch(e){}
+                                    return resp.json().catch(function(){ try { return resp.text ? resp.text() : null; } catch(e){ return null; } });
+                                  }).then(function(j){ try { console.log('Forwarded event body', j); } catch(e){}
+                                    /* No UI notification */
+                                  }).catch(function(err){ try{ console.warn('forward event failed', err); }catch(e){} });
+                                } catch (fe) { try { console.warn('forward attempt failed', fe); } catch(e) {} }
+                              }
                         }
                       }
                     }
@@ -2200,12 +2302,21 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         __es.onerror = function(e) { console.warn('EventSource error (SSE URL=' + sseEndpoint + ')', e); };
         __es.onmessage = function(m) {
           try {
-            const obj = JSON.parse(m.data || '{}');
-            const evName = obj.event || (obj && obj.type) || null;
-            const detail = (obj && obj.detail) || obj || {};
+            const envelope = JSON.parse(m.data || '{}');
+            const evName = envelope.event || (envelope && envelope.type) || null;
             if (!evName) return;
-            try { window.dispatchEvent(new CustomEvent(evName, { detail: detail })); } catch(e){}
-            try { window.dispatchEvent(new CustomEvent(evName + '-listener', { detail: detail })); } catch(e){}
+            // Dispatch full envelope - metadata at top level, clean payload inside
+            try { 
+              const evt = new CustomEvent(evName);
+              // Copy all envelope properties to event object for flat access
+              Object.assign(evt, envelope);
+              window.dispatchEvent(evt);
+            } catch(e){}
+            try { 
+              const evt = new CustomEvent(evName + '-listener');
+              Object.assign(evt, envelope);
+              window.dispatchEvent(evt);
+            } catch(e){}
             try { if (!$scope.$$phase) $scope.$apply(); } catch(e){}
           } catch (e) { console.warn('SSE parse error', e); }
         };
@@ -2215,21 +2326,30 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
   // Debounced dispatcher for module events
   $scope._pendingDispatch = {};
-  $scope.dispatchModuleEvent = function(eventName, detail, delay) {
+  $scope.dispatchModuleEvent = function(eventName, payload, delay) {
     try {
       if (!eventName) return;
       delay = typeof delay === 'number' ? delay : 300;
       if ($scope._pendingDispatch[eventName]) clearTimeout($scope._pendingDispatch[eventName]);
-      console.log('====EVENT SCHEDULED====', eventName, detail || {});
-      $scope._pendingDispatch[eventName] = setTimeout(function(){
+      console.log('====EVENT SCHEDULED====', eventName, payload || {});
+          $scope._pendingDispatch[eventName] = setTimeout(function(){
         try {
-          console.log('====EVENT FIRED====', eventName, detail || {});
-          window.dispatchEvent(new CustomEvent(eventName, { detail: detail || {} }));
-          try {
-            var listenerName = eventName + '-listener';
-            console.log('====EVENT FIRED==== (listener variant) ', listenerName, detail || {});
-            window.dispatchEvent(new CustomEvent(listenerName, { detail: detail || {} }));
-          } catch(e2) { }
+          console.log('====EVENT FIRED====', eventName, payload || {});
+              // Keep payload as clean POJO - envelope builder handles actor separately
+              var payloadData = (payload && typeof payload === 'object') ? JSON.parse(JSON.stringify(payload)) : {};
+
+              const mainEvt = new CustomEvent(eventName);
+              mainEvt.payload = payloadData; // Flat structure: payload at top level
+              mainEvt.event = eventName;
+              window.dispatchEvent(mainEvt);
+              try {
+                var listenerName = eventName + '-listener';
+                console.log('====EVENT FIRED==== (listener variant) ', listenerName, payloadData || {});
+                const listenerEvt = new CustomEvent(listenerName);
+                listenerEvt.payload = payloadData;
+                listenerEvt.event = eventName;
+                window.dispatchEvent(listenerEvt);
+              } catch(e2) { }
         } catch(e){
           console.warn('dispatch failed', e);
         }
@@ -2244,9 +2364,10 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       var defaultModule = (localStorage.getItem('headinfo') || 'module').toString().toLowerCase();
       $scope.moduleEvents = { module: defaultModule, actions: [], fields: [] };
       $scope.moduleEvents.actions = [
-        { key: 'add', label: 'Add Record', event: defaultModule + ':add' },
-        { key: 'update', label: 'Update Record', event: defaultModule + ':update' },
-        { key: 'delete', label: 'Delete Record', event: defaultModule + ':delete' }
+        // Use `recordXxx` verbs for module-level historical events
+        { key: 'add', label: 'Record Added', event: defaultModule + ':recordAdded' },
+        { key: 'update', label: 'Record Updated', event: defaultModule + ':recordUpdated' },
+        { key: 'delete', label: 'Record Deleted', event: defaultModule + ':recordDeleted' }
       ];
       var names = [];
       if ($scope.addingNew && Object.keys($scope.addingNew).length > 0) names = Object.keys($scope.addingNew);
@@ -2688,11 +2809,12 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       if (lifecycle === 'add') ev = found.cfg.addEvent;
       else if (lifecycle === 'edit') ev = found.cfg.editEvent;
       if (!ev) return;
-      // if prev not provided, try to use tracked last value
+      // Build clean field event payload - just field name and value
       try {
         $scope._lastFieldValues = $scope._lastFieldValues || { add: {}, edit: {} };
-        var trackedPrev = (prev === undefined || prev === null) ? ($scope._lastFieldValues[lifecycle] ? $scope._lastFieldValues[lifecycle][found.name] : undefined) : prev;
-        $scope.dispatchModuleEvent(ev, { field: found.name, module: mod, value: value, previous: trackedPrev }, 300);
+        var fieldPayload = {};
+        fieldPayload[found.name] = value;
+        $scope.dispatchModuleEvent(ev, fieldPayload, 300);
         // update last seen value after dispatch
         try { $scope._lastFieldValues[lifecycle][found.name] = value; } catch(e){}
       } catch(e) { console.warn('emitFieldChange dispatch error', e); }

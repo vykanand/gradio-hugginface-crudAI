@@ -297,7 +297,19 @@
       "id": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63",
       "name": "Crm to delivery",
       "description": "I want to match a phone number between appsthink CRM an extract contact modules",
-      "query": "SELECT * FROM appsthink_crm AS ac INNER JOIN extract_contact AS ec ON ac.phone_number = ec.phoneNumbers_value"
+      "query": "SELECT * FROM appsthink_crm AS ac INNER JOIN extract_contact AS ec ON ac.phone_number = ec.phoneNumbers_value",
+      "variableMappings": {
+        "outputShape": {
+          "properties": {
+            "phone_number": {
+              "type": "string"
+            }
+          },
+          "example": {
+            "phone_number": "vedcsc"
+          }
+        }
+      }
     },
     "f5526e46-87d1-4725-b8bf-01ee27fb7245": {
       "id": "f5526e46-87d1-4725-b8bf-01ee27fb7245",
@@ -370,8 +382,8 @@
     "eefd103c-7eed-4045-ae2d-140b4a2bd226": {
       "id": "eefd103c-7eed-4045-ae2d-140b4a2bd226",
       "name": "crm to extract contacts",
-      "description": "with input phone number in appsthink crm  I want find all the related information in extract contact table which matches Phone number",
-      "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}}",
+      "description": "with input phone number in appsthink crm  I want find all the email and phone information in extract contact table which matches both Phone number and email",
+      "query": "SELECT emails_value, phoneNumbers_value FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}}",
       "eventBindings": [
         {
           "eventId": "appsthink_crm:phone_number:added",
@@ -431,6 +443,125 @@
               }
             }
           }
+        },
+        {
+          "eventId": "appsthink_crm:email:added",
+          "eventName": "appsthink_crm:email:added",
+          "eventDescription": "",
+          "payloadSchema": {
+            "primaryFields": {
+              "field": {
+                "type": "string",
+                "description": "field (string)",
+                "sample": "email",
+                "path": "detail.field"
+              },
+              "module": {
+                "type": "string",
+                "description": "module (string)",
+                "sample": "appsthink_crm",
+                "path": "detail.module"
+              },
+              "value": {
+                "type": "string",
+                "description": "value (string)",
+                "sample": "sca",
+                "path": "detail.value"
+              }
+            },
+            "metadataFields": {
+              "id": {
+                "type": "string",
+                "description": "id (metadata)",
+                "sample": "035e4f2a-8d9b-4d93-950b-1a1eebbb9539"
+              },
+              "event": {
+                "type": "string",
+                "description": "event (metadata)",
+                "sample": "appsthink_crm:field:email:added"
+              },
+              "module": {
+                "type": "string",
+                "description": "module (metadata)",
+                "sample": "appsthink_crm"
+              },
+              "domain": {
+                "type": "string",
+                "description": "domain (metadata)",
+                "sample": "appsthink_crm"
+              },
+              "version": {
+                "type": "integer",
+                "description": "version (metadata)",
+                "sample": 1
+              },
+              "ts": {
+                "type": "integer",
+                "description": "ts (metadata)",
+                "sample": 1766347215683
+              },
+              "publishedTs": {
+                "type": "integer",
+                "description": "publishedTs (metadata)",
+                "sample": 1766347215480
+              },
+              "status": {
+                "type": "string",
+                "description": "status (metadata)",
+                "sample": "published"
+              },
+              "attempts": {
+                "type": "integer",
+                "description": "attempts (metadata)",
+                "sample": 0
+              },
+              "level": {
+                "type": "string",
+                "description": "level (metadata)",
+                "sample": "technical"
+              },
+              "field": {
+                "type": "string",
+                "description": "field (metadata)",
+                "sample": "email"
+              },
+              "canonicalEvent": {
+                "type": "string",
+                "description": "canonicalEvent (metadata)",
+                "sample": "appsthink_crm:email:added"
+              },
+              "actor.user": {
+                "type": "string",
+                "description": "user (actor metadata)",
+                "sample": "Admin",
+                "path": "actor.user"
+              },
+              "actor.role": {
+                "type": "string",
+                "description": "role (actor metadata)",
+                "sample": "admin",
+                "path": "actor.role"
+              },
+              "actor.group": {
+                "type": "string",
+                "description": "group (actor metadata)",
+                "sample": "Administrators",
+                "path": "actor.group"
+              },
+              "producer.service": {
+                "type": "string",
+                "description": "service (producer metadata)",
+                "sample": "crud-ui",
+                "path": "producer.service"
+              },
+              "producer.instance": {
+                "type": "string",
+                "description": "instance (producer metadata)",
+                "sample": "localhost:8001",
+                "path": "producer.instance"
+              }
+            }
+          }
         }
       ],
       "variableMappings": {
@@ -446,7 +577,9 @@
             "varName": "appsthinkphone.value",
             "field": "value"
           }
-        ]
+        ],
+        "executedQuery": "SELECT emails_value, phoneNumbers_value FROM extract_contact WHERE phoneNumbers_value = 'vedcsc'",
+        "template": "SELECT emails_value, phoneNumbers_value FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}}"
       },
       "exampleOutputs": [
         {
