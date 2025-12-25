@@ -1,1 +1,4 @@
-{}
+{
+	"_deprecated": true,
+	"note": "Per-table actions files are deprecated. Use ../actions.json as the single source of truth."
+}

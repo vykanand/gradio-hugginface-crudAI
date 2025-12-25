@@ -15,7 +15,7 @@
   </div>
 </div>
 <script>
-  window.initActionsTab = async function () {
+  globalThis.initActionsTab = async function () {
     try {
       if (typeof loadActions === "function") await loadActions();
     } catch (e) {

@@ -35,6 +35,17 @@
         justify-content: space-between;
         align-items: center;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        position: sticky;
+        top: 0;
+        z-index: 60;
+        /* translucent background to let blur be visible */
+        background-clip: padding-box;
+        backdrop-filter: blur(6px) saturate(120%);
+        /* slower, smoother hide/show animation including blur */
+        transition: transform 900ms cubic-bezier(.16,.84,.24,1),
+                    opacity 900ms ease,
+                    backdrop-filter 900ms ease;
+        will-change: transform, opacity, backdrop-filter;
       }
 
       .header h1 {
@@ -51,27 +62,202 @@
       .tabs {
         display: flex;
         gap: 0.5rem;
+        align-items: center;
+        padding: 6px;
+        background: none;
+        border-radius: 6px;
+        box-shadow: none;
+        border: none;
+        position: relative;
+        min-height: 0;
+        overflow: visible;
       }
 
       .tab {
+        position: relative;
         padding: 0.5rem 1rem;
-        background: rgba(255, 255, 255, 0.2);
-        border: none;
-        border-radius: 6px;
-        color: white;
+        background: #fff;
+        border: 1px solid #e6edf3;
+        color: #0f1720;
         cursor: pointer;
-        font-size: 0.9rem;
-        transition: all 0.2s;
-      }
-
-      .tab:hover {
-        background: rgba(255, 255, 255, 0.3);
-      }
-
-      .tab.active {
-        background: white;
-        color: var(--active-tab-text);
+        font-size: 0.95rem;
+        border-radius: 6px;
         font-weight: 600;
+        letter-spacing: 0.01em;
+        box-shadow: none;
+        -webkit-font-smoothing: antialiased;
+        z-index: 2;
+        overflow: visible;
+        outline: none;
+        margin-bottom: 0;
+        will-change: transform, box-shadow, opacity;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+        transition: transform 220ms cubic-bezier(.2,.9,.2,1),
+          box-shadow 260ms cubic-bezier(.2,.9,.2,1),
+          background 260ms ease, color 200ms ease, border-color 200ms ease;
+      }
+
+      /* Reduce aggressive scaling (causes jitter on tap) and use subtle lift instead */
+      .tab:hover,
+      .tab:focus-visible {
+        background: linear-gradient(120deg, rgba(250,251,255,0.9) 0%, rgba(230,236,255,0.95) 100%);
+        color: #071124;
+        box-shadow: 0 10px 28px rgba(86,99,220,0.14), 0 0 0 2px rgba(122,140,255,0.08) inset;
+        transform: translateY(-4px);
+        border-color: #5b6cff;
+      }
+
+      /* Prevent instant layout jumps on touch press */
+      .tab:active {
+        transform: translateY(-1px);
+        transition-duration: 120ms;
+      }
+
+      /* Animated subtle glow behind the active tab using a pseudo-element */
+      .tab.active {
+        color: #071124;
+        font-weight: 800;
+        background: linear-gradient(120deg, #eef4ff 0%, #c7d7ff 100%);
+        z-index: 3;
+        border: 1.5px solid #5b6cff;
+        border-radius: 6px;
+        margin-bottom: 0;
+      }
+
+      .tab.active::after {
+        content: "";
+        position: absolute;
+        inset: -6px;
+        z-index: 0;
+        border-radius: 6px;
+        pointer-events: none;
+        background: radial-gradient(circle at 20% 30%, rgba(91,108,255,0.12), transparent 30%),
+                    radial-gradient(circle at 80% 70%, rgba(182,199,255,0.10), transparent 35%);
+        filter: blur(10px);
+        opacity: 0.95;
+        transform: translateZ(0);
+        animation: tab-glow 3600ms linear infinite;
+      }
+
+      @keyframes tab-glow {
+        0% { transform: translateX(-6px) scale(1); opacity: 0.9 }
+        50% { transform: translateX(6px) scale(1.02); opacity: 1 }
+        100% { transform: translateX(-6px) scale(1); opacity: 0.9 }
+      }
+
+      /* Header hidden state when scrolling down */
+      .header.header-hidden {
+        transform: translateY(-100%);
+        opacity: 0;
+        /* increase blur while fading out for a soft dissolve effect */
+        backdrop-filter: blur(20px) saturate(120%);
+        pointer-events: none;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .header { transition: none; }
+        .header.header-hidden { transform: none; opacity: 1; pointer-events: auto; }
+      }
+
+      /* Hide legacy liquid indicator (unused) */
+      .tabs .liquid-indicator {
+        display: none;
+      }
+
+      /* Material light tabs: frosted active tab, moving indicator + ripple */
+      .tabs {
+        padding: 8px;
+        background: rgba(255,255,255,0.65);
+        border-radius: 6px;
+        backdrop-filter: blur(6px) saturate(120%);
+        box-shadow: 0 6px 20px rgba(16,24,40,0.05);
+        border: 1px solid rgba(11,17,32,0.04);
+      }
+
+      /* bottom indicator that moves under active tab */
+      .tabs .md-indicator {
+        position: absolute;
+        height: 4px;
+        background: linear-gradient(90deg,#5b6cff,#8ea2ff);
+        bottom: 6px;
+        left: 0;
+        width: 0;
+        border-radius: 3px;
+        transition: transform 320ms cubic-bezier(.2,.9,.2,1), width 320ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease;
+        box-shadow: 0 6px 18px rgba(91,108,255,0.12);
+        will-change: transform, width;
+        pointer-events: none;
+      }
+
+      /* Tab visual: translucent inactive background with clear contrast */
+      .tab {
+        background: rgba(255,255,255,0.32);
+        border: 1px solid rgba(11,17,32,0.05);
+        padding: 10px 14px;
+        color: rgba(6,10,15,0.85);
+        font-weight: 600;
+        border-radius: 6px;
+        box-shadow: none;
+        position: relative;
+        overflow: hidden;
+        transition: background 200ms ease, color 160ms ease, box-shadow 260ms ease, transform 220ms ease;
+      }
+
+      /* stronger highlight for hover/focus on inactive tabs */
+      .tab:hover,
+      .tab:focus-visible {
+        background: rgba(255,255,255,0.5);
+        color: #041024;
+        box-shadow: 0 8px 20px rgba(6,10,15,0.04);
+        transform: translateY(-3px);
+        outline: none;
+      }
+
+      /* Active tab: frosted-glass with blur, higher contrast and subtle border */
+      .tab.active {
+        color: #041024;
+        background: linear-gradient(180deg, rgba(255,255,255,0.72), rgba(245,248,255,0.72));
+        backdrop-filter: blur(8px) saturate(140%);
+        box-shadow: 0 12px 34px rgba(91,108,255,0.14), 0 2px 6px rgba(6,10,15,0.04);
+        border: 1px solid rgba(91,108,255,0.22);
+        z-index: 4;
+      }
+
+      .tab.active::after {
+        /* keep a soft glow but reduce overpowering brightness */
+        content: "";
+        position: absolute;
+        inset: -6px;
+        z-index: 0;
+        border-radius: 10px;
+        pointer-events: none;
+        background: radial-gradient(circle at 20% 30%, rgba(91,108,255,0.09), transparent 28%),
+                    radial-gradient(circle at 80% 70%, rgba(182,199,255,0.06), transparent 34%);
+        filter: blur(8px);
+        opacity: 0.9;
+        transform: translateZ(0);
+        animation: tab-glow 4200ms linear infinite;
+      }
+
+      /* ripple element inserted by JS */
+      .tab .ripple {
+        position: absolute;
+        border-radius: 50%;
+        transform: scale(0);
+        background: rgba(91,108,255,0.16);
+        animation: ripple 600ms linear;
+        pointer-events: none;
+      }
+
+      @keyframes ripple {
+        to { transform: scale(12); opacity: 0 }
+      }
+
+      /* Respect reduced motion preference */
+      @media (prefers-reduced-motion: reduce) {
+        .tabs .md-indicator, .tab.active::after { animation: none; transition: none; }
+        .tab, .tabs .md-indicator { transition: none; }
       }
 
       .main {
@@ -234,9 +420,9 @@
       .workflow-node-type {
         font-size: 0.7rem;
         padding: 0.25rem 0.5rem;
-        background: #f0f3f7;
+        background: #e3e8ef;
         border-radius: 4px;
-        color: #657786;
+        color: #223;
         text-transform: uppercase;
         font-weight: 600;
         letter-spacing: 0.5px;
@@ -244,7 +430,7 @@
 
       .workflow-node-content {
         font-size: 0.85rem;
-        color: #657786;
+        color: #223;
         line-height: 1.5;
       }
 
@@ -348,8 +534,8 @@
       }
 
       .btn-primary {
-        background: #667eea;
-        color: white;
+        background: #223;
+        color: #fff;
       }
 
       .btn-primary:hover {
@@ -358,7 +544,7 @@
 
       .btn-secondary {
         background: #e1e8ed;
-        color: #2c3e50;
+        color: #223;
       }
 
       .btn-secondary:hover {
@@ -366,8 +552,8 @@
       }
 
       .btn-danger {
-        background: #e74c3c;
-        color: white;
+        background: #b71c1c;
+        color: #fff;
       }
 
       .btn-danger:hover {
@@ -478,7 +664,7 @@
         border-radius: 4px;
         font-size: 0.75rem;
         font-weight: 600;
-        color: #657786;
+        color: #222;
       }
 
       .content-area {
@@ -715,7 +901,7 @@
             </div>
           </div>
           <div class="node-type" draggable="true" data-node-type="loop">
-            <div class="node-icon" style="background: #e8f5e9; color: #1b5e20">
+            <div class="node-icon" style="background: #e8f5e9; color: #145214">
               🔄
             </div>
             <div class="node-info">
@@ -724,7 +910,7 @@
             </div>
           </div>
           <div class="node-type" draggable="true" data-node-type="end">
-            <div class="node-icon" style="background: #ffebee; color: #d32f2f">
+            <div class="node-icon" style="background: #ffebee; color: #7a1010">
               🏁
             </div>
             <div class="node-info">
@@ -962,7 +1148,7 @@
               </div>
 
               <div class="form-group">
-                <label class="form-label">Description</label>
+                <label class="form-label" for="action-desc">Description</label>
                 <textarea
                   id="action-desc"
                   class="form-textarea"
@@ -1105,6 +1291,9 @@
                   💡 Tip: Click the colored event data fields above to insert
                   variables into your SQL. Variables use the full event name
                   followed by the field name.
+                </div>
+                <div id="variable-mapping-area" style="margin-top:10px;">
+                  <div style="color:#8899a6;font-size:0.85rem;text-align:center;padding:8px;">Click event fields above to insert variables. Detected variables will appear here.</div>
                 </div>
               </div>
 
@@ -1446,7 +1635,35 @@
                 }
               });
 
-              const prompt = `${context}\n\nBusiness Use Case: ${businessUseCase}\n\nIMPORTANT — Event SQL language and binder rules (must follow exactly):\n\n1) Table/Column mapping: Use the event metadata to determine the target table and column names. Treat the event's 'module' value as the literal SQL table name, and the event's 'field' value as the literal column name. Do NOT put table or column names inside braces or quotes — they must be plain SQL identifiers matching the schema provided in the context.\n\n2) Dynamic values / binder placeholders: For any dynamic value coming from an event payload, use the event-bridge binder placeholder format exactly: {{<bindingName>.<fieldPath>}} where <bindingName> is the event binding identifier (the same string used in the bindings list, e.g. appsthink_crm:phone_number:added) and <fieldPath> is the path inside the event payload (for example value, detail.phone_number, or data.someField). Example: {{appsthink_crm:phone_number:added.value}}.\n\n3) Resolution behavior: The executor (eventBridge.tryResolveQuery) will replace each {{...}} placeholder with a properly SQL-quoted literal (it handles escaping and NULL). Therefore DO NOT quote or escape {{...}} placeholders yourself — write SQL so that placeholders appear exactly where a SQL literal value belongs (e.g. VALUES ({{...}})).\n\n4) Preferred field access: When the primary value is named 'value', prefer using .value (e.g. {{bindingName.value}}). If the payload nests the value under detail or data, use detail.<name> or data.<name> accordingly.\n\n5) Output requirements: Produce a single, executable Event-SQL statement (or a minimal set of statements) that uses literal table/column names from the metadata and {{...}} placeholders for values. Return ONLY the SQL (no explanation, no markdown, no additional tags).\n\nExample (for clarity only; use actual metadata and bindings from the context above):\nINSERT INTO appsthink_crm (phone_number) VALUES ({{appsthink_crm:phone_number:added.value}});\n\nGenerate the SQL now for the Business Use Case. Use the schema and metadata provided in the context above, and prefer actual event sample values only for guidance — do not hardcode example literal values into the SQL.`;
+              // Append bound event information (if any) so AI can use correct binding names and payload fields
+              let eventContext = "";
+              if (eventBindings && eventBindings.length > 0) {
+                eventContext += "Bound events and payload fields:\n";
+                eventBindings.forEach((b) => {
+                  const id = b.eventId || b.eventName || "<unknown>";
+                  eventContext += `\nBinding: ${id}\n`;
+                  // list primary fields
+                  const pf = b.payloadSchema && b.payloadSchema.primaryFields ? b.payloadSchema.primaryFields : {};
+                  const mf = b.payloadSchema && b.payloadSchema.metadataFields ? b.payloadSchema.metadataFields : {};
+                  if (Object.keys(pf).length > 0) {
+                    eventContext += `Primary fields:\n`;
+                    Object.keys(pf).forEach((k) => {
+                      const v = pf[k];
+                      eventContext += ` - ${k} (${v.type || "unknown"}) -> path: ${v.path || `detail.${k}`}` + (v.sample !== undefined && v.sample !== null ? `; sample: ${JSON.stringify(v.sample)}` : "") + "\n";
+                    });
+                  }
+                  if (Object.keys(mf).length > 0) {
+                    eventContext += `Metadata fields:\n`;
+                    Object.keys(mf).forEach((k) => {
+                      const v = mf[k];
+                      eventContext += ` - ${k} (${v.type || "unknown"})` + (v.sample !== undefined && v.sample !== null ? `; sample: ${JSON.stringify(v.sample)}` : "") + "\n";
+                    });
+                  }
+                });
+                eventContext += "\n";
+              }
+
+              const prompt = `${context}\n\n${eventContext}Business Use Case: ${businessUseCase}\n\nIMPORTANT — Event SQL language and binder rules (must follow exactly):\n\n1) Table/Column mapping: Use the event metadata to determine the target table and column names. Treat the event's 'module' value as the literal SQL table name, and the event's 'field' value as the literal column name. Do NOT put table or column names inside braces or quotes — they must be plain SQL identifiers matching the schema provided in the context.\n\n2) Dynamic values / binder placeholders: For any dynamic value coming from an event payload, use the event-bridge binder placeholder format exactly: {{<bindingName>.<fieldPath>}} where <bindingName> is the event binding identifier (the same string used in the bindings list, e.g. appsthink_crm:phone_number:added) and <fieldPath> is the path inside the event payload (for example value, detail.phone_number, or data.someField). Example: {{appsthink_crm:phone_number:added.value}}.\n\n3) Resolution behavior: The executor (eventBridge.tryResolveQuery) will replace each {{...}} placeholder with a properly SQL-quoted literal (it handles escaping and NULL). Therefore DO NOT quote or escape {{...}} placeholders yourself — write SQL so that placeholders appear exactly where a SQL literal value belongs (e.g. VALUES ({{...}})).\n\n4) Preferred field access: When the primary value is named 'value', prefer using .value (e.g. {{bindingName.value}}). If the payload nests the value under detail or data, use detail.<name> or data.<name> accordingly.\n\n5) Output requirements: Produce a single, executable Event-SQL statement (or a minimal set of statements) that uses literal table/column names from the metadata and {{...}} placeholders for values. Return ONLY the SQL (no explanation, no markdown, no additional tags).\n\nExample (for clarity only; use actual metadata and bindings from the context above):\nINSERT INTO appsthink_crm (phone_number) VALUES ({{appsthink_crm:phone_number:added.value}});\n\nGenerate the SQL now for the Business Use Case. Use the schema and metadata provided in the context above, and prefer actual event sample values only for guidance — do not hardcode example literal values into the SQL.`;
 
               const aiTarget =
                 globalThis.RUNTIME_CONFIG &&
@@ -2164,9 +2381,10 @@
             const queryTextarea = document.getElementById("action-query");
             // Find the event binding to get the full event name
             const binding = eventBindings.find((b) => b.eventId === eventId);
-            const eventName = binding ? binding.eventName : eventId;
-            // Use full event name syntax: {{fullEventName.field}}
-            const placeholder = `{{${eventName}.${field}}}`;
+            // Use the canonical binding identifier (eventId) to preserve colons/segments
+            const bindingName = binding ? binding.eventId || binding.eventName || eventId : eventId;
+            // Use full binding syntax: {{bindingIdentifier.fieldPath}}
+            const placeholder = `{{${bindingName}.${field}}}`;
             insertAtCursor(queryTextarea, placeholder);
 
             // Trigger parameter detection
@@ -2185,8 +2403,9 @@
 
           function detectSQLParameters() {
             const query = document.getElementById("action-query").value;
-            // Match both old {{event.field}} and new {{eventName.field}} syntax
-            const paramRegex = /\{\{(\w+)\.(\w+)\}\}/g;
+            // Match placeholders like {{binding:module:entity:action.fieldPath}} or {{eventName.field}}
+            // capture binding identifier (allow colons, dashes, letters, numbers, underscores) and field path (anything until closing brace or whitespace)
+            const paramRegex = /\{\{([^\.\}\s]+)\.([^\}\s]+)\}\}/g;
             const params = [];
             let match;
 
@@ -2202,10 +2421,9 @@
           }
 
           function renderVariableMappings(params) {
-            // Variable Mapping UI removed - function kept for compatibility
-            return;
-            
             const container = document.getElementById("variable-mapping-area");
+
+            if (!container) return;
 
             if (params.length === 0) {
               container.innerHTML =
@@ -2223,35 +2441,26 @@
                   const eventName = param.eventName;
                   const fieldName = param.fieldName;
 
-                  // Find which event binding this refers to (match by full event name)
+                  // Find which event binding this refers to (match by eventId or eventName)
                   let sourceEvent = null;
                   let fieldInfo = null;
                   let isPrimary = false;
                   let isValid = false;
 
                   for (const binding of eventBindings) {
-                    // Match by full event name
-                    const bindingName = binding.eventName;
-
-                    if (
-                      bindingName === eventName ||
-                      binding.eventName === eventName ||
-                      eventName === "event"
-                    ) {
+                    // Match by canonical eventId or eventName
+                    const bindingId = binding.eventId || binding.eventName;
+                    if (bindingId === eventName || binding.eventName === eventName) {
                       // Found the event, now check if field exists
                       if (binding.payloadSchema?.primaryFields?.[fieldName]) {
                         sourceEvent = binding;
-                        fieldInfo =
-                          binding.payloadSchema.primaryFields[fieldName];
+                        fieldInfo = binding.payloadSchema.primaryFields[fieldName];
                         isPrimary = true;
                         isValid = true;
                         break;
-                      } else if (
-                        binding.payloadSchema?.metadataFields?.[fieldName]
-                      ) {
+                      } else if (binding.payloadSchema?.metadataFields?.[fieldName]) {
                         sourceEvent = binding;
-                        fieldInfo =
-                          binding.payloadSchema.metadataFields[fieldName];
+                        fieldInfo = binding.payloadSchema.metadataFields[fieldName];
                         isPrimary = false;
                         isValid = true;
                         break;
@@ -2276,14 +2485,8 @@
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                       <div>
                         <code style="background: ${
-                          isValid
-                            ? isPrimary
-                              ? "#e8f4ff"
-                              : "#e1e8ed"
-                            : "#fff9e6"
-                        }; padding: 2px 6px; border-radius: 3px; font-size: 0.85rem;">${
-                    param.fullMatch
-                  }</code>
+                          isValid ? (isPrimary ? "#e8f4ff" : "#e1e8ed") : "#fff9e6"
+                        }; padding: 2px 6px; border-radius: 3px; font-size: 0.85rem;">${param.fullMatch}</code>
                         ${
                           sourceEvent
                             ? `<span style="color: #8899a6; font-size: 0.75rem; margin-left: 8px;">from ${
@@ -2312,6 +2515,7 @@
                 .join("")}
             `;
           }
+          
 
           function setupPreviewHandlers() {
             const testRealBtn = document.getElementById("test-with-real-events");
@@ -2508,7 +2712,17 @@
               const eventName =
                 binding && binding.eventName ? binding.eventName : null;
 
-              const resp = await fetch("/api/event/execute", {
+                // Console debug: show which binding/eventName and which client-side eventBridge (if any) is used
+                try {
+                  console.log('event execute -> sending to /api/event/execute', {
+                    eventName: eventName,
+                    hasClientEventBridge: !!globalThis.eventBridge,
+                    clientEventBridgeMethods: globalThis.eventBridge ? Object.keys(globalThis.eventBridge) : null,
+                    eventBindingsCount: (globalThis.eventBindings && Array.isArray(globalThis.eventBindings)) ? globalThis.eventBindings.length : 0
+                  });
+                } catch (dbg) {}
+
+                const resp = await fetch("/api/event/execute", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -4952,14 +5166,61 @@
 
       async function switchTab(tabName, ev) {
         // Update tab buttons
-        document
-          .querySelectorAll(".tab")
-          .forEach((t) => t.classList.remove("active"));
+        const tabButtons = document.querySelectorAll('.tabs .tab');
+        tabButtons.forEach((t) => t.classList.remove('active'));
+        let activeTabBtn = null;
         try {
-          if (ev && ev.target) ev.target.classList.add("active");
-        } catch (e) {
-          console.warn(e);
-        }
+          if (ev && ev.target) {
+            ev.target.classList.add('active');
+            activeTabBtn = ev.target;
+          } else {
+            // fallback: find by tabName
+            tabButtons.forEach((t) => {
+              if (t.textContent.trim().toLowerCase().replace(/\s+/g, '-') === tabName) {
+                t.classList.add('active');
+                activeTabBtn = t;
+              }
+            });
+          }
+        } catch (e) { console.warn(e); }
+
+        // Animate glass liquid indicator
+        try {
+          const tabsEl = document.querySelector('.tabs');
+          let indicator = tabsEl.querySelector('.liquid-indicator');
+          if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.className = 'liquid-indicator';
+            tabsEl.appendChild(indicator);
+          }
+          if (activeTabBtn) {
+            const tabRect = activeTabBtn.getBoundingClientRect();
+            const tabsRect = tabsEl.getBoundingClientRect();
+            const left = tabRect.left - tabsRect.left;
+            const width = tabRect.width;
+            indicator.style.left = left + 'px';
+            indicator.style.width = width + 'px';
+          }
+          // Also update the Material-style moving indicator if present
+          try {
+            let md = tabsEl.querySelector('.md-indicator');
+            if (!md) {
+              md = document.createElement('div');
+              md.className = 'md-indicator';
+              tabsEl.appendChild(md);
+            }
+            if (activeTabBtn) {
+              const tRect = activeTabBtn.getBoundingClientRect();
+              const tabsRect2 = tabsEl.getBoundingClientRect();
+              const left2 = tRect.left - tabsRect2.left;
+              md.style.transform = `translateX(${left2}px)`;
+              md.style.width = tRect.width + 'px';
+              md.style.opacity = '1';
+            } else {
+              md.style.opacity = '0';
+            }
+          } catch (e) { console.warn('md-indicator', e); }
+        } catch (e) { console.warn('liquid-indicator', e); }
         // Ensure panel exists; lazy-load fragment if missing
         let panel = document.getElementById(tabName + "-panel");
         if (!panel) {
@@ -8532,5 +8793,194 @@
         });
       }
     </script>
+    <script>
+      // Material tab helpers: ink ripple and indicator initialization
+      (function () {
+        function createRipple(ev) {
+          const btn = ev.currentTarget;
+          const rect = btn.getBoundingClientRect();
+          const size = Math.max(rect.width, rect.height) * 0.6;
+          const ripple = document.createElement('span');
+          ripple.className = 'ripple';
+          ripple.style.width = ripple.style.height = size + 'px';
+          const x = ev.clientX - rect.left - size / 2;
+          const y = ev.clientY - rect.top - size / 2;
+          ripple.style.left = x + 'px';
+          ripple.style.top = y + 'px';
+          btn.appendChild(ripple);
+          // cleanup after animation
+          setTimeout(() => {
+            ripple.remove();
+          }, 700);
+        }
+
+        function positionIndicatorForBtn(btn) {
+          try {
+            const tabsEl = document.querySelector('.tabs');
+            if (!tabsEl) return;
+            let md = tabsEl.querySelector('.md-indicator');
+            if (!md) {
+              md = document.createElement('div');
+              md.className = 'md-indicator';
+              tabsEl.appendChild(md);
+            }
+            if (!btn) { md.style.opacity = '0'; return; }
+            const tabRect = btn.getBoundingClientRect();
+            const tabsRect = tabsEl.getBoundingClientRect();
+            const left = tabRect.left - tabsRect.left;
+            md.style.transform = `translateX(${left}px)`;
+            md.style.width = tabRect.width + 'px';
+            md.style.opacity = '1';
+          } catch (e) {
+            console.warn('positionIndicatorForBtn', e);
+          }
+        }
+
+        function attachTabBehavior() {
+          const tabs = document.querySelectorAll('.tabs .tab');
+          tabs.forEach((t) => {
+            // only attach once
+            if (t.__md_attached) return;
+            t.addEventListener('pointerdown', createRipple);
+            // reposition indicator on pointerup (after active class applied by switchTab)
+            t.addEventListener('pointerup', () => setTimeout(() => positionIndicatorForBtn(t), 40));
+            t.__md_attached = true;
+          });
+          // initial position
+          const active = document.querySelector('.tabs .tab.active');
+          if (active) positionIndicatorForBtn(active);
+        }
+
+        // attach handlers on DOM ready and whenever tabs are added dynamically
+        document.addEventListener('DOMContentLoaded', attachTabBehavior);
+        // also observe tabs container for changes (lazy-loaded fragments may add tabs)
+        const tabsContainer = document.querySelector('.tabs');
+        if (tabsContainer) {
+          const mo = new MutationObserver(() => attachTabBehavior());
+          mo.observe(tabsContainer, { childList: true, subtree: true });
+        }
+        window.addEventListener('resize', () => {
+          const active = document.querySelector('.tabs .tab.active');
+          if (active) positionIndicatorForBtn(active);
+        });
+      })();
+    </script>
+      <script>
+        // Header hide/fade tied to scroll percentage (RAF-driven, smooth interpolation)
+        (function () {
+          const header = document.querySelector('.header');
+          if (!header) return;
+
+          const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+          // Reduced-motion fallback: simple show/hide using class (less motion)
+          if (prefersReduced) {
+            let lastPercent = 0;
+            let ticking = false;
+            const DELTA_PERCENT = 1.5;
+            const HIDE_PERCENT = 6;
+            function onScrollReduced() {
+              if (!ticking) {
+                window.requestAnimationFrame(() => {
+                  const currentY = window.scrollY || 0;
+                  const docHeight = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0);
+                  const scrollable = Math.max(docHeight - window.innerHeight, 0);
+                  const percent = scrollable > 0 ? (currentY / scrollable) * 100 : 0;
+                  const scrolledDown = percent > lastPercent + DELTA_PERCENT && percent > HIDE_PERCENT;
+                  const scrolledUp = percent < lastPercent - DELTA_PERCENT || percent <= 0;
+                  if (scrolledDown) header.classList.add('header-hidden');
+                  else if (scrolledUp) header.classList.remove('header-hidden');
+                  lastPercent = percent;
+                  ticking = false;
+                });
+                ticking = true;
+              }
+            }
+            window.addEventListener('scroll', onScrollReduced, { passive: true });
+            window.addEventListener('focusin', () => header.classList.remove('header-hidden'));
+            window.addEventListener('resize', () => header.classList.remove('header-hidden'));
+            return;
+          }
+
+          // Tight binding parameters
+          const baseBlur = 6; // px when fully visible
+          const maxBlur = 20; // px when fully hidden
+          const startPercent = 30; // percent at which fading begins
+          const endPercent = 40; // percent at which header is fully hidden
+
+          // Disable CSS transition so we can tightly control visuals per-pixel
+          header.style.transition = 'none';
+
+          let ticking = false;
+
+          function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+
+          function applyVisualsFromPercent(percent) {
+            // normalized t in [0,1]
+            let t = 0;
+            if (percent <= startPercent) t = 0;
+            else if (percent >= endPercent) t = 1;
+            else t = (percent - startPercent) / (endPercent - startPercent);
+            t = clamp(t, 0, 1);
+
+            // apply visuals proportional to t
+            const opacity = 1 - t;
+            const blur = baseBlur + (maxBlur - baseBlur) * t;
+            const translateY = -t * 100; // in percent
+
+            header.style.opacity = String(opacity);
+            header.style.backdropFilter = `blur(${blur}px) saturate(120%)`;
+            header.style.transform = `translateY(${translateY}%)`;
+            header.style.pointerEvents = t > 0.98 ? 'none' : 'auto';
+          }
+
+          function onScroll() {
+            if (!ticking) {
+              window.requestAnimationFrame(() => {
+                const currentY = window.scrollY || 0;
+                const docHeight = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0);
+                const scrollable = Math.max(docHeight - window.innerHeight, 0);
+                const percent = scrollable > 0 ? (currentY / scrollable) * 100 : 0;
+                applyVisualsFromPercent(percent);
+                ticking = false;
+              });
+              ticking = true;
+            }
+          }
+
+          // listen to window scroll (page-level)
+          window.addEventListener('scroll', onScroll, { passive: true });
+
+          // Also listen to internal tab content scroll containers (e.g. .content-area)
+          try {
+            const innerScrollers = Array.from(document.querySelectorAll('.content-area'));
+            innerScrollers.forEach((scroller) => {
+              scroller.addEventListener('scroll', () => {
+                if (!ticking) {
+                  ticking = true;
+                  window.requestAnimationFrame(() => {
+                    const currentY = scroller.scrollTop || 0;
+                    const scrollable = Math.max(scroller.scrollHeight - scroller.clientHeight, 0);
+                    const percent = scrollable > 0 ? (currentY / scrollable) * 100 : 0;
+                    applyVisualsFromPercent(percent);
+                    ticking = false;
+                  });
+                }
+              }, { passive: true });
+            });
+          } catch (e) { /* ignore */ }
+          window.addEventListener('focusin', () => {
+            // restore fully visible on focus
+            header.style.opacity = '1';
+            header.style.transform = 'translateY(0%)';
+            header.style.backdropFilter = `blur(${baseBlur}px) saturate(120%)`;
+            header.style.pointerEvents = 'auto';
+          });
+          window.addEventListener('resize', () => onScroll());
+
+          // initial apply
+          onScroll();
+        })();
+      </script>
   </body>
 </html>

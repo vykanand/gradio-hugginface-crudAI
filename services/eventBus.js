@@ -2,6 +2,7 @@ const { Kafka } = require('kafkajs');
 const level = require('level');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const eventRegistry = require('../lib/eventRegistry');
 
 const kafkaBrokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const kafka = new Kafka({ clientId: 'orchestrator-server', brokers: kafkaBrokers });
@@ -96,8 +97,22 @@ async function init() {
   // try connect local level DB (best-effort)
   try { await _connectDB(); } catch (e) { /* ignore */ }
 
+  // seed eventRegistry from any existing in-memory registry
+  try { eventRegistry.init({ existingRegistry: registry }); } catch (e) {}
+
   // recover any pending events from DB so delivery resumes after restart
   try { await recoverPendingEvents(); } catch (e) { console.warn('recoverPendingEvents failed', e && e.message ? e.message : e); }
+
+  // Schedule periodic reconciliation of event registry (keeps bindings consistent with persisted DB)
+  try {
+    const ms = parseInt(process.env.EVENT_REGISTRY_RECONCILE_MS || String(5 * 60 * 1000), 10);
+    // run initial reconcile now (best-effort)
+    try { if (eventRegistry && eventRegistry.reconcile) eventRegistry.reconcile().catch(()=>{}); } catch(e) {}
+    // schedule recurring
+    setInterval(() => {
+      try { if (eventRegistry && eventRegistry.reconcile) eventRegistry.reconcile().catch((err)=>{ console.warn('eventRegistry.reconcile failed', err && err.message ? err.message : err); }); } catch (e) {}
+    }, ms);
+  } catch (e) {}
 }
 
 // scan DB for evt: keys and enqueue pending/retrying events
@@ -178,8 +193,23 @@ async function listAllEventRecords(filter) {
 async function deleteEventRecord(id) {
   if (!db || !id) return false;
   try {
-    await db.del('evt:' + id).catch(() => {});
+    const key = 'evt:' + id;
+    const rec = await db.get(key).catch(() => null);
+    // delete both evt and dlq entries
+    await db.del(key).catch(() => {});
     await db.del('dlq:' + id).catch(() => {});
+
+    // If we had a record, check whether other persisted records exist for same event.
+    try {
+      const canonical = rec ? (rec.canonicalEvent || rec.event) : null;
+      if (canonical) {
+        const remaining = await listAllEventRecords({ event: canonical });
+        if (!remaining || remaining.length === 0) {
+          try { eventRegistry.removeBinding(canonical); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+
     return true;
   } catch (e) { return false; }
 }
@@ -213,6 +243,14 @@ async function deleteEventsByFilter(filter) {
     });
     stream.on('end', async () => {
       if (ops.length) await db.batch(ops).catch(()=>{});
+      // Sync registry removals: if eventFilter provided, remove that binding; if module provided, remove bindings for module
+      try {
+        if (eventFilter) {
+          try { eventRegistry.removeBinding(eventFilter); } catch (e) {}
+        } else if (modFilter) {
+          try { eventRegistry.removeBindingsByModule(modFilter); } catch (e) {}
+        }
+      } catch (e) {}
       resolve(removed);
     });
   });
@@ -224,6 +262,7 @@ async function clearModuleRegistry(module) {
   try {
     delete registry[module];
     if (db) await db.del(module).catch(()=>{});
+    try { eventRegistry.removeBindingsByModule(module); } catch (e) {}
     return true;
   } catch (e) { return false; }
 }
@@ -441,6 +480,8 @@ function _updateRegistryAndBroadcast(evt) {
         res.write(`data: ${payload}\n\n`);
       } catch (e) { /* ignore per-client errors */ }
     }
+    // ingest into centralized event registry for schemas and bindings
+    try { eventRegistry.ingestEvent(evt); } catch (e) {}
   } catch (e) { console.warn('updateRegistry failed', e && e.message ? e.message : e); }
 }
 

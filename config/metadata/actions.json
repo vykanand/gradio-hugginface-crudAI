@@ -1,0 +1,36 @@
+{
+  "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63": {
+    "id": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63",
+    "name": "Appsthink crm to extract contact matching",
+    "description": "take my input and give me list of all matching phone numbers in extract contact data",
+    "query": "SELECT phoneNumbers_value FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}}",
+    "variableMappings": {
+      "template": "SELECT phoneNumbers_value FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}}",
+      "executedQuery": "SELECT phoneNumbers_value FROM extract_contact WHERE phoneNumbers_value = '8959285336'"
+    },
+    "eventBindings": [
+      {
+        "eventId": "appsthink_crm:phone_number:added",
+        "eventName": "appsthink_crm:phone_number:added",
+        "eventDescription": "",
+        "payloadSchema": {
+          "primaryFields": {
+            "phone_number": {
+              "type": "string",
+              "description": "phone_number (string)",
+              "sample": "9384829381",
+              "path": "phone_number"
+            }
+          },
+          "metadataFields": {}
+        },
+        "selectedFields": [
+          {
+            "name": "phone_number",
+            "path": "phone_number"
+          }
+        ]
+      }
+    ]
+  }
+}

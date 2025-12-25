@@ -17,6 +17,7 @@ const path = require('path');
 
 const TAXONOMY_FILE = path.join(__dirname, '..', 'config', 'metadata', 'taxonomy.json');
 const ACTIONS_DIR = path.join(__dirname, '..', 'config', 'metadata', 'actions');
+const ACTIONS_FILE = path.join(__dirname, '..', 'config', 'metadata', 'actions.json');
 
 class TaxonomyService {
   constructor() {
@@ -29,6 +30,7 @@ class TaxonomyService {
     try {
       await this.ensureFile();
       await this.ensureActionsDir();
+      await this.ensureActionsFile();
       const raw = await fs.readFile(TAXONOMY_FILE, 'utf8');
       this.taxonomy = JSON.parse(raw);
       this.initialized = true;
@@ -57,6 +59,16 @@ class TaxonomyService {
     }catch(e){ /* ignore */ }
   }
 
+  async ensureActionsFile(){
+    const dir = path.dirname(ACTIONS_FILE);
+    await fs.mkdir(dir, { recursive: true });
+    try{
+      await fs.access(ACTIONS_FILE);
+    }catch(e){
+      await fs.writeFile(ACTIONS_FILE, JSON.stringify({}, null, 2));
+    }
+  }
+
   async readTableActions(table){
     const file = path.join(ACTIONS_DIR, `${table}.json`);
     try{
@@ -71,6 +83,20 @@ class TaxonomyService {
       await fs.writeFile(file, JSON.stringify(actionsObj || {}, null, 2));
       return true;
     }catch(e){ console.warn('[taxonomy] writeTableActions failed', e); return false; }
+  }
+
+  async readActionsFile(){
+    try{
+      const raw = await fs.readFile(ACTIONS_FILE, 'utf8');
+      return JSON.parse(raw || '{}');
+    }catch(e){ return {}; }
+  }
+
+  async writeActionsFile(actionsObj){
+    try{
+      await fs.writeFile(ACTIONS_FILE, JSON.stringify(actionsObj || {}, null, 2));
+      return true;
+    }catch(e){ console.warn('[taxonomy] writeActionsFile failed', e); return false; }
   }
 
   getDefaultTaxonomy() {
@@ -111,21 +137,14 @@ class TaxonomyService {
 
   async getActions() {
     await this.initialize();
-    // merge taxonomy.actions with per-table action files
-    const out = Object.assign({}, this.taxonomy.actions || {});
+    // Prefer a single actions file as the authoritative source of actions to avoid
+    // per-table fallbacks. If actions.json is non-empty, return it. Otherwise
+    // fall back to taxonomy.actions for legacy compatibility.
     try{
-      const files = await fs.readdir(ACTIONS_DIR);
-      for(const f of files){
-        if(!f.endsWith('.json')) continue;
-        const tbl = f.replace(/\.json$/,'');
-        try{
-          const raw = await fs.readFile(path.join(ACTIONS_DIR,f),'utf8');
-          const obj = JSON.parse(raw || '{}');
-          Object.keys(obj).forEach(id => { out[id] = obj[id]; });
-        }catch(e){/* ignore file read errors */}
-      }
-    }catch(e){ /* no actions dir etc */ }
-    return out;
+      const fileActions = await this.readActionsFile();
+      if (fileActions && Object.keys(fileActions).length > 0) return fileActions;
+    }catch(e){ /* ignore read errors */ }
+    return Object.assign({}, this.taxonomy.actions || {});
   }
 
   async getAction(actionId) {
@@ -196,13 +215,12 @@ class TaxonomyService {
     await this.initialize();
     if (!this.taxonomy.actions) this.taxonomy.actions = {};
     this.taxonomy.actions[action.id] = action;
-    // also persist into per-table file (grouping by target table)
-    const table = (action.target || '').split('.')[0] || 'ungrouped';
+    // persist to single actions.json file
     try{
-      const existing = await this.readTableActions(table);
+      const existing = await this.readActionsFile();
       existing[action.id] = action;
-      await this.writeTableActions(table, existing);
-    }catch(e){ console.warn('[taxonomy] addAction writeTable failed', e); }
+      await this.writeActionsFile(existing);
+    }catch(e){ console.warn('[taxonomy] addAction writeActionsFile failed', e); }
     await this.save();
     return action;
   }
@@ -215,21 +233,12 @@ class TaxonomyService {
     const prev = this.taxonomy.actions[actionId] || {};
     const updated = { ...prev, ...updates, id: actionId };
     this.taxonomy.actions[actionId] = updated;
-    // manage per-table file movement if target changed
-    const prevTable = (prev.target || '').split('.')[0] || 'ungrouped';
-    const newTable = (updated.target || '').split('.')[0] || 'ungrouped';
+    // persist update to single actions.json
     try{
-      if(prevTable !== newTable){
-        // remove from prev
-        const prevActions = await this.readTableActions(prevTable);
-        delete prevActions[actionId];
-        await this.writeTableActions(prevTable, prevActions);
-      }
-      // write to new table
-      const newActions = await this.readTableActions(newTable);
-      newActions[actionId] = updated;
-      await this.writeTableActions(newTable, newActions);
-    }catch(e){ console.warn('[taxonomy] updateAction table write failed', e); }
+      const existing = await this.readActionsFile();
+      existing[actionId] = updated;
+      await this.writeActionsFile(existing);
+    }catch(e){ console.warn('[taxonomy] updateAction writeActionsFile failed', e); }
     await this.save();
     return this.taxonomy.actions[actionId];
   }
@@ -238,17 +247,11 @@ class TaxonomyService {
     await this.initialize();
     if (!this.taxonomy.actions) return false;
     const prev = this.taxonomy.actions[actionId] || {};
-    const table = (prev.target || '').split('.')[0] || 'ungrouped';
     delete this.taxonomy.actions[actionId];
     try{
-      const tblActions = await this.readTableActions(table);
-      if(tblActions && tblActions[actionId]){ delete tblActions[actionId]; await this.writeTableActions(table, tblActions); }
-      else {
-        // ensure scanned removal across all files as fallback
-        const files = await fs.readdir(ACTIONS_DIR);
-        for(const f of files){ if(!f.endsWith('.json')) continue; const fp = path.join(ACTIONS_DIR,f); const raw = await fs.readFile(fp,'utf8'); const obj = JSON.parse(raw||'{}'); if(obj[actionId]){ delete obj[actionId]; await fs.writeFile(fp, JSON.stringify(obj,null,2)); }}
-      }
-    }catch(e){ console.warn('[taxonomy] deleteAction table removal failed', e); }
+      const existing = await this.readActionsFile();
+      if(existing && existing[actionId]){ delete existing[actionId]; await this.writeActionsFile(existing); }
+    }catch(e){ console.warn('[taxonomy] deleteAction writeActionsFile failed', e); }
     await this.save();
     return true;
   }

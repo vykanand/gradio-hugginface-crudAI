@@ -51,18 +51,18 @@ app.filter("dateDisplay", () => {
 
 app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $timeout) {
   // console.log(localStorage.getItem("apikey"));
-  const protocol = window.location.protocol;
-  const hostname = window.location.hostname;
-  const port = window.location.port ? `:${window.location.port}` : '';
-  const basePath = window.location.pathname.split('/')[1];
+  const protocol = location.protocol;
+  const hostname = location.hostname;
+  const port = location.port ? `:${location.port}` : '';
+  const basePath = location.pathname.split('/')[1];
   $scope.url = `${protocol}//${hostname}${port}/${basePath}/api`;
   // Determine orchestrator server base (SSE and event POST). Preference order:
   // 1. window.__RUNTIME_CONFIG__ (served by orchestrator at /client-config.js)
   // 2. window.__ORCHESTRATOR_URL__ (explicit override)
   // 3. Same host but default orchestration port 5050 (useful when CRUD UI is hosted separately)
-  const runtimeCfg = window.__RUNTIME_CONFIG__ || null;
+  const runtimeCfg = globalThis.__RUNTIME_CONFIG__ || null;
   const orchestratorBase = (function() {
-    if (window.__ORCHESTRATOR_URL__) return window.__ORCHESTRATOR_URL__;
+    if (globalThis.__ORCHESTRATOR_URL__) return globalThis.__ORCHESTRATOR_URL__;
     if (runtimeCfg && runtimeCfg.port) {
       return `${location.protocol}//${location.hostname}:${runtimeCfg.port}`;
     }
@@ -100,7 +100,13 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       el.style.fontSize = '13px';
       el.textContent = msg;
       container.appendChild(el);
-      setTimeout(() => { try { el.style.opacity = '0'; el.style.transition = 'opacity 300ms'; setTimeout(()=>{ try{ container.removeChild(el); }catch(e){} }, 350); } catch(e){} }, timeout || 4000);
+      setTimeout(() => {
+        try {
+          el.style.opacity = '0';
+          el.style.transition = 'opacity 300ms';
+          setTimeout(() => { try { if (el.remove) el.remove(); else container.removeChild(el); } catch (e) {} }, 350);
+        } catch (e) {}
+      }, timeout || 4000);
     } catch (e) { console.warn('showToast failed', e); }
   }
 
@@ -108,9 +114,9 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   // Use these to indicate background processing during network requests.
   function showProcessingOverlay(msg) {
     try {
-      var id = 'processing-overlay';
+      const id = 'processing-overlay';
       if (document.getElementById(id)) return;
-      var o = document.createElement('div');
+      const o = document.createElement('div');
       o.id = id;
       o.style.position = 'fixed';
       o.style.left = '0';
@@ -123,7 +129,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       o.style.alignItems = 'center';
       o.style.justifyContent = 'center';
 
-      var box = document.createElement('div');
+      const box = document.createElement('div');
       box.style.padding = '18px 24px';
       box.style.background = 'transparent';
       box.style.color = '#222';
@@ -139,8 +145,9 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
   function hideProcessingOverlay() {
     try {
-      var el = document.getElementById('processing-overlay');
-      if (el && el.parentNode) el.parentNode.removeChild(el);
+      const el = document.getElementById('processing-overlay');
+      if (el && el.remove) el.remove();
+      else if (el && el.parentNode) el.parentNode.removeChild(el);
     } catch (e) { console.warn('hideProcessingOverlay failed', e); }
   }
   // deepcode ignore JS-0002: Development logging for API endpoint debugging
@@ -208,14 +215,14 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     }
   });
 
-  $scope.adjustCells = function () {
+    $scope.adjustCells = function () {
     setTimeout(() => {
       console.log("adjustCells called");
-      var cells = document.getElementsByTagName("td");
+      const cells = document.getElementsByTagName("td");
       Array.from(cells).forEach(function (cell) {
-        var text = cell.textContent.trim();
+        const text = cell.textContent.trim();
         if (text.startsWith("https")) {
-          if (text.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+          if (/\.(jpg|jpeg|png|gif|webp)$/i.test(text)) {
             cell.innerHTML = `
                     <a href="${text}" target="_blank">
                         <img src="${text}" style="max-width: 100px; max-height: 100px;">
@@ -229,34 +236,32 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   };
 
   $scope.trans = function (obj) {
-    var str = [];
-    for (var p in obj) {
-      if (obj.hasOwnProperty(p)) {
-        str.push(encodeURIComponent(p) + "=" + encodeURIComponent(obj[p]));
+    const parts = [];
+    for (const p in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, p)) {
+        parts.push(encodeURIComponent(p) + "=" + encodeURIComponent(obj[p]));
       }
     }
-    return str.join("&");
+    return parts.join("&");
   };
 
-  $scope.login = function (user, pass) {
-    var str = pass;
-
-    var regex = new RegExp(passphrase, "g");
-    var resx = str.match(regex);
-    var pass = 0;
+  $scope.login = function (user, password) {
+    const str = String(password || '');
+    const regex = new RegExp(passphrase, "g");
+    const resx = regex.exec(str);
+    let found = false;
     if (resx) {
-      if (resx.length > 0) {
-        pass = 1;
-        window.location.href = "adm.html";
-        console.log("found");
-      } else {
-        console.log("notfound");
-      }
+      found = true;
+      location.href = "adm.html";
+      console.log("found");
     } else {
-      // notie.alert({ type: 'error', text: '', stay: false })
-      window.top.postMessage("error^Wrong password", "*");
-      // alert("Wrong password");
-      window.location.href = "index.html";
+      console.log("notfound");
+      try {
+        if (globalThis.top && typeof globalThis.top.postMessage === 'function') {
+          globalThis.top.postMessage("error^Wrong password", location.origin);
+        }
+      } catch (e) { console.warn('postMessage failed', e); }
+      location.href = "index.html";
     }
   };
 
@@ -269,7 +274,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
   $scope.flfl = function () {
     // console.log($scope.filtered);
-    var pp = [];
+    let pp = [];
     for (let i = 0; i < $scope.filtered.length; i++) {
       pp.push($scope.filtered[i].id);
     }
@@ -280,8 +285,27 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   };
 
   $scope.admin = function () {
-    $scope.userdata = JSON.parse(localStorage.getItem("userdat"));
-    $scope.userole = $scope.userdata.role;
+    try {
+      const udStr = localStorage.getItem("userdat");
+      // build dynamic base URL: protocol + // + host + :port + /basePath
+      const _protocol = location.protocol || 'http:';
+      const _hostname = location.hostname || 'localhost';
+      const _port = location.port ? (':' + location.port) : '';
+      const _basePath = (location.pathname.split('/')[1]) || '';
+      const _base = _protocol + '//' + _hostname + _port + (_basePath ? ('/' + _basePath) : '');
+
+      if (!udStr) {
+        // No user data - redirect to server root (origin)
+        try { location.href = _protocol + '//' + _hostname + _port + '/'; } catch(e) {}
+        return;
+      }
+      $scope.userdata = JSON.parse(udStr || '{}');
+      if (!$scope.userdata) {
+        try { location.href = _protocol + '//' + _hostname + _port + '/'; } catch(e) {}
+        return;
+      }
+      $scope.userole = $scope.userdata.role;
+    } catch (err) {}
     
     // Helper function to convert field values based on their types
     $scope.convertFieldValue = function (fieldName, value) {
@@ -297,8 +321,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       
       // Convert based on type
       if (fieldType === 'number' || fieldType === 'range') {
-        const num = Number(value);
-        return isNaN(num) ? value : num;
+      const num = Number(value);
+      return Number.isNaN(num) ? value : num;
       } else if (fieldType === 'checkbox') {
         // Convert comma-separated string to array for checkboxes
         if (typeof value === 'string' && value.trim() !== '') {
@@ -311,7 +335,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         // Convert date/datetime strings to Date objects for Angular input compatibility
         if (typeof value === 'string' && value.trim() !== '') {
           const parsed = new Date(value);
-          if (!isNaN(parsed.getTime())) {
+          if (!Number.isNaN(parsed.getTime())) {
             return parsed;
           }
         }
@@ -431,7 +455,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         try {
           if (pluginData && typeof pluginData === 'object') {
             Object.keys(pluginData).forEach(function (origKey) {
-              var val = pluginData[origKey];
+              const val = pluginData[origKey];
               // store original key
               $scope.fieldPluginMap[origKey] = val;
               // store lowercase key
@@ -460,7 +484,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         try {
           if (fieldTypeData && typeof fieldTypeData === 'object') {
             Object.keys(fieldTypeData).forEach(function (origKey) {
-              var val = fieldTypeData[origKey];
+              const val = fieldTypeData[origKey];
               // store original key
               $scope.fieldTypeMap[origKey] = val;
               // store lowercase key
@@ -489,11 +513,11 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         try {
           if (fieldRequiredData && typeof fieldRequiredData === 'object') {
             Object.keys(fieldRequiredData).forEach(function (origKey) {
-              var val = fieldRequiredData[origKey];
+              const val = fieldRequiredData[origKey];
               // coerce value to boolean if possible
-              var coerced = val;
+              let coerced = val;
               if (typeof coerced === 'string') {
-                var low = coerced.toLowerCase().trim();
+                const low = coerced.toLowerCase().trim();
                 coerced = (low === 'true' || low === '1' || low === 'yes' || low === 'on');
               } else {
                 coerced = Boolean(coerced);
@@ -526,9 +550,9 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         try {
           if (fieldOptionsData && typeof fieldOptionsData === 'object') {
             Object.keys(fieldOptionsData).forEach(function (origKey) {
-              var val = fieldOptionsData[origKey];
+              const val = fieldOptionsData[origKey];
               // Split comma-separated string into array, trim whitespace
-              var optionsArray = [];
+              let optionsArray = [];
               if (typeof val === 'string' && val.trim() !== '') {
                 optionsArray = val.split(',').map(function(opt) { return opt.trim(); }).filter(function(opt) { return opt !== ''; });
               } else if (Array.isArray(val)) {
@@ -571,7 +595,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
         if ($scope.list && $scope.list.length > 0) {
           $scope.showdat = Object.keys($scope.list[0]);
-          for (var i = 0; i < $scope.showdat.length; i++) {
+          for (let i = 0; i < $scope.showdat.length; i++) {
             $scope.showdat[i] = $scope.humanize($scope.showdat[i]);
           }
 
@@ -632,13 +656,13 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
               console.log("after building addingNew", $scope.addingNew);
               try { $scope._ensureModuleFieldConfigs(Object.keys($scope.addingNew || {})); } catch(e) {}
-              window.top.postMessage("responseact", "*");
+              try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("responseact", location.origin); } catch(e){}
 
               $scope.adjustCells();
 
             });
 
-          for (var i = 0; i < $scope.fields.length; i++) {
+          for (let i = 0; i < $scope.fields.length; i++) {
             $scope.fields[i] = $scope.humanize($scope.fields[i]);
           }
 
@@ -659,12 +683,12 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
               );
               // Build addingNew object same as above
               try {
-                var addObj2 = {};
+                const addObj2 = {};
                 if (Array.isArray(data)) {
                   data.forEach(function (col) {
-                    var colLower = col.toLowerCase();
-                    var colUnderscore = colLower.replace(/ /g, '_');
-                    var fieldType = ($scope.fieldTypeMap && ($scope.fieldTypeMap[col] || $scope.fieldTypeMap[colLower] || $scope.fieldTypeMap[colUnderscore])) || 'text';
+                    const colLower = col.toLowerCase();
+                    const colUnderscore = colLower.replace(/ /g, '_');
+                    const fieldType = ($scope.fieldTypeMap && ($scope.fieldTypeMap[col] || $scope.fieldTypeMap[colLower] || $scope.fieldTypeMap[colUnderscore])) || 'text';
                     
                     if (fieldType === 'number' || fieldType === 'range') {
                       addObj2[col] = 0;
@@ -672,7 +696,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                       addObj2[col] = {}; // checkbox uses object format for ng-model binding
                     } else if (fieldType === 'select' || fieldType === 'radio') {
                       // Set to first option if available, otherwise empty string
-                      var options = $scope.getFieldOptions(col);
+                      const options = $scope.getFieldOptions(col);
                       addObj2[col] = (options && options.length > 0) ? options[0] : '';
                     } else {
                       addObj2[col] = '';
@@ -680,9 +704,9 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                   });
                 } else if (typeof data === 'object' && data !== null) {
                   Object.keys(data).forEach(function (col) {
-                    var colLower = col.toLowerCase();
-                    var colUnderscore = colLower.replace(/ /g, '_');
-                    var fieldType = ($scope.fieldTypeMap && ($scope.fieldTypeMap[col] || $scope.fieldTypeMap[colLower] || $scope.fieldTypeMap[colUnderscore])) || 'text';
+                    const colLower = col.toLowerCase();
+                    const colUnderscore = colLower.replace(/ /g, '_');
+                    const fieldType = ($scope.fieldTypeMap && ($scope.fieldTypeMap[col] || $scope.fieldTypeMap[colLower] || $scope.fieldTypeMap[colUnderscore])) || 'text';
                     
                     if (fieldType === 'number' || fieldType === 'range') {
                       addObj2[col] = 0;
@@ -690,7 +714,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                       addObj2[col] = {}; // checkbox uses object format for ng-model binding
                     } else if (fieldType === 'select' || fieldType === 'radio') {
                       // Set to first option if available, otherwise empty string
-                      var options = $scope.getFieldOptions(col);
+                      const options = $scope.getFieldOptions(col);
                       addObj2[col] = (options && options.length > 0) ? options[0] : '';
                     } else {
                       addObj2[col] = '';
@@ -715,7 +739,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
               console.log("addingnew when no data found", $scope.addingNew);
               try { $scope._ensureModuleFieldConfigs(Object.keys($scope.addingNew || {})); } catch(e) {}
               $scope.addproduct();
-              window.top.postMessage("responseact", "*");
+              try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("responseact", location.origin); } catch(e){}
             });
         }
       });
@@ -732,12 +756,12 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   };
 
   $scope.addproduct = function () {
-    var modalPromise = amodalPopup();
+    const modalPromise = amodalPopup();
 
     // Wait for modal to be rendered, then use a MutationObserver + delegated handlers for robustness
     modalPromise.rendered.then(function () {
       try {
-        var $frm = $("#adtfrm");
+        const $frm = $("#adtfrm");
         // Ensure initial configs and listener registration
         try { $scope._ensureModuleFieldConfigs(Object.keys($scope.addingNew || {})); } catch(e) {}
         try { $scope.registerModuleEventListeners(); } catch(e) {}
@@ -747,13 +771,13 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
           $frm.off('.fieldEvents');
           // Only respond to committed changes ("change"), not per-keystroke input events
           $frm.on('change.fieldEvents', 'input,select,textarea', function(){
-            var $el = $(this);
-            var rawName = $el.attr('name') || '';
+            const $el = $(this);
+            const rawName = $el.attr('name') || '';
             if (!rawName) return;
             try {
-              var val;
+              let val;
               if ($el.is(':checkbox')) { val = $scope.addingNew && $scope.addingNew[rawName]; }
-              else if ($el.is(':radio')) { val = $scope.addingNew && $scope.addingNew[rawName] || $el.val(); }
+              else if ($el.is(':radio')) { val = ($scope.addingNew && $scope.addingNew[rawName]) || $el.val(); }
               else { val = $el.val(); }
               try { if (!$scope.$$phase) { $scope.$apply(function(){ $scope._queueFieldChange('add', rawName, val, ($scope._lastFieldValues.add && $scope._lastFieldValues.add[rawName]) || null); }); } else { $scope._queueFieldChange('add', rawName, val, ($scope._lastFieldValues.add && $scope._lastFieldValues.add[rawName]) || null); } } catch(e) {}
             } catch(e) {}
@@ -762,7 +786,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
           // focusin/focusout bubble — use to detect focus change
           $frm.on('focusin.fieldEvents', 'input,select,textarea', function(){
             try {
-              var rawName = $(this).attr('name') || '';
+              const rawName = $(this).attr('name') || '';
               if (!rawName) return;
               if ($scope._lastFocusedAdd && $scope._lastFocusedAdd !== rawName) {
                 $scope._flushFieldChange('add', $scope._lastFocusedAdd);
@@ -773,7 +797,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
           $frm.on('focusout.fieldEvents', 'input,select,textarea', function(){
             try {
-              var rawName = $(this).attr('name') || '';
+              const rawName = $(this).attr('name') || '';
               if (!rawName) return;
               try { $scope.$apply(function(){ $scope._flushFieldChange('add', rawName); }); } catch(e){ try { $scope._flushFieldChange('add', rawName); } catch(e2){} }
               if ($scope._lastFocusedAdd === rawName) $scope._lastFocusedAdd = null;
@@ -782,24 +806,24 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         } catch(e) { console.warn('attach delegated add handlers failed', e); }
 
         // Process existing controls (set numeric defaults) and hide loader
-        var processAddControls = function() {
+        const processAddControls = function() {
           try {
-            var $controls = $frm.find('input,select,textarea');
+            const $controls = $frm.find('input,select,textarea');
             $controls.each(function () {
-              var rawName = $(this).attr('name') || '';
-              var fieldName = rawName.toLowerCase().replace(/ /g, "_");
-              var type = ($scope.fieldTypeMap && ($scope.fieldTypeMap[rawName] || $scope.fieldTypeMap[rawName.toLowerCase()] || $scope.fieldTypeMap[fieldName])) || $(this).attr('type') || 'text';
+              const rawName = $(this).attr('name') || '';
+              const fieldName = rawName.toLowerCase().replace(/ /g, "_");
+              const type = ($scope.fieldTypeMap && ($scope.fieldTypeMap[rawName] || $scope.fieldTypeMap[rawName.toLowerCase()] || $scope.fieldTypeMap[fieldName])) || $(this).attr('type') || 'text';
               if (type === 'number' || type === 'range') {
                 try {
                   if (!$scope.addingNew) $scope.addingNew = {};
                   // Only initialize numeric defaults when the model key is undefined or an empty string
-                  var cur = $scope.addingNew[rawName];
+                  let cur = $scope.addingNew[rawName];
                   if (typeof cur === 'undefined' || cur === '') {
                     // only coerce if there's a usable default value
-                    var val = cur;
+                    const val = cur;
                     if (typeof val !== 'undefined' && val !== null && val !== '') {
-                      var numVal = Number(val);
-                      if (!isNaN(numVal)) {
+                      const numVal = Number(val);
+                      if (!Number.isNaN(numVal)) {
                         try { if (!$scope.$$phase) { $scope.$apply(function () { $scope.addingNew[rawName] = numVal; }); } else { $scope.addingNew[rawName] = numVal; } } catch(e){}
                       }
                     }
@@ -816,7 +840,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
         // MutationObserver to react to ng-repeat/DOM insertions and dynamic column changes
         try {
-          if (window.MutationObserver) {
+          if (globalThis.MutationObserver) {
             var addObserver = new MutationObserver(function(mutations) {
               // whenever children change, re-run control processing and ensure configs
               processAddControls();
@@ -913,17 +937,17 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   // Validation helpers: validate by type and validate entire form
   $scope.validateValueByType = function (value, type) {
     if (value === null || typeof value === 'undefined') return false;
-    var v = String(value).trim();
+    const v = String(value).trim();
     if (v === '') return false; // Empty string is invalid
     if (type === undefined || type === null) type = 'text';
     type = String(type).toLowerCase();
     if (type === 'text' || type === 'search' || type === 'password' || type === 'textarea') return true;
     if (type === 'email') {
-      var re = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@(([^<>()[\]\\.,;:\s@"]+\.)+[^<>()[\]\\.,;:\s@"]{2,})$/i;
+      const re = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@(([^<>()[\]\\.,;:\s@"]+\.)+[^<>()[\]\\.,;:\s@"]{2,})$/i;
       return re.test(v);
     }
     if (type === 'number' || type === 'range') {
-      return !isNaN(v) && v !== '';
+      return !Number.isNaN(Number(v)) && v !== '';
     }
     if (type === 'url') {
       try {
@@ -931,38 +955,38 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         new URL(v);
         return true;
       } catch (e) {
-        var reu = /^(https?:\/\/)?([\w\-])+\.{1}([\w\-\.])+(:\d+)?(\/.*)?$/i;
+        const reu = /^(https?:\/\/)?([\w\-])+\.{1}([\w\-\.])+(:\d+)?(\/.*)?$/i;
         return reu.test(v);
       }
     }
     if (type === 'tel') {
-      var reTel = /^[0-9 \-()+]+$/;
+      const reTel = /^[0-9 \-()+]+$/;
       return reTel.test(v);
     }
     if (type === 'time') {
       // Validate time format HH:MM or HH:MM:SS - accept any existing data as valid if validation fails
-      var timeRe = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+      const timeRe = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
       // Allow any non-empty value to pass for time type to avoid blocking valid data
       return v !== '';
     }
     if (type === 'month') {
       // Validate month format YYYY-MM
-      var monthRe = /^\d{4}-(?:0[1-9]|1[0-2])$/;
+      const monthRe = /^\d{4}-(?:0[1-9]|1[0-2])$/;
       return monthRe.test(v) || v !== ''; // Allow any non-empty value
     }
     if (type === 'week') {
       // Validate week format YYYY-Www
-      var weekRe = /^\d{4}-W(?:0[1-9]|[1-4][0-9]|5[0-3])$/;
+      const weekRe = /^\d{4}-W(?:0[1-9]|[1-4][0-9]|5[0-3])$/;
       return weekRe.test(v) || v !== ''; // Allow any non-empty value
     }
     if (type.indexOf('date') !== -1 || type === 'datetime-local') {
       // For date and datetime-local, try Date.parse but allow any non-empty value
-      var t = Date.parse(v);
-      return !isNaN(t) || v !== '';
+      const t = Date.parse(v);
+      return !Number.isNaN(t) || v !== '';
     }
     if (type === 'color') {
       // Validate color format #RRGGBB or allow any non-empty value
-      var colorRe = /^#[0-9A-F]{6}$/i;
+      const colorRe = /^#[0-9A-F]{6}$/i;
       return colorRe.test(v) || v !== '';
     }
     if (type === 'select' || type === 'radio' || type === 'checkbox') {
@@ -974,17 +998,17 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   };
 
   $scope.validateForm = function (formSelector) {
-    var valid = true;
-    var firstInvalid = null;
+    let valid = true;
+    let firstInvalid = null;
     
     // Clear all previous validation highlights
     $(formSelector).find('input, select, textarea').removeClass('field-invalid');
     $(formSelector).find('.checkbox-group-invalid, .radio-group-invalid').removeClass('checkbox-group-invalid radio-group-invalid');
     
     // For add/edit modals, validate against scope data instead of DOM
-    var isAddModal = formSelector === '#adtfrm';
-    var isEditModal = formSelector === '#edtfrm';
-    var dataSource = isAddModal ? $scope.addingNew : (isEditModal ? $scope.edls : null);
+    const isAddModal = formSelector === '#adtfrm';
+    const isEditModal = formSelector === '#edtfrm';
+    const dataSource = isAddModal ? $scope.addingNew : (isEditModal ? $scope.edls : null);
     
     if (dataSource) {
       // Validate using scope data - more reliable for all field types
@@ -994,16 +1018,16 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
           return;
         }
         
-        var value = dataSource[fieldName];
-        var fieldType = $scope.getFieldType(fieldName);
-        var isRequired = $scope.fieldRequiredMap && (
+        const value = dataSource[fieldName];
+        const fieldType = $scope.getFieldType(fieldName);
+        const isRequired = $scope.fieldRequiredMap && (
           $scope.fieldRequiredMap[fieldName] || 
           $scope.fieldRequiredMap[fieldName.toLowerCase()] || 
           $scope.fieldRequiredMap[fieldName.toLowerCase().replace(/ /g, '_')]
         );
         
         // Check if value is empty
-        var isEmpty = false;
+        let isEmpty = false;
         if (fieldType === 'checkbox' && Array.isArray(value)) {
           isEmpty = value.length === 0;
         } else if (value === null || value === undefined || value === '') {
@@ -1018,7 +1042,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
           console.warn('Validation failed: Required field "' + fieldName + '" is empty, Type:', fieldType);
           
           // Try multiple name variations to find the field
-          var fieldVariations = [
+          const fieldVariations = [
             fieldName,
             fieldName.toLowerCase(),
             fieldName.toLowerCase().replace(/ /g, '_'),
@@ -1027,14 +1051,14 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
             fieldName.charAt(0).toUpperCase() + fieldName.slice(1).toLowerCase()
           ];
           
-          var $field = null;
+          let $field = null;
           
           // Highlight the field based on type
           if (fieldType === 'checkbox') {
             // Find checkbox group - try to find parent div with ng-if for this field
-            for (var i = 0; i < fieldVariations.length && !$field; i++) {
-              var selector = '[ng-if*="' + fieldVariations[i] + '"]';
-              var $checkboxDiv = $(formSelector).find(selector).filter(function() {
+            for (let i = 0; i < fieldVariations.length && !$field; i++) {
+              const selector = '[ng-if*="' + fieldVariations[i] + '"]';
+              const $checkboxDiv = $(formSelector).find(selector).filter(function() {
                 return $(this).find('input[type="checkbox"]').length > 0;
               });
               if ($checkboxDiv.length > 0) {
@@ -1047,8 +1071,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
             }
           } else if (fieldType === 'radio') {
             // Find radio group
-            for (var i = 0; i < fieldVariations.length && !$field; i++) {
-              var $radioDiv = $(formSelector).find('[ng-if*="' + fieldVariations[i] + '"]').filter(function() {
+            for (let i = 0; i < fieldVariations.length && !$field; i++) {
+              const $radioDiv = $(formSelector).find('[ng-if*="' + fieldVariations[i] + '"]').filter(function() {
                 return $(this).find('input[type="radio"]').length > 0;
               });
               if ($radioDiv.length > 0) {
@@ -1061,8 +1085,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
             }
           } else {
             // Find input/select/textarea by trying all name variations
-            for (var i = 0; i < fieldVariations.length && !$field; i++) {
-              var $found = $(formSelector).find('[name="' + fieldVariations[i] + '"]');
+            for (let i = 0; i < fieldVariations.length && !$field; i++) {
+              const $found = $(formSelector).find('[name="' + fieldVariations[i] + '"]');
               if ($found.length > 0) {
                 $field = $found.first();
                 // Use setTimeout to ensure Angular has finished processing and add debugging
@@ -1078,7 +1102,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                   
                   // Clear the current value and set expected format placeholder
                   field.val('');
-                  var expectedFormat = $scope.getExpectedFormat(fieldType);
+                  const expectedFormat = $scope.getExpectedFormat(fieldType);
                   if (expectedFormat) {
                     field.attr('placeholder', 'Expected: ' + expectedFormat);
                   }
@@ -1093,8 +1117,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
             
             // If still not found, try by ID
             if (!$field) {
-              for (var i = 0; i < fieldVariations.length && !$field; i++) {
-                var $found = $(formSelector).find('#input-' + fieldVariations[i]);
+              for (let i = 0; i < fieldVariations.length && !$field; i++) {
+                const $found = $(formSelector).find('#input-' + fieldVariations[i]);
                 if ($found.length > 0) {
                   $field = $found.first();
                   // Use setTimeout to ensure Angular has finished processing and add debugging
@@ -1126,9 +1150,9 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
             
             // Last resort: scan all inputs/selects/textareas and match by ng-model
             if (!$field) {
-              var modelName = isAddModal ? 'addingNew[' + fieldName + ']' : 'edls[' + fieldName + ']';
+              const modelName = isAddModal ? 'addingNew[' + fieldName + ']' : 'edls[' + fieldName + ']';
               $(formSelector).find('input, select, textarea').each(function() {
-                var ngModel = $(this).attr('ng-model');
+                const ngModel = $(this).attr('ng-model');
                 if (ngModel && (ngModel === modelName || ngModel.indexOf(fieldName) !== -1)) {
                   $field = $(this);
                   // Use setTimeout to ensure Angular has finished processing and add debugging
@@ -1431,12 +1455,12 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   $scope.crtpag = function (action) {
     // flush any queued add-field changes before collecting data
     try { Object.keys($scope._pendingFieldChanges && $scope._pendingFieldChanges.add || {}).forEach(function(nk){ try{$scope._flushFieldChange('add', nk);}catch(e){} }); } catch(e){}
-    var addata = {};
+    const addata = {};
     
     // Collect data from $scope.addingNew for all field types
     Object.keys($scope.addingNew).forEach(function(fieldName) {
-      var value = $scope.addingNew[fieldName];
-      var fieldType = $scope.getFieldType(fieldName);
+      const value = $scope.addingNew[fieldName];
+      const fieldType = $scope.getFieldType(fieldName);
       
       // Format values based on type
       if (fieldType === 'time') {
@@ -1471,17 +1495,17 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     console.log("Formatted addata:", addata);
     console.log("POST URL:", $scope.url);
     
-    var url = $scope.url;
+    const url = $scope.url;
 
     // validate inputs before posting
-    var validation = $scope.validateForm('#adtfrm');
+    const validation = $scope.validateForm('#adtfrm');
     console.log("Validation result:", validation.valid);
     if (!validation.valid) {
       // focus first invalid input and notify parent
       if (validation.first) {
         validation.first.focus();
       }
-      window.top.postMessage('error^Please fix highlighted fields before submitting', '*');
+      try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage('error^Please fix highlighted fields before submitting', location.origin); } catch(e){}
       return;
     }
 
@@ -1494,9 +1518,9 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         "Content-Type": "application/x-www-form-urlencoded",
       },
       transformRequest: function (obj) {
-        var str = [];
-        for (var p in obj) {
-          if (obj.hasOwnProperty(p)) {
+        const str = [];
+        for (const p in obj) {
+          if (Object.prototype.hasOwnProperty.call(obj, p)) {
             str.push(encodeURIComponent(p) + "=" + encodeURIComponent(obj[p]));
           }
         }
@@ -1525,8 +1549,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         // listeners have time to process the events. Use a small delay greater than
         // the dispatchModuleEvent default (300ms).
         setTimeout(function(){
-          try { window.top.postMessage("success^Created Successfully", "*"); } catch(e){}
-          try { window.location.reload(); } catch(e){}
+          try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("success^Created Successfully", location.origin); } catch(e){}
+          try { location.reload(); } catch(e){}
         }, 500);
       })
       .catch(function onError(response) {
@@ -1540,8 +1564,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
             $scope.dispatchModuleEvent(addAction.event, addata);
           }
         } catch(e) { console.warn('emit add error event failed', e); }
-        try { window.top.postMessage("error^Some Error Occured", "*"); } catch(e){}
-        try { window.location.reload(); } catch(e){}
+        try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("error^Some Error Occured", location.origin); } catch(e){}
+        try { location.reload(); } catch(e){}
       });
   };
 
@@ -1618,7 +1642,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     var validation = $scope.validateForm('#edtfrm');
     if (!validation.valid) {
       if (validation.first) validation.first.focus();
-      window.top.postMessage('error^Please fix highlighted fields before submitting', '*');
+      try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage('error^Please fix highlighted fields before submitting', location.origin); } catch(e){}
       return;
     }
 
@@ -1692,7 +1716,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         try { hideProcessingOverlay(); } catch(e){}
         console.log(response);
         // alert('Edited successfully');
-        window.top.postMessage("success^Edited Successfully", "*");
+        try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("success^Edited Successfully", location.origin); } catch(e){}
         try {
           var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
           var updAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'update'; });
@@ -1717,8 +1741,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         // After dispatching module events, notify parent and then reload so
         // listeners can react to the edit events first.
         setTimeout(function(){
-          try { window.top.postMessage("success^Edited Successfully", "*"); } catch(e){}
-          try { window.location.reload(); } catch(e){}
+          try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("success^Edited Successfully", location.origin); } catch(e){}
+          try { location.reload(); } catch(e){}
         }, 500);
       })
       .catch(function onError(response) {
@@ -1733,8 +1757,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
             $scope.dispatchModuleEvent(updAction.event, eddata);
           }
         } catch(e) { console.warn('emit edit error event failed', e); }
-        try { window.top.postMessage("error^Some Error Occured", "*"); } catch(e){}
-        try { window.location.reload(); } catch(e){}
+        try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("error^Some Error Occured", location.origin); } catch(e){}
+        try { location.reload(); } catch(e){}
       });
     //post req ends
   };
@@ -1831,7 +1855,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
               try { if (!$scope.$$phase) { $scope.$apply(function () { $scope.edls[rawName] = val; }); } else { $scope.edls[rawName] = val; } } catch(e){}
             } else if (type === 'number' || type === 'range') {
               var numVal = (typeof val === 'number') ? val : Number(val);
-              if (!isNaN(numVal) && val !== null && val !== '') {
+              if (!Number.isNaN(numVal) && val !== null && val !== '') {
                 try { if (!$scope.$$phase) { $scope.$apply(function () { $scope.edls[rawName] = numVal; }); } else { $scope.edls[rawName] = numVal; } } catch(e){ $(this).val(val); }
               } else { $(this).val(typeof val === 'undefined' ? '' : val); }
             } else { $(this).val(typeof val === 'undefined' ? '' : val); }
@@ -1882,7 +1906,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
         // MutationObserver to handle dynamic changes in edit form as well
         try {
-          if (window.MutationObserver) {
+          if (globalThis.MutationObserver) {
             var editObserver = new MutationObserver(function() {
               try { $scope._ensureModuleFieldConfigs(Object.keys($scope.edls || {})); } catch(e){}
               try { $scope.registerModuleEventListeners(); } catch(e){}
@@ -1949,8 +1973,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       // After dispatching delete events, notify parent and reload so listeners
       // have a chance to process the deletion.
       setTimeout(function(){
-        try { window.top.postMessage("success^Deleted Successfully", "*"); } catch(e){}
-        try { window.location.reload(); } catch(e){}
+        try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("success^Deleted Successfully", location.origin); } catch(e){}
+        try { location.reload(); } catch(e){}
       }, 500);
     });
     // //post req ends
@@ -1958,7 +1982,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
   $scope.logout = function () {
     localStorage.removeItem("apikey");
-    window.location.href = "index.html";
+    location.href = "index.html";
   };
 
   $scope.no = function () {
@@ -2121,7 +2145,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       $scope._registerListenersTimer = setTimeout(function(){
         try {
           // remove old listeners
-          Object.keys($scope._moduleEventListeners).forEach(function(ev){ try { window.removeEventListener(ev, $scope._moduleEventListeners[ev]); } catch(e){} });
+          Object.keys($scope._moduleEventListeners).forEach(function(ev){ try { globalThis.removeEventListener(ev, $scope._moduleEventListeners[ev]); } catch(e){} });
           $scope._moduleEventListeners = {};
 
           var register = function(eventName){
@@ -2142,8 +2166,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                 console.log('====EVENT RECEIVED====', incoming, e && e.payload ? e.payload : null);
                 // Do NOT post events to parent frames - this was causing notification alerts
                 // when dynamic field focus/changes occurred. Events are dispatched locally
-                // via CustomEvent; stop forwarding to window.top to avoid UX interruptions.
-                // try { window.top.postMessage('orchestrator_event^' + normalizedListener + '^' + payload, '*'); } catch(err){ /* ignore */ }
+                // via CustomEvent; stop forwarding to top to avoid UX interruptions.
+                  // previously forwarded to top; avoid auto-forwarding to external origins
 
                 // Also forward to orchestrator server directly so events are discovered
                 try {
@@ -2276,7 +2300,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
             };
 
             // register only the '-listener' variant to avoid duplicate handling
-            try { window.addEventListener(listenerName, cb); } catch(e) {}
+            try { globalThis.addEventListener(listenerName, cb); } catch(e) {}
             $scope._moduleEventListeners[listenerName] = cb;
             console.log('====EVENT LISTENER REGISTERED====', listenerName);
           };
@@ -2310,12 +2334,12 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
               const evt = new CustomEvent(evName);
               // Copy all envelope properties to event object for flat access
               Object.assign(evt, envelope);
-              window.dispatchEvent(evt);
+              globalThis.dispatchEvent(evt);
             } catch(e){}
             try { 
               const evt = new CustomEvent(evName + '-listener');
               Object.assign(evt, envelope);
-              window.dispatchEvent(evt);
+              globalThis.dispatchEvent(evt);
             } catch(e){}
             try { if (!$scope.$$phase) $scope.$apply(); } catch(e){}
           } catch (e) { console.warn('SSE parse error', e); }
@@ -2341,14 +2365,14 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
               const mainEvt = new CustomEvent(eventName);
               mainEvt.payload = payloadData; // Flat structure: payload at top level
               mainEvt.event = eventName;
-              window.dispatchEvent(mainEvt);
+              globalThis.dispatchEvent(mainEvt);
               try {
                 var listenerName = eventName + '-listener';
                 console.log('====EVENT FIRED==== (listener variant) ', listenerName, payloadData || {});
                 const listenerEvt = new CustomEvent(listenerName);
                 listenerEvt.payload = payloadData;
                 listenerEvt.event = eventName;
-                window.dispatchEvent(listenerEvt);
+                globalThis.dispatchEvent(listenerEvt);
               } catch(e2) { }
         } catch(e){
           console.warn('dispatch failed', e);
@@ -2694,13 +2718,13 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         setTimeout(() => {
           if (document.body.contains(sidebar)) document.body.removeChild(sidebar);
           if (document.body.contains(overlay)) document.body.removeChild(overlay);
-          window.removeEventListener("message", messageHandler);
+          globalThis.removeEventListener("message", messageHandler);
         }, 300);
       };
 
       overlay.addEventListener("click", closeSidebar);
       closeBtn.addEventListener("click", closeSidebar);
-      window.addEventListener("message", messageHandler);
+      globalThis.addEventListener("message", messageHandler);
       
       // Send form data to plugin when iframe loads
       const pluginFrame = document.getElementById('plugin-frame');
@@ -2715,7 +2739,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
               fieldName: fieldName,
               formData: formData,
               fieldTypes: fieldTypes
-            }, '*');
+            }, location.origin);
             console.log('Sent form data to plugin:', {
               type: 'form-data',
               source: source,

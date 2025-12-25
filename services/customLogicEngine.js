@@ -187,7 +187,7 @@ class CustomLogicEngine {
   /**
    * Extract nested field value from object using dot notation and array indices
    * @param {object} obj - Source object
-   * @param {string} fieldPath - Path like "detail.value", "data[0].total", "rows[0].user.name"
+  * @param {string} fieldPath - Path like "phone_number", "payload.phone_number", "rows[0].user.name"
    * @returns {any} - Extracted value or null
    */
   extractFieldValue(obj, fieldPath) {

@@ -20,10 +20,10 @@ Table of contents
 
 This project provides an orchestration and builder UI that lets you define Actions (SQL templates) and bind them to Events. EventBridge is the server-side template resolver that substitutes event values into SQL templates using a controlled syntax. After resolution, the resolved SQL can be executed against the configured database pool.
 
-Key components:
+- Key components:
 
 - Event JSON: shape used to represent an event payload (metadata + detail)
-- Action metadata (config/metadata/actions/\*.json): stores action definitions and optional runtime metadata
+- Action metadata (`config/metadata/actions.json`): stores action definitions and optional runtime metadata
 - EventBridge (lib/eventBridge.js): resolves templates like `{{module:event:field.path}}` into SQL-safe values or SQL literals
 - `/api/event/execute`: server endpoint that accepts a `query` (template) and optional `eventName`/`payload` and returns the resolved query and execution result
 - Actions editor: UI that authorizes and tests queries, saving `variableMappings` metadata such as `executedQuery`
@@ -65,7 +65,7 @@ Templates are simple mustache-like placeholders embedded in SQL strings. The Eve
 
 Syntax examples:
 
-- `{{appsthink_crm:phone_number:added.value}}` — resolves to the `value` field from the `appsthink_crm:phone_number:added` event payload.
+- `{{appsthink_crm:phone_number:added.phone_number}}` — resolves to the `phone_number` top-level field from the `appsthink_crm:phone_number:added` event payload.
 - `{{added.field}}` — a shorthand that uses the first bound event in the action's `eventBindings` or a synthetic alias.
 
 Behavior:
@@ -102,7 +102,7 @@ This ensures the UI can always show the final SQL the system attempted to run ev
 
 ## Action metadata and persisted executed SQL
 
-Actions metadata live under `config/metadata/actions/*.json` (grouped files). Each action object supports these fields:
+Actions metadata now live in `config/metadata/actions.json` (single file). Each action object supports these fields:
 
 - `id`, `name`, `description`
 - `query` / `template` / `sql` — the authored SQL template
@@ -128,7 +128,7 @@ This file-backed persistence allows other components (Custom Logic, orchestratio
 2. The developer clicks "Test" and supplies sample event data (or the system synthesizes from `payloadSchema`).
 3. The client calls `/api/event/execute` with `query`, `eventName`, and `payload`.
 4. The server resolves templates and executes SQL. Response contains `executedQuery` and rows.
-5. If the test succeeds, the Actions editor stores `variableMappings.executedQuery` and `_lastExecutedAt`, and optionally `variableMappings._exampleOutputs` with sample rows. These are saved to disk under `config/metadata/actions/<group>.json` by the Taxonomy service.
+5. If the test succeeds, the Actions editor stores `variableMappings.executedQuery` and `_lastExecutedAt`, and optionally `variableMappings._exampleOutputs` with sample rows. These are saved to disk under `config/metadata/actions.json` by the Taxonomy service.
 
 Because `executedQuery` is persisted, other tools (Custom Logic, orchestrator) can reuse the resolved SQL without re-resolving templates.
 
@@ -167,7 +167,7 @@ Parser paths and variable selection:
 Example CLI snippet (Node):
 
 ```js
-// node -e "require('./lib/eventBridge'); console.log(globalThis.eventBridge.tryResolveQuery('SELECT * FROM t WHERE phone={{appsthink_crm:phone_number:added.value}}', {detail:{value:'123'}}, {eventName:'appsthink_crm:phone_number:added'}, []));"
+// node -e "require('./lib/eventBridge'); console.log(globalThis.eventBridge.tryResolveQuery('SELECT * FROM t WHERE phone={{appsthink_crm:phone_number:added.phone_number}}', {phone_number:'123'}, {eventName:'appsthink_crm:phone_number:added'}, []));"
 ```
 
 ---
@@ -190,7 +190,7 @@ Action metadata snippet showing persisted query:
 {
   "id": "abc-123",
   "name": "Find Contact",
-  "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}};",
+  "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.phone_number}};",
   "variableMappings": {
     "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = '+441234567890';",
     "_lastExecutedAt": "2025-12-24T12:00:00.000Z"

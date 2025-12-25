@@ -395,26 +395,64 @@ app.post('/api/event/execute', async (req, res) => {
     // Create a minimal binding object so resolver can match the requested eventName
     const binding = eventName ? { eventName } : null;
 
-    // Resolve query using payload and optional binding (best-effort resolver returns executed text + error)
+    // If a payload is provided, synthesize a minimal payloadSchema on the binding
+    // so the eventBridge resolver can infer field paths (supports legacy '.value' mapping).
+    if (binding && payload && typeof payload === 'object') {
+      try {
+        binding.payloadSchema = binding.payloadSchema || {};
+        binding.payloadSchema.primaryFields = binding.payloadSchema.primaryFields || {};
+
+        // Map each top-level payload key as a primary field with a sample and path
+        Object.keys(payload).forEach((k) => {
+          const v = payload[k];
+          binding.payloadSchema.primaryFields[k] = binding.payloadSchema.primaryFields[k] || {};
+          binding.payloadSchema.primaryFields[k].sample = v;
+          binding.payloadSchema.primaryFields[k].path = k;
+          binding.payloadSchema.primaryFields[k].type = binding.payloadSchema.primaryFields[k].type || (v === null ? 'null' : typeof v);
+        });
+
+        // If the eventName encodes a field (either module:field:action or module:field:<action> formats),
+        // set a special primary.field.sample so EventBridge's fallback for 'value' can infer the actual key.
+        const parts = String(binding.eventName || '').split(':');
+        let inferredField = null;
+        if (parts.length >= 4 && parts[1] === 'field') {
+          inferredField = parts[2];
+        } else if (parts.length === 3) {
+          // module:field:action -> parts[1] is the field name
+          inferredField = parts[1];
+        }
+        if (inferredField) {
+          binding.payloadSchema.primaryFields.field = binding.payloadSchema.primaryFields.field || {};
+          binding.payloadSchema.primaryFields.field.sample = inferredField;
+        }
+      } catch (e) {
+        // non-fatal: if schema synthesis fails, proceed without it
+        console.warn('Failed to synthesize binding.payloadSchema from payload', e && e.message ? e.message : e);
+      }
+    }
+
+    // Always use up-to-date event bindings from the Event Schema Registry
+    const er = require('./lib/eventRegistry');
+    const registryBindings = er.getBindings ? er.getBindings() : [];
     let processedQuery;
     try {
-      // Debug: log binding + whether server has global eventBindings loaded
+      // Debug: log binding + registry bindings count
       try {
-        const globalCount = (globalThis.eventBindings && Array.isArray(globalThis.eventBindings)) ? globalThis.eventBindings.length : 0;
-        console.debug('event-execute: incoming binding=', binding, 'globalBindingsCount=', globalCount);
+        const registryCount = Array.isArray(registryBindings) ? registryBindings.length : 0;
+        console.debug('event-execute: incoming binding=', binding, 'registryBindingsCount=', registryCount);
       } catch (dbgErr) {}
 
       if (!globalThis.eventBridge || !globalThis.eventBridge.tryResolveQuery) {
         // Fallback to existing resolveQuery (will throw on missing fields)
-        processedQuery = globalThis.eventBridge.resolveQuery(query, payload, binding, []);
+        processedQuery = globalThis.eventBridge.resolveQuery(query, payload, binding, registryBindings);
       } else {
-        const out = globalThis.eventBridge.tryResolveQuery(query, payload, binding, []);
+        const out = globalThis.eventBridge.tryResolveQuery(query, payload, binding, registryBindings);
         if (out && out.error) {
           console.error('Template resolution failed:', out.error);
-          // include diagnostics about binding and available global bindings
+          // include diagnostics about binding and available registry bindings
           try {
-            const globalCount = (globalThis.eventBindings && Array.isArray(globalThis.eventBindings)) ? globalThis.eventBindings.length : 0;
-            console.error('Template resolution diagnostics: binding=', binding, 'globalBindingsCount=', globalCount, 'sqlPreview=', out.sql);
+            const registryCount = Array.isArray(registryBindings) ? registryBindings.length : 0;
+            console.error('Template resolution diagnostics: binding=', binding, 'registryBindingsCount=', registryCount, 'sqlPreview=', out.sql);
           } catch (diagErr) {}
           executedQuery = out.sql || null;
           return res.status(400).json({ ok: false, error: 'Template resolution failed', details: out.error, executedQuery });
@@ -428,7 +466,7 @@ app.post('/api/event/execute', async (req, res) => {
       let executedQuery = null;
       try {
         if (globalThis.eventBridge && globalThis.eventBridge.tryResolveQuery) {
-          const probe = globalThis.eventBridge.tryResolveQuery(query, payload, binding, []);
+          const probe = globalThis.eventBridge.tryResolveQuery(query, payload, binding, globalThis.eventBindings || []);
           if (probe && probe.sql) executedQuery = probe.sql;
         }
       } catch (probeErr) {
@@ -637,11 +675,75 @@ app.post('/api/events/requeue/:id', async (req, res) => {
 // Simple registry API that returns discovered events grouped by module
 app.get('/api/event-registry', async (req, res) => {
   try {
-    const reg = eventBus.getRegistry();
+    let reg = eventBus.getRegistry() || {};
+    // If in-memory registry is empty, attempt to synthesize a registry view from persisted evt: records
+    try {
+      if (!reg || Object.keys(reg).length === 0) {
+        const recs = await eventBus.listAllEventRecords();
+        if (Array.isArray(recs) && recs.length) {
+          const synth = {};
+          recs.forEach((r) => {
+            try {
+              const mod = r.module || (r.event && String(r.event).split(':')[0]) || 'misc';
+              const evName = r.canonicalEvent || r.event || r.name || r.type || 'unknown';
+              synth[mod] = synth[mod] || { events: {}, total: 0 };
+              synth[mod].events[evName] = (synth[mod].events[evName] || 0) + 1;
+              synth[mod].total = Object.values(synth[mod].events).reduce((s, v) => s + v, 0);
+            } catch (e) {}
+          });
+          if (Object.keys(synth).length) reg = synth;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to synthesize registry from persisted records', e && e.message ? e.message : e);
+    }
+
     res.json({ ok: true, registry: reg });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// Expose enriched bindings from centralized eventRegistry
+app.get('/api/event-registry/bindings', async (req, res) => {
+  try {
+    const er = require('./lib/eventRegistry');
+    const b = er.getBindings ? er.getBindings() : [];
+    return res.json({ ok: true, bindings: b });
+  } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Search bindings (by event name, module, or field path)
+app.get('/api/event-registry/search', async (req, res) => {
+  try {
+    const q = req.query.q || '';
+    const er = require('./lib/eventRegistry');
+    const out = await (er.searchBindings ? er.searchBindings(q) : []);
+    return res.json({ ok: true, results: out });
+  } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Return a binding and optionally extract selected fields from provided payload
+app.post('/api/event-registry/binding/:name/extract', async (req, res) => {
+  try {
+    const name = req.params.name;
+    const selectedFields = req.body && req.body.selectedFields ? req.body.selectedFields : [];
+    const payload = req.body && req.body.payload ? req.body.payload : {};
+    const er = require('./lib/eventRegistry');
+    const binding = er.getBindingByName ? er.getBindingByName(name) : null;
+    const extracted = er.extractSelectedFields ? er.extractSelectedFields(payload, selectedFields) : {};
+    return res.json({ ok: true, binding, extracted });
+  } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Manual reconcile endpoint
+app.post('/api/event-registry/reconcile', async (req, res) => {
+  try {
+    const er = require('./lib/eventRegistry');
+    if (!er || !er.reconcile) return res.status(501).json({ ok: false, error: 'reconcile-not-available' });
+    const out = await er.reconcile();
+    return res.json({ ok: true, result: out });
+  } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
 });
 
 // List persisted event records (optional query: module, event)
@@ -2138,6 +2240,22 @@ app.put('/api/actions/:id', async (req, res) => {
     const updates = req.body || {};
     const updated = await taxonomyService.updateAction(id, updates);
     res.json({ ok: true, action: updated });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Create a new action
+app.post('/api/actions', async (req, res) => {
+  try {
+    const data = req.body || {};
+    if (!data.id) {
+      return res.status(400).json({ ok: false, error: 'Action id is required' });
+    }
+    // Add createdAt if not present
+    if (!data.createdAt) data.createdAt = new Date().toISOString();
+    const added = await taxonomyService.addAction(data);
+    res.json({ ok: true, action: added });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
