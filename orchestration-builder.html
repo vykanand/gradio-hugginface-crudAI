@@ -2492,11 +2492,8 @@
                             ? `<span style="color: #8899a6; font-size: 0.75rem; margin-left: 8px;">from ${
                                 sourceEvent.eventName
                               } ${isPrimary ? "📦" : "🏷️"}</span>`
-                            : `<span style="color: #e74c3c; font-size: 0.75rem; margin-left: 8px;">⚠ Event "${eventName}" not found or field not in payload</span>`
+                            : `<span style="color: #8899a6; font-size: 0.75rem; margin-left: 8px;">Event variable mapping detected in SQL</span>`
                         }
-                      </div>
-                      <div style="font-size: 0.75rem; color: #657786;">
-                        ${fieldInfo ? fieldInfo.type : "unknown"}
                       </div>
                     </div>
                     ${
