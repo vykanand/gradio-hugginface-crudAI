@@ -297,10 +297,10 @@
       "id": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63",
       "name": "Appsthink crm to extract_contact matching",
       "description": "take my input and give me list of all matching phone numbers in extract contact data",
-      "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}}",
+      "query": "SELECT phoneNumbers_value FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.phone_number}}",
       "variableMappings": {
-        "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.value}}",
-        "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = '8959285336'"
+        "template": "SELECT * FROM extract_contact WHERE {{appsthink_crm:phone_number:added.phone_number}}",
+        "executedQuery": "SELECT * FROM extract_contact WHERE '9384829381'"
       },
       "eventBindings": [
         {

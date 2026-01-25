@@ -16,6 +16,7 @@ const customLogicEngine = require('./services/customLogicEngine');
 const workflowEngine = require('./services/workflowEngine');
 const executionOrchestrator = require('./services/executionOrchestrator');
 const eventBus = require('./services/eventBus');
+const BackupManager = require('./services/backupManager');
 const { v4: uuidv4 } = require('uuid');
 const TransactionManager = require('./services/transactionManager');
 // Load server-side event bridge (exposes globalThis.eventBridge)
@@ -83,8 +84,47 @@ app.use((req, res, next) => {
   next();
 });
 
-// initialize event bus (Kafka producer + consumer)
-try { eventBus.init().catch(e => console.warn('eventBus.init failed', e)); } catch(e) { /* ignore */ }
+// Initialize backup manager and event bus BEFORE starting the server
+// This must be synchronous to prevent race conditions with worker processes
+let backupManager;
+let initPromise;
+
+if (process.env.WORKER_PROCESS !== 'true') {
+  // Only initialize backup manager in main server process (not in workers)
+  backupManager = new BackupManager({
+    storageDir: path.join(__dirname, 'storage'),
+    backupDir: path.join(__dirname, 'backups'),
+    restoreDir: path.join(__dirname, 'restore'),
+    autoBackupInterval: parseInt(process.env.AUTO_BACKUP_INTERVAL || '3600000', 10), // 1 hour default
+    maxBackups: parseInt(process.env.MAX_BACKUPS || '10', 10),
+    autoBackupEnabled: process.env.AUTO_BACKUP_ENABLED !== 'false',
+    autoRestoreEnabled: process.env.AUTO_RESTORE_ENABLED !== 'false'
+  });
+
+  // Run initialization and wait for it before continuing
+  initPromise = (async () => {
+    try {
+      console.log('[BackupManager] Initializing...');
+      await backupManager.initialize();
+      console.log('[BackupManager] ✅ Ready - auto-restore and auto-backup configured');
+      
+      // NOW initialize event bus (after locks are cleaned)
+      console.log('[EventBus] Initializing...');
+      await eventBus.init(); 
+      console.log('[EventBus] ✅ Initialized successfully');
+      return true;
+    } catch (err) {
+      console.error('[BackupManager/EventBus] ❌ Initialization failed:', err.message, err.stack);
+      // Still try to init event bus even if backup fails
+      try { await eventBus.init(); } catch(e) { console.warn('eventBus.init failed after backup error', e.message); }
+      return false;
+    }
+  })();
+} else {
+  // Worker process - don't initialize backup manager or event bus
+  console.log('[Worker] Skipping BackupManager and EventBus initialization');
+  initPromise = Promise.resolve(true);
+}
 
 // Provide a lightweight bindings read endpoint early so embedded clients
 // can discover bindings even if later route definitions are reordered.
@@ -1427,9 +1467,94 @@ app.get('/api/health', async (req, res) => {
     } catch (e) {
       kafkaOk = false;
     }
-    return res.json({ ok: true, workflow: wf, kafka: { reachable: kafkaOk } });
+    
+    // backup manager status
+    let backupStatus = { available: false };
+    if (backupManager) {
+      try {
+        const backups = await backupManager.listBackups();
+        backupStatus = {
+          available: true,
+          count: backups.length,
+          latest: backups[0] || null,
+          totalSizeMB: backups.reduce((sum, b) => sum + parseFloat(b.sizeMB), 0).toFixed(2)
+        };
+      } catch (e) {
+        backupStatus.error = e.message;
+      }
+    } else {
+      backupStatus.reason = 'Not available in worker process';
+    }
+    
+    return res.json({ ok: true, workflow: wf, kafka: { reachable: kafkaOk }, backup: backupStatus });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+// Backup/Restore API endpoints
+app.post('/api/backup/create', async (req, res) => {
+  try {
+    if (!backupManager) {
+      return res.status(503).json({ success: false, error: 'Backup manager not available in worker process' });
+    }
+    const { label } = req.body;
+    const result = await backupManager.backup(label || '');
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message || String(e) });
+  }
+});
+
+app.get('/api/backup/list', async (req, res) => {
+  try {
+    if (!backupManager) {
+      return res.status(503).json({ success: false, error: 'Backup manager not available in worker process' });
+    }
+    const backups = await backupManager.listBackups();
+    return res.json({ success: true, backups });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message || String(e) });
+  }
+});
+
+app.post('/api/backup/restore', async (req, res) => {
+  try {
+    if (!backupManager) {
+      return res.status(503).json({ success: false, error: 'Backup manager not available in worker process' });
+    }
+    const { backupName } = req.body;
+    if (!backupName) {
+      return res.status(400).json({ success: false, error: 'backupName required' });
+    }
+    
+    const backupPath = path.join(backupManager.backupDir, backupName);
+    const result = await backupManager.restore(backupPath);
+    
+    if (result.success) {
+      // Recommend restart for changes to take effect
+      return res.json({ 
+        ...result, 
+        message: 'Restore complete. Restart application to apply changes.',
+        restartCommand: 'docker-compose restart app worker'
+      });
+    }
+    
+    return res.status(500).json(result);
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message || String(e) });
+  }
+});
+
+app.get('/api/backup/export-metadata', async (req, res) => {
+  try {
+    if (!backupManager) {
+      return res.status(503).json({ success: false, error: 'Backup manager not available in worker process' });
+    }
+    const metadata = await backupManager.exportMetadata();
+    return res.json({ success: true, metadata });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message || String(e) });
   }
 });
 
@@ -1637,6 +1762,10 @@ app.get('/monitor/streamMessages', async (req, res) => {
 // Call this when starting the server. If DB init fails, start server in degraded mode
 async function startServer() {
   try {
+    // Wait for backup manager and event bus initialization FIRST
+    await initPromise;
+    console.log('[Init] BackupManager and EventBus initialization complete');
+    
     await initializeDatabase();
     console.log('Database initialized successfully');
     // initialize global transaction manager for DB transactions
@@ -1655,15 +1784,16 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
   });
+  
+  // Start the Kafka monitor AFTER server initialization
+  if (kafka) {
+    startKafkaMonitor().then(() => console.log('[monitor] started')).catch(e => console.warn('[monitor] start failed', e && e.message ? e.message : e));
+  } else {
+    console.log('[monitor] Kafka disabled: skipping Kafka monitor startup');
+  }
 }
 
 startServer();
-// Start the Kafka monitor so the monitor UI can receive live events
-if (kafka) {
-  startKafkaMonitor().then(() => console.log('[monitor] started')).catch(e => console.warn('[monitor] start failed', e && e.message ? e.message : e));
-} else {
-  console.log('[monitor] Kafka disabled: skipping Kafka monitor startup');
-}
 
 // simple admin API key middleware
 const adminApiKey = process.env.ADMIN_API_KEY || 'changeme';

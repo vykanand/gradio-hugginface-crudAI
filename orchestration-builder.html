@@ -636,15 +636,7 @@
         border: 1px solid #e1e8ed;
         border-radius: 6px;
         margin-bottom: 0.75rem;
-        cursor: pointer;
-        transition: all 0.2s;
       }
-
-      .list-item:hover {
-        background: #eef2f7;
-        border-color: #667eea;
-      }
-
       .list-item-title {
         font-weight: 600;
         font-size: 0.95rem;
@@ -658,11 +650,6 @@
       }
 
       .badge {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        background: #e1e8ed;
-        border-radius: 4px;
-        font-size: 0.75rem;
         font-weight: 600;
         color: #222;
       }
@@ -1637,6 +1624,7 @@
 
               // Append bound event information (if any) so AI can use correct binding names and payload fields
               let eventContext = "";
+              let placeholderList = "";
               if (eventBindings && eventBindings.length > 0) {
                 eventContext += "Bound events and payload fields:\n";
                 eventBindings.forEach((b) => {
@@ -1649,21 +1637,28 @@
                     eventContext += `Primary fields:\n`;
                     Object.keys(pf).forEach((k) => {
                       const v = pf[k];
-                      eventContext += ` - ${k} (${v.type || "unknown"}) -> path: ${v.path || `detail.${k}`}` + (v.sample !== undefined && v.sample !== null ? `; sample: ${JSON.stringify(v.sample)}` : "") + "\n";
+                      const path = v.path || k;
+                      eventContext += ` - ${k} (${v.type || "unknown"}) -> path: ${path}` + (v.sample !== undefined && v.sample !== null ? `; sample: ${JSON.stringify(v.sample)}` : "") + "\n";
+                      placeholderList += ` - {{${id}.${path}}} (primary) — sample: ${v.sample !== undefined && v.sample !== null ? JSON.stringify(v.sample) : '<no-sample>'}\n`;
                     });
                   }
                   if (Object.keys(mf).length > 0) {
                     eventContext += `Metadata fields:\n`;
                     Object.keys(mf).forEach((k) => {
                       const v = mf[k];
+                      const path = v.path || k;
                       eventContext += ` - ${k} (${v.type || "unknown"})` + (v.sample !== undefined && v.sample !== null ? `; sample: ${JSON.stringify(v.sample)}` : "") + "\n";
+                      placeholderList += ` - {{${id}.${path}}} (metadata) — sample: ${v.sample !== undefined && v.sample !== null ? JSON.stringify(v.sample) : '<no-sample>'}\n`;
                     });
                   }
                 });
                 eventContext += "\n";
+                if (placeholderList) {
+                  eventContext += "\nExact placeholders detected (use ONLY these):\n" + placeholderList + "\n";
+                }
               }
 
-              const prompt = `${context}\n\n${eventContext}Business Use Case: ${businessUseCase}\n\nIMPORTANT — Event SQL language and binder rules (must follow exactly):\n\n1) Table/Column mapping: Use the event metadata to determine the target table and column names. Treat the event's 'module' value as the literal SQL table name, and the event's 'field' value as the literal column name. Do NOT put table or column names inside braces or quotes — they must be plain SQL identifiers matching the schema provided in the context.\n\n2) Dynamic values / binder placeholders: For any dynamic value coming from an event payload, use the event-bridge binder placeholder format exactly: {{<bindingName>.<fieldPath>}} where <bindingName> is the event binding identifier (the same string used in the bindings list, e.g. appsthink_crm:phone_number:added) and <fieldPath> is the path inside the event payload (for example value, detail.phone_number, or data.someField). Example: {{appsthink_crm:phone_number:added.value}}.\n\n3) Resolution behavior: The executor (eventBridge.tryResolveQuery) will replace each {{...}} placeholder with a properly SQL-quoted literal (it handles escaping and NULL). Therefore DO NOT quote or escape {{...}} placeholders yourself — write SQL so that placeholders appear exactly where a SQL literal value belongs (e.g. VALUES ({{...}})).\n\n4) Preferred field access: When the primary value is named 'value', prefer using .value (e.g. {{bindingName.value}}). If the payload nests the value under detail or data, use detail.<name> or data.<name> accordingly.\n\n5) Output requirements: Produce a single, executable Event-SQL statement (or a minimal set of statements) that uses literal table/column names from the metadata and {{...}} placeholders for values. Return ONLY the SQL (no explanation, no markdown, no additional tags).\n\nExample (for clarity only; use actual metadata and bindings from the context above):\nINSERT INTO appsthink_crm (phone_number) VALUES ({{appsthink_crm:phone_number:added.value}});\n\nGenerate the SQL now for the Business Use Case. Use the schema and metadata provided in the context above, and prefer actual event sample values only for guidance — do not hardcode example literal values into the SQL.`;
+              const prompt = `${context}\n\n${eventContext}Business Use Case: ${businessUseCase}\n\nIMPORTANT — Event SQL language and binder rules (must follow exactly):\n\n1) Table/Column mapping: Use the event metadata to determine the target table and column names. Treat the event's 'module' value as the literal SQL table name, and the event's 'field' value as the literal column name. Do NOT put table or column names inside braces or quotes — they must be plain SQL identifiers matching the schema provided in the context.\n\n2) Dynamic values / binder placeholders: For any dynamic value coming from an event payload, use ONLY the exact placeholders listed in the "Exact placeholders detected" section above. Each dynamic value must use the event-bridge binder placeholder format exactly: {{<bindingName>.<fieldPath>}} where <bindingName> is the event binding identifier (the same string used in the bindings list, e.g. appsthink_crm:phone_number:added) and <fieldPath> is the exact path inside the event payload (for example value, detail.phone_number, or data.someField). Do NOT invent or assume any other field names or paths. Example: {{appsthink_crm:phone_number:added.value}}.\n\n3) Resolution behavior: The executor (eventBridge.tryResolveQuery) will replace each {{...}} placeholder with a properly SQL-quoted literal (it handles escaping and NULL). Therefore DO NOT quote or escape {{...}} placeholders yourself — write SQL so that placeholders appear exactly where a SQL literal value belongs (e.g. VALUES ({{...}})).\n\n4) Preferred field access: Use the exact paths provided in the placeholders list (do not replace with ".value" unless that exact placeholder appears in the list). If the payload nests the value under detail or data, use detail.<name> or data.<name> exactly as listed.\n\n5) Output requirements: Produce a single, executable Event-SQL statement (or a minimal set of statements) that uses literal table/column names from the metadata and {{...}} placeholders for values. Return ONLY the SQL (no explanation, no markdown, no additional tags).\n\nExample (for clarity only; use actual metadata and bindings from the context above):\nINSERT INTO appsthink_crm (phone_number) VALUES ({{appsthink_crm:phone_number:added.value}});\n\nGenerate the SQL now for the Business Use Case. Use the schema and metadata provided in the context above, and prefer actual event sample values only for guidance — do not hardcode example literal values into the SQL.`;
 
               const aiTarget =
                 globalThis.RUNTIME_CONFIG &&
@@ -1897,57 +1892,50 @@
               const registry =
                 eventsData && eventsData.registry ? eventsData.registry : {};
 
-              // Parse registry into flat list of events
-              const eventsList = [];
+              // Parse registry into a deduplicated flat list of events
+              const eventsMap = new Map();
               const rawKeys = Object.keys(registry || {});
 
               for (const k of rawKeys) {
                 if (!k) continue;
                 // Skip special keys
-                if (
-                  typeof k === "string" &&
-                  (k.startsWith("evt:") || k.startsWith("dlq:"))
-                )
-                  continue;
+                if (typeof k === "string" && (k.startsWith("evt:") || k.startsWith("dlq:"))) continue;
 
                 const val = registry[k];
 
                 // If value looks like a module (has .events), extract all events
                 if (val && typeof val === "object" && val.events) {
                   Object.keys(val.events).forEach((eventName) => {
-                    eventsList.push({
-                      id: eventName,
-                      name: eventName,
-                      module: k,
-                      count: val.events[eventName],
-                    });
+                    const id = eventName;
+                    const cnt = Number(val.events[eventName]) || 1;
+                    if (!eventsMap.has(id)) {
+                      eventsMap.set(id, { id, name: id, module: k, count: cnt });
+                    } else {
+                      const existing = eventsMap.get(id);
+                      existing.count = (existing.count || 0) + cnt;
+                    }
                   });
                 } else {
                   // Otherwise treat key as an event name
                   const eventName = k;
-                  const moduleName =
-                    typeof eventName === "string" && eventName.includes(":")
-                      ? String(eventName).split(":")[0]
-                      : "misc";
+                  const moduleName = typeof eventName === "string" && eventName.includes(":") ? String(eventName).split(":")[0] : "misc";
 
                   let cnt = 0;
-                  if (
-                    val &&
-                    typeof val === "object" &&
-                    (val.total || val.count)
-                  )
-                    cnt = val.total || val.count;
+                  if (val && typeof val === "object" && (val.total || val.count)) cnt = val.total || val.count;
                   else if (typeof val === "number") cnt = val;
                   else cnt = 1;
 
-                  eventsList.push({
-                    id: eventName,
-                    name: eventName,
-                    module: moduleName,
-                    count: cnt,
-                  });
+                  if (!eventsMap.has(eventName)) {
+                    eventsMap.set(eventName, { id: eventName, name: eventName, module: moduleName, count: cnt });
+                  } else {
+                    const existing = eventsMap.get(eventName);
+                    existing.count = (existing.count || 0) + cnt;
+                  }
                 }
               }
+
+              // Convert map to sorted array (most frequent first)
+              const eventsList = Array.from(eventsMap.values()).sort((a, b) => (b.count || 0) - (a.count || 0));
 
               if (eventsList.length === 0) {
                 showToast(
@@ -2538,6 +2526,9 @@
             }
 
             const resultsArea = document.getElementById("test-results-area");
+            // Ensure the Preview & Test section is visible when testing
+            const testExecArea = document.getElementById('test-execution-area');
+            if (testExecArea) testExecArea.style.display = 'block';
             resultsArea.innerHTML =
               '<div style="color: #657786;">⏳ Fetching real event data...</div>';
 
@@ -2620,6 +2611,7 @@
 
               let matched = null;
               const tried = [];
+              const testResults = [];
               for (let idx = 0; idx < flattened.length && idx < 10; idx++) {
                 const item = flattened[idx];
                 let payload = item.sample.payload || item.sample.data || item.sample;
@@ -2627,69 +2619,89 @@
                   try { payload = JSON.parse(payload); } catch(e){}
                 }
                 tried.push({ eventName: item.binding.eventName, sampleIndex: item.sampleIndex });
-                try {
-                  const result = await executeSQLWithPayload(query, payload, item.binding);
-                  // Consider a success when at least one row returned
-                  if (result && Array.isArray(result.data) && result.data.length > 0) {
-                    matched = { binding: item.binding, sampleIndex: item.sampleIndex, payload, result };
-                    break;
+
+                const r = await executeSQLWithPayload(query, payload, item.binding);
+                const entry = {
+                  success: !!(r && r.success),
+                  eventName: item.binding.eventName,
+                  sampleIndex: item.sampleIndex,
+                  payload,
+                  result: r && r.result ? r.result : null,
+                  error: r && r.error ? r.error : null,
+                  errorQuery: r && r.executedQuery ? r.executedQuery : null
+                };
+                testResults.push(entry);
+
+                // Consider a success when at least one row returned
+                if (entry.success && entry.result && Array.isArray(entry.result.data) && entry.result.data.length > 0) {
+                  matched = { binding: item.binding, sampleIndex: item.sampleIndex, payload, result: entry.result };
+                  // Persist minimal metadata immediately
+                  try {
+                    if (!variableMappings) variableMappings = {};
+                    variableMappings.executedQuery = entry.result.processedQuery || null;
+                    variableMappings.template = query;
+                    try { await saveAction(true); } catch(e) { console.warn('Auto-save failed after real event match', e); }
+                    showToast('Matched row found and metadata saved', 'success');
+                  } catch (e) {
+                    console.warn('Failed to persist match metadata', e);
                   }
-                } catch (e) {
-                  // ignore and continue to next sample
+                  break;
                 }
               }
 
+              const allPassed = testResults.length > 0 && testResults.every(r => r.success);
+              renderRealEventTestResults(testResults, allPassed);
+              // Expand all test details by default so query and execution are visible
+              try {
+                for (let i = 0; i < testResults.length; i++) {
+                  const el = document.getElementById(`test-${i}`);
+                  if (el) el.style.display = 'block';
+                }
+              } catch (e) {}
+
               if (!matched) {
                 // Offer retry option
-                resultsArea.innerHTML = `
+                const retryHtml = `
                   <div style="background:#fff3cd;padding:12px;border-radius:6px;border-left:3px solid #ffc107;">
                     <strong style="color:#856404">No matching row found</strong>
                     <div style="margin-top:6px;color:#856404">Tried ${flattened.length} sample(s). You can try again to fetch fresh events.</div>
                     <div style="margin-top:10px"><button id="retry-real-events" class="btn btn-primary">Try Again</button></div>
                   </div>
                 `;
+                const retryContainer = document.createElement('div');
+                retryContainer.innerHTML = retryHtml;
+                resultsArea.appendChild(retryContainer);
                 const retryBtn = document.getElementById('retry-real-events');
                 if (retryBtn) retryBtn.addEventListener('click', () => testWithRealEvents());
                 return;
               }
 
-              // Show only the matched row in UI
-              const only = matched.result.data && matched.result.data.length > 0 ? [matched.result.data[0]] : [];
-              const columns = Object.keys(only[0] || {});
-              resultsArea.innerHTML = `
-                <div style="background: #d4edda; padding: 10px; border-radius: 6px; border: 1px solid #c3e6cb; margin-bottom: 8px;">
-                  <strong style="color: #155724;">✓ Match Found (showing first matched row)</strong>
-                </div>
-                ${matched.result.processedQuery ? `<pre style="white-space: pre-wrap; background:#f6f8fa; padding:8px; border-radius:4px; border:1px solid #e1e8ed; margin-bottom:8px; font-size:0.85rem;">${escapeHtml(matched.result.processedQuery)}</pre>` : ''}
-                <div style="max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
-                    <thead>
-                      <tr style="background: #f8f9fa;">
-                        ${columns.map((col) => `<th style="padding: 8px; text-align: left; border-bottom: 2px solid #e1e8ed;">${col}</th>`).join("")}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${only.map(row => `<tr>${columns.map(col => `<td style="padding:8px;border-bottom:1px solid #eef2f7;">${row[col] !== null ? row[col] : "<em style='color:#999'>NULL</em>"}</td>`).join("")}</tr>`).join("")}
-                    </tbody>
-                  </table>
-                </div>
-              `;
-
-              // Persist metadata: save template + executedQuery + exampleOutputs
-              try {
-                if (!variableMappings) variableMappings = {};
-                // Persist only minimal metadata required by other modules:
-                // keep the template and the last resolved executedQuery. Avoid storing
-                // verbose example outputs or validation blobs to prevent duplication
-                // and large metadata growth.
-                variableMappings.executedQuery = matched.result.processedQuery || null;
-                variableMappings.template = query;
-
-                // Auto-save action metadata to persist these mappings
-                try { await saveAction(true); } catch(e) { console.warn('Auto-save failed after real event match', e); }
-                showToast('Matched row found and metadata saved', 'success');
-              } catch (e) {
-                console.warn('Failed to persist match metadata', e);
+              // If matched, also show the single matched row prominently (renderRealEventTestResults already displayed details)
+              if (matched && matched.result && Array.isArray(matched.result.data) && matched.result.data.length > 0) {
+                const only = [matched.result.data[0]];
+                const columns = Object.keys(only[0] || {});
+                const matchHtml = `
+                  <div style="background: #d4edda; padding: 10px; border-radius: 6px; border: 1px solid #c3e6cb; margin-bottom: 8px;">
+                    <strong style="color: #155724;">✓ Match Found (showing first matched row)</strong>
+                  </div>
+                  ${matched.result.processedQuery ? `<pre style="white-space: pre-wrap; background:#f6f8fa; padding:8px; border-radius:4px; border:1px solid #e1e8ed; margin-bottom:8px; font-size:0.85rem;">${escapeHtml(matched.result.processedQuery)}</pre>` : ''}
+                  <div style="max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                      <thead>
+                        <tr style="background: #f8f9fa;">
+                          ${columns.map((col) => `<th style="padding: 8px; text-align: left; border-bottom: 2px solid #e1e8ed;">${escapeHtml(col)}</th>`).join("")}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${only.map(row => `<tr>${columns.map(col => `<td style="padding:8px;border-bottom:1px solid #eef2f7;">${row[col] !== null ? escapeHtml(String(row[col])) : "<em style='color:#999'>NULL</em>"}</td>`).join("")}</tr>`).join("")}
+                      </tbody>
+                    </table>
+                  </div>
+                `;
+                const matchContainer = document.createElement('div');
+                matchContainer.innerHTML = matchHtml;
+                // insert match summary at top of results area
+                resultsArea.insertBefore(matchContainer, resultsArea.firstChild);
               }
             } catch (error) {
               console.error("Real event testing error:", error);
@@ -2704,60 +2716,54 @@
 
           async function executeSQLWithPayload(query, payload, binding) {
             // Call server-side executor which resolves templates using the canonical bridge
+            // Returns a structured object: { success: bool, error?: string, result?: {...}, executedQuery?: string }
             try {
-              // If binding provided, pass its eventName to server for accurate resolution
-              const eventName =
-                binding && binding.eventName ? binding.eventName : null;
+              if (!query || typeof query !== 'string' || !query.trim()) {
+                return { success: false, error: 'Missing or empty query', result: null, executedQuery: null };
+              }
 
-                // Console debug: show which binding/eventName and which client-side eventBridge (if any) is used
-                try {
-                  console.log('event execute -> sending to /api/event/execute', {
-                    eventName: eventName,
-                    hasClientEventBridge: !!globalThis.eventBridge,
-                    clientEventBridgeMethods: globalThis.eventBridge ? Object.keys(globalThis.eventBridge) : null,
-                    eventBindingsCount: (globalThis.eventBindings && Array.isArray(globalThis.eventBindings)) ? globalThis.eventBindings.length : 0
-                  });
-                } catch (dbg) {}
+              const eventName = binding && binding.eventName ? binding.eventName : null;
 
-                const resp = await fetch("/api/event/execute", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  query: query,
+              try {
+                console.log('event execute -> sending to /api/event/execute', {
                   eventName: eventName,
-                  payload: payload,
-                }),
-                timeout: 60000,
+                  hasClientEventBridge: !!globalThis.eventBridge,
+                  clientEventBridgeMethods: globalThis.eventBridge ? Object.keys(globalThis.eventBridge) : null,
+                  eventBindingsCount: (globalThis.eventBindings && Array.isArray(globalThis.eventBindings)) ? globalThis.eventBindings.length : 0
+                });
+              } catch (dbg) {}
+
+              const resp = await fetch('/api/event/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query, eventName: eventName, payload: payload }),
+                timeout: 60000
               });
 
-              // Read raw text so we can inspect executedQuery on errors
-              const raw = await resp.text().catch(() => "");
+              const raw = await resp.text().catch(() => '');
               let j = null;
               try { j = raw ? JSON.parse(raw) : null; } catch (e) { j = null; }
 
+              const executedQuery = j && (j.executedQuery || j.query) ? (j.executedQuery || j.query) : null;
+
               if (!resp.ok) {
                 const details = j && j.details ? j.details : raw;
-                const err = new Error(`Execution failed: ${resp.status} ${details}`);
-                err.executedQuery = j && (j.executedQuery || j.query) ? (j.executedQuery || j.query) : null;
-                throw err;
+                return { success: false, error: `HTTP ${resp.status}: ${details}`, result: j, executedQuery };
               }
 
               if (j && j.ok === false) {
-                const err = new Error(j.error || "Execution failed");
-                err.executedQuery = j.executedQuery || j.query || null;
-                throw err;
+                return { success: false, error: j.error || 'Execution failed', result: j, executedQuery };
               }
 
-              const data = Array.isArray(j && j.data ? j.data : null)
-                ? j.data
-                : (j && j.data && j.data.rows) || [];
+              const data = Array.isArray(j && j.data ? j.data : null) ? j.data : (j && j.data && j.data.rows) || [];
+
               return {
-                processedQuery: (j && j.query) || query,
-                data: data,
-                rowCount: (j && j.rowCount) || (data || []).length,
+                success: true,
+                result: { processedQuery: (j && j.query) || query, data: data, rowCount: (j && j.rowCount) || (data || []).length },
+                executedQuery
               };
             } catch (e) {
-              throw e;
+              return { success: false, error: e && e.message ? e.message : String(e), result: null, executedQuery: null };
             }
           }
 
@@ -2917,83 +2923,61 @@
               </div>
             `;
 
-            const details = testResults
-              .map((test, idx) => {
-                if (test.success) {
-                  return `
-                  <div style="background: white; border: 1px solid #d4edda; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: start;">
-                      <div>
-                        <strong style="color: #28a745; font-size: 0.9rem;">✓ Test ${
-                          idx + 1
-                        }: ${test.eventName} (Sample ${
-                    test.sampleIndex
-                  })</strong>
-                        <div style="font-size: 0.75rem; color: #657786; margin-top: 4px;">
-                          ${test.result.rowCount} row(s) returned
-                        </div>
-                      </div>
-                      <button class="btn btn-sm" onclick="toggleDetails('test-${idx}')" style="padding: 2px 8px; font-size: 0.75rem;">
-                        View Details
-                      </button>
+            function renderResultTable(data, limit = 10) {
+              if (!data || !Array.isArray(data) || data.length === 0) return '<div style="color:#657786;font-size:0.85rem;">No rows to display</div>';
+              const cols = Object.keys(data[0] || {});
+              const head = cols.map(c => `<th style="padding:6px;border-bottom:1px solid #e6eef6;background:#f7fbff;text-align:left;font-size:0.8rem">${escapeHtml(c)}</th>`).join('');
+              const rows = data.slice(0, limit).map(r => {
+                const cells = cols.map(c => `<td style="padding:6px;border-bottom:1px solid #f1f5f9;font-size:0.8rem;vertical-align:top">${escapeHtml(JSON.stringify(r[c] === undefined ? '' : r[c]))}</td>`).join('');
+                return `<tr>${cells}</tr>`;
+              }).join('');
+              const more = data.length > limit ? `<div style="font-size:0.75rem;color:#657786;margin-top:6px">Showing ${limit} of ${data.length} rows</div>` : '';
+              return `<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>${more}`;
+            }
+
+            const details = testResults.map((test, idx) => {
+              const id = `test-${idx}`;
+              const success = !!test.success;
+              const cardBg = success ? 'white' : '#fff8f0';
+              const border = success ? '1px solid #e6f4ea' : '1px solid #ffd8a8';
+              const titleColor = success ? '#1b7f3a' : '#8a4b00';
+              const rowCount = test.result && (Array.isArray(test.result.data) ? test.result.data.length : (test.result.rowCount || 0));
+
+              const executedSql = (test.result && (test.result.executedQuery || test.result.processedQuery)) || (test.errorQuery || '');
+
+              return `
+                <div style="background:${cardBg}; border-radius:8px; padding:12px; margin-bottom:12px; border:${border};">
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                    <div>
+                      <strong style="color:${titleColor}; font-size:0.95rem;">${success ? '✓' : '✕'} Test ${idx + 1}: ${escapeHtml(test.eventName || 'unnamed')} (Sample ${test.sampleIndex || '-'})</strong>
+                      <div style="font-size:0.8rem;color:#657786;margin-top:4px">${success ? `${rowCount} row(s) returned` : `Error: ${escapeHtml(test.error || 'Unknown')}`}</div>
                     </div>
-                    <div id="test-${idx}" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e1e8ed;">
-                      <div style="margin-bottom: 6px;">
-                        <strong style="font-size: 0.75rem;">Event Payload:</strong>
-                        <pre style="background: #f8f9fa; padding: 6px; border-radius: 4px; font-size: 0.7rem; overflow-x: auto;">${JSON.stringify(
-                          test.payload,
-                          null,
-                          2
-                        )}</pre>
-                      </div>
-                      <div>
-                        <strong style="font-size: 0.75rem;">Executed SQL:</strong>
-                        <code style="background: #f8f9fa; display: block; padding: 6px; border-radius: 4px; font-size: 0.7rem; overflow-x: auto;">${
-                          test.result.processedQuery
-                        }</code>
-                      </div>
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <button class="btn btn-sm" onclick="(function(){const t=document.getElementById('${id}');t.style.display=t.style.display==='none'?'block':'none'})()" style="padding:4px 8px;font-size:0.8rem">Details</button>
+                      <button class="btn btn-sm" onclick="(function(){navigator.clipboard && navigator.clipboard.writeText(${JSON.stringify(executedSql)})})()" style="padding:4px 8px;font-size:0.8rem">Copy SQL</button>
                     </div>
                   </div>
-                `;
-                } else {
-                  return `
-                  <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                  <div id="${id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #eef4fb">
+                    <div style="display:flex;gap:12px;flex-direction:column">
                       <div>
-                        <strong style="color: #856404; font-size: 0.9rem;">✕ Test ${
-                          idx + 1
-                        }: ${test.eventName} (Sample ${
-                    test.sampleIndex
-                  })</strong>
-                        <div style="font-size: 0.75rem; color: #721c24; margin-top: 4px;">
-                          Error: ${test.error}
-                        </div>
+                        <strong style="font-size:0.8rem">Event Payload</strong>
+                        <pre style="background:#f8f9fa;padding:8px;border-radius:6px;overflow:auto;font-size:0.8rem;max-height:240px">${escapeHtml(JSON.stringify(test.payload || {}, null, 2))}</pre>
                       </div>
-                      <button class="btn btn-sm" onclick="toggleDetails('test-${idx}')" style="padding: 2px 8px; font-size: 0.75rem;">
-                        View Details
-                      </button>
-                    </div>
-                    <div id="test-${idx}" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e1e8ed;">
                       <div>
-                        <strong style="font-size: 0.75rem;">Event Payload:</strong>
-                        <pre style="background: #f8f9fa; padding: 6px; border-radius: 4px; font-size: 0.7rem; overflow-x: auto;">${JSON.stringify(
-                          test.payload,
-                          null,
-                          2
-                        )}</pre>
+                        <strong style="font-size:0.8rem">SQL Preview / Executed SQL</strong>
+                        <pre style="background:#f4f7fb;padding:8px;border-radius:6px;overflow:auto;font-size:0.8rem">${escapeHtml(executedSql || (test.result && test.result.processedQuery) || '')}</pre>
+                        ${test.error ? `<div style="margin-top:6px;color:#8a4b00;font-size:0.85rem"><strong>Error Details:</strong> ${escapeHtml(test.error)}</div>` : ''}
                       </div>
-                      <div style="margin-top:8px;">
-                        <strong style="font-size: 0.75rem;">Executed SQL:</strong>
-                        <pre style="background: #f8f9fa; padding: 6px; border-radius: 4px; font-size: 0.7rem; overflow-x: auto; color:#721c24;">${escapeHtml(
-                          test.errorQuery || (test.result && test.result.processedQuery) || ''
-                        )}</pre>
+                      <div>
+                        <strong style="font-size:0.8rem">Result (first rows)</strong>
+                        <div style="margin-top:6px">${renderResultTable(Array.isArray(test.result && test.result.data) ? test.result.data : (Array.isArray(test.result) ? test.result : []), 10)}</div>
                       </div>
+                      ${!success && test.result && test.result.executedQuery ? `<div style="margin-top:8px"><strong style="font-size:0.8rem">Server executedQuery (from error response)</strong><pre style="background:#fff1f0;padding:8px;border-radius:6px;overflow:auto">${escapeHtml(test.result.executedQuery || '')}</pre></div>` : ''}
                     </div>
                   </div>
-                `;
-                }
-              })
-              .join("");
+                </div>
+              `;
+            }).join('');
 
             resultsArea.innerHTML = summary + details;
           }
@@ -3339,22 +3323,41 @@
             try {
               showToast("Asking AI for suggestions...", "info");
 
-              // Build context for AI
-              let context = "Event Payloads Available:\n\n";
+              // Build context for AI using detected parameter paths (primaryFields & metadataFields)
+              let context = "Detected event parameters and exact paths:\n\n";
 
               eventBindings.forEach((binding) => {
                 context += `Event: ${binding.eventName}\n`;
-                context += `Fields: ${Object.keys(binding.payloadSchema || {})
-                  .map((f) => {
-                    const info = binding.payloadSchema[f];
-                    return `${f} (${info.type})`;
-                  })
-                  .join(", ")}\n\n`;
+                const pf = binding.payloadSchema?.primaryFields || {};
+                const mf = binding.payloadSchema?.metadataFields || {};
+
+                // List primary fields with their detected path, sample and type
+                const pfLines = Object.keys(pf).map((k) => {
+                  const info = pf[k] || {};
+                  const path = info.path || k;
+                  const sample = info.sample === undefined ? '<no-sample>' : JSON.stringify(info.sample);
+                  const type = info.type || typeof info.sample;
+                  return `  - {{${binding.eventName}.${path}}} (primary) — sample: ${sample}, type: ${type}`;
+                });
+
+                const mfLines = Object.keys(mf).map((k) => {
+                  const info = mf[k] || {};
+                  const path = info.path || k;
+                  const sample = info.sample === undefined ? '<no-sample>' : JSON.stringify(info.sample);
+                  const type = info.type || typeof info.sample;
+                  return `  - {{${binding.eventName}.${path}}} (metadata) — sample: ${sample}, type: ${type}`;
+                });
+
+                if (pfLines.length === 0 && mfLines.length === 0) {
+                  context += `  (no detected fields)\n\n`;
+                } else {
+                  context += pfLines.concat(mfLines).join('\n') + '\n\n';
+                }
               });
 
               context += `\nBusiness Use Case: ${description}\n\n`;
               context +=
-                "Generate a SQL query that uses event payload fields with {{event.fieldName}} syntax.";
+                "Generate a SQL query that ONLY uses the variables listed above. Use the exact template syntax shown (e.g. {{EVENT_NAME.path}}). Do NOT invent or assume any other fields or paths. Return only the SQL query, no explanation, no markdown code fences.";
 
               const aiTarget =
                 globalThis.RUNTIME_CONFIG &&
@@ -3481,10 +3484,7 @@
                   }">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <div><div class="list-item-title">${a.name || a.id}</div>
-                  <div class="list-item-desc">${(a.description || "").slice(
-                    0,
-                    120
-                  )}</div></div>
+                  </div>
                   <div style="display:flex; gap:8px;">
                     <button class="btn btn-secondary" data-edit-id="${
                       a.id
@@ -5476,15 +5476,7 @@
               const items = (groups[gk] || [])
                 .map(
                   (ev) =>
-                    `\n            <div class="list-item type-event" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">\n              <div style="display:flex; justify-content:space-between; align-items:center;">\n                <div>\n                  <div class="list-item-title">${
-                      ev.name
-                    } <span class="muted">${
-                      ev.id
-                    }</span></div>\n                  <div class="list-item-desc">${
-                      ev.description || ""
-                    } <span class="badge">${
-                      ev.target || ""
-                    }</span></div>\n                </div>\n                <div style="display:flex; gap:8px;">\n                  <button class="btn btn-secondary" disabled>Read-only</button>\n                </div>\n              </div>\n            </div>\n          `
+                    `\n            <div class="list-item type-event" style="border-left:4px solid var(--brand-accent); margin-bottom:8px;">\n              <div style="display:flex; justify-content:space-between; align-items:center;">\n                <div>\n                  <div class="list-item-title">${ev.name}${ev.id && ev.id !== ev.name ? ` <span class="muted">${ev.id}</span>` : ""}</div>\n                </div>\n                <div style="display:flex; gap:8px;">\n                  <button class="btn btn-secondary" disabled>Read-only</button>\n                </div>\n              </div>\n            </div>\n          `
                 )
                 .join("");
               const gid = `group-events-${encodeURIComponent(gk)}`;
@@ -5702,7 +5694,6 @@
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                           <div>
                             <div class="list-item-title">${title}</div>
-                            <div class="list-item-desc">${desc} ${badge}</div>
                           </div>
                           <div style="display:flex; gap:8px;">
                             <button class="btn btn-secondary" onclick="editEvent('${id}')">Edit</button>

@@ -46,23 +46,40 @@ async function publishEvent(executionId, event) {
 async function subscribeJobs(handler, opts = {}) {
   const topic = 'ORCHESTRATIONS_JOBS';
   const groupId = opts.groupId || 'orchestrator_worker';
-  const consumer = kafka.consumer({ groupId });
+  // production-grade consumer options (tunable via env)
+  const sessionTimeout = parseInt(process.env.KAFKA_SESSION_TIMEOUT_MS || '30000', 10);
+  const heartbeatInterval = parseInt(process.env.KAFKA_HEARTBEAT_INTERVAL_MS || '3000', 10);
+  const maxPollInterval = parseInt(process.env.KAFKA_MAX_POLL_INTERVAL_MS || '300000', 10);
+  const fetchMaxBytes = parseInt(process.env.KAFKA_CONSUMER_FETCH_MAX_BYTES || '5242880', 10);
+
+  const consumerOpts = { groupId, sessionTimeout, heartbeatInterval };
+  if (process.env.KAFKA_GROUP_INSTANCE_ID) consumerOpts.groupInstanceId = process.env.KAFKA_GROUP_INSTANCE_ID;
+
+  const consumer = kafka.consumer(consumerOpts);
   await consumer.connect();
   await consumer.subscribe({ topic, fromBeginning: false });
   consumerRunning = true;
+
   await consumer.run({
+    autoCommit: false,
     eachMessage: async ({ topic, partition, message }) => {
+      const offset = (Number(message.offset) + 1).toString();
       try {
         const value = message.value ? message.value.toString() : null;
         const payload = value ? JSON.parse(value) : null;
+        // handler should be resilient and fast; apply a soft timeout if needed in handler itself
         await handler(payload);
+        // manual commit after successful processing
+        await consumer.commitOffsets([{ topic, partition, offset }]);
       } catch (e) {
         console.error('[queue:kafka] handler error', e && e.stack ? e.stack : e);
-        // In Kafka, failed message handling often requires manual policy (DLQ topic)
+        // publish to DLQ for later inspection/replay
         try {
           await ensureProducer();
           await producer.send({ topic: 'ORCHESTRATIONS_DLQ', messages: [{ key: null, value: sc({ error: e.message || String(e), original: message.value ? message.value.toString() : null }) }] });
         } catch (ee) { console.error('[queue:kafka] DLQ publish failed', ee && ee.stack ? ee.stack : ee); }
+        // advance offset to avoid blocking the partition; replay can be handled from DLQ
+        try { await consumer.commitOffsets([{ topic, partition, offset }]); } catch (ce) { console.error('[queue:kafka] commit after DLQ failed', ce && ce.stack ? ce.stack : ce); }
       }
     }
   });

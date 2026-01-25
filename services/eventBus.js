@@ -97,8 +97,8 @@ async function init() {
   // try connect local level DB (best-effort)
   try { await _connectDB(); } catch (e) { /* ignore */ }
 
-  // seed eventRegistry from any existing in-memory registry
-  try { eventRegistry.init({ existingRegistry: registry }); } catch (e) {}
+  // seed eventRegistry from any existing in-memory registry, and share DB handle
+  try { eventRegistry.init({ existingRegistry: registry, sharedDB: db }); } catch (e) {}
 
   // recover any pending events from DB so delivery resumes after restart
   try { await recoverPendingEvents(); } catch (e) { console.warn('recoverPendingEvents failed', e && e.message ? e.message : e); }

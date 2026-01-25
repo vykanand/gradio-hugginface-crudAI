@@ -1,63 +1,129 @@
 version: '3.8'
+
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
+    image: zookeeper:3.6.4
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      ZOO_4LW_COMMANDS_WHITELIST: "srvr,mntr,ruok,conf"
     ports:
-      - '2181:2181'
+      - "2181:2181"
+    volumes:
+      - zk_data:/data
+      - zk_datalog:/datalog
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep Mode"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  zk-cleaner:
+    image: zookeeper:3.6.4
+    command: ["bash","-c","/usr/local/bin/zk-cleaner.sh"]
+    volumes:
+      - ./tools/zk-cleaner.sh:/usr/local/bin/zk-cleaner.sh:ro
+    environment:
+      ZK_HOST: zookeeper:2181
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    restart: 'no'
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-    ports:
-      - '9092:9092'
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
+      zk-cleaner:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_BROKER_ID: "1"
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
+      KAFKA_TOOLS_LOG4J_LOGLEVEL: ERROR
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    stop_grace_period: 60s
+    restart: unless-stopped
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
     image: gradio-hf-crudai-app
+    command: ["/bin/bash","-c","/usr/src/app/scripts/wait-for-kafka.sh kafka 9092 60 && npm install --no-audit --no-fund && exec node server.js"]
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
-      - PORT=5050
-      - KAFKA_BROKERS=kafka:9092
-      - DISABLE_KAFKA=false
-      - ADMIN_API_KEY=changeme
-      - NODE_ENV=development
+      PORT: "5050"
+      KAFKA_BROKERS: kafka:9092
+      DISABLE_KAFKA: "false"
+      ADMIN_API_KEY: changeme
+      NODE_ENV: development
+      AUTO_BACKUP_ENABLED: "${AUTO_BACKUP_ENABLED:-true}"
+      AUTO_RESTORE_ENABLED: "${AUTO_RESTORE_ENABLED:-true}"
+      AUTO_BACKUP_INTERVAL: "${AUTO_BACKUP_INTERVAL:-3600000}"
+      MAX_BACKUPS: "${MAX_BACKUPS:-10}"
+    ports:
+      - "5050:5050"
     volumes:
       - ./:/usr/src/app:delegated
       - /usr/src/app/node_modules
-    ports:
-      - '5050:5050'
-    depends_on:
-      - kafka
-      - zookeeper
+      - app_storage:/usr/src/app/storage/event_registry_db
+      - ./backups:/usr/src/app/backups
+      - ./restore:/usr/src/app/restore
     init: true
-    command: ["/bin/bash","-c","/usr/src/app/scripts/wait-for-kafka.sh kafka 9092 60 && npm install --no-audit --no-fund && exec node server.js"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5050/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
     restart: unless-stopped
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile
-    init: true
     command: ["/bin/bash","-c","/usr/src/app/scripts/wait-for-kafka.sh kafka 9092 60 && npm install --no-audit --no-fund && exec npm run worker"]
     depends_on:
-      - kafka
-      - zookeeper
+      kafka:
+        condition: service_healthy
     environment:
-      - KAFKA_BROKERS=kafka:9092
-      - NODE_ENV=development
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CONSUMER_FETCH_MAX_BYTES: "5242880"
+      KAFKA_HEARTBEAT_INTERVAL_MS: "3000"
+      KAFKA_MAX_POLL_INTERVAL_MS: "300000"
+      KAFKA_SESSION_TIMEOUT_MS: "30000"
+      NODE_ENV: development
+      WORKER_PROCESS: "true"
     volumes:
       - ./:/usr/src/app:delegated
       - /usr/src/app/node_modules
+      - app_storage:/usr/src/app/storage/event_registry_db
+    stop_grace_period: 45s
     restart: unless-stopped
+
+volumes:
+  zk_data:
+  zk_datalog:
+  kafka_data:
+  app_storage:
