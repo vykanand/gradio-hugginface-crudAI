@@ -787,6 +787,11 @@
         z-index: 2;
       }
     </style>
+    <!-- Variable System & Modal Components -->
+    <script src="builder-tabs/variable-registry.js"></script>
+    <script src="builder-tabs/event-data-modal.js"></script>
+    <script src="builder-tabs/db-picker-modal.js"></script>
+    <script src="builder-tabs/variable-insertion.js"></script>
   </head>
   <body>
     <div class="header">
@@ -807,7 +812,7 @@
         <button class="tab" onclick="switchTab('custom-logic', event)">Custom Logic</button>
         <button class="tab" onclick="switchTab('events', event)">Events</button>
         <button class="tab" onclick="switchTab('actions', event)">
-          Actions
+          🗄️ DB Actions
         </button>
         <button class="tab" onclick="switchTab('executions', event)">
           Executions
@@ -966,7 +971,7 @@
               Business Taxonomy
             </div>
             <div style="margin-left: 12px; color: #657786">
-              Choose a tab to view Concepts, Events or Actions
+              Choose a tab to view Concepts, Events or DB Actions
             </div>
           </div>
 
@@ -1047,7 +1052,7 @@
         </div>
       </div>
 
-      <div class="main" style="display: flex; gap: 12px; position: relative; padding-right: 340px;">
+      <div class="main" style="display: flex; gap: 12px; position: relative;">
         <!-- Left: Actions list -->
         <div
           style="
@@ -1079,8 +1084,8 @@
                 <label class="form-label" for="action-name">Name</label>
                 <input id="action-name" class="form-input" />
               </div>
-
-              <!-- Event Bindings Section -->
+              
+              <!-- Sample Event Data Section -->
               <div
                 class="form-group"
                 style="
@@ -1099,7 +1104,7 @@
                   "
                 >
                   <div class="form-label" style="margin: 0">
-                    ⚡ Event Triggers
+                    📊 Sample Event Data
                   </div>
                   <button
                     class="btn btn-secondary"
@@ -1108,7 +1113,7 @@
                     style="padding: 4px 12px; font-size: 0.85rem"
                     disabled
                   >
-                    + Add Event
+                    + Add Event Data
                   </button>
                 </div>
                 <div
@@ -1130,6 +1135,59 @@
                   >
                     No events connected. Click "Add Event" to bind event
                     payloads to this action.
+                  </div>
+                </div>
+              </div>
+              <!-- DB Picker Section -->
+              <div
+                class="form-group"
+                style="
+                  border: 2px solid #e1e8ed;
+                  border-radius: 8px;
+                  padding: 12px;
+                  background: #f8f9fa;
+                  margin-top: 12px;
+                "
+              >
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 8px;
+                  "
+                >
+                  <div class="form-label" style="margin: 0">
+                    🗄️ DB Picker
+                  </div>
+                  <button
+                    class="btn btn-secondary"
+                    id="add-db-attribute"
+                    type="button"
+                    style="padding: 4px 12px; font-size: 0.85rem"
+                    disabled
+                  >
+                    + Pick DB Column
+                  </button>
+                </div>
+                <div
+                  id="db-attributes-list"
+                  style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    min-height: 40px;
+                  "
+                >
+                  <div
+                    style="
+                      color: #8899a6;
+                      font-size: 0.85rem;
+                      text-align: center;
+                      padding: 12px;
+                    "
+                  >
+                    No DB attributes selected. Click "Add DB Attribute" to pick table columns to persist as mappings.
                   </div>
                 </div>
               </div>
@@ -1342,24 +1400,6 @@
           </div>
         </div>
 
-        <!-- Right: DB Sidebar (accordion) -->
-        <div id="actions-db-sidebar"
-          style="
-            position: absolute;
-            top: 56px;
-            right: 0;
-            bottom: 0;
-            width: 320px;
-            background: white;
-            border-left: 1px solid #eef2f7;
-            padding: 12px;
-            overflow: auto;
-            z-index: 4;
-          "
-        >
-          <h3 style="margin-bottom: 8px">Database Explorer</h3>
-          <div id="db-accordion">Loading DB schema...</div>
-        </div>
       </div>
 
       <script>
@@ -1483,6 +1523,7 @@
         (function () {
           let autosaveTimer = null;
           let currentAction = null; // object being edited
+          let pendingChanges = false; // track unsaved edits; only save on explicit Save
           let eventBindings = []; // Array of {eventId, eventName, payloadSchema}
           let variableMappings = {}; // {varName: {eventId, field, type}}
 
@@ -1500,9 +1541,19 @@
             function setupHandlers() {
               // Setup event binding handlers
               setupEventBindingHandlers();
+                // Setup DB attribute handlers
+                setupDbAttributeHandlers();
 
               // Setup SQL parameter detection
               setupSQLParameterDetection();
+
+              // Enable variable drag-and-drop on query textarea
+              if (typeof VariableInsertion !== 'undefined') {
+                const queryTextarea = document.getElementById("action-query");
+                const descTextarea = document.getElementById("action-desc");
+                if (queryTextarea) VariableInsertion.enableDropZone(queryTextarea);
+                if (descTextarea) VariableInsertion.enableDropZone(descTextarea);
+              }
 
               // Setup preview/test handlers
               setupPreviewHandlers();
@@ -1514,6 +1565,13 @@
                   "click",
                   generateQueryFromDescription
                 );
+                // wire description input to update enablement
+                const descEl = document.getElementById("action-desc");
+                if (descEl) {
+                  descEl.addEventListener('input', updateGenerateEnabled);
+                }
+                // initial check
+                setTimeout(updateGenerateEnabled, 0);
               }
 
               // Setup Use Generated Query button
@@ -1621,6 +1679,15 @@
                     .join(", ")}\n`;
                 }
               });
+
+              // Include any selected DB attributes (persisted in variableMappings.dbAttributes)
+              if (variableMappings && Array.isArray(variableMappings.dbAttributes) && variableMappings.dbAttributes.length > 0) {
+                context += '\nSelected DB attributes (persisted):\n';
+                variableMappings.dbAttributes.forEach(a => {
+                  context += ` - ${a.table}.${a.column}\n`;
+                });
+                context += '\n';
+              }
 
               // Append bound event information (if any) so AI can use correct binding names and payload fields
               let eventContext = "";
@@ -1867,13 +1934,154 @@
             }
           }
 
-          // ====== EVENT BINDING & PAYLOAD MAPPING SYSTEM ======
+          // ====== EVENT BINDING & PAYLOAD MAPPING SYSTEM (NEW MODAL SYSTEM) ======
 
           function setupEventBindingHandlers() {
             const addEventBtn = document.getElementById("add-event-binding");
             if (addEventBtn) {
-              addEventBtn.addEventListener("click", showEventSelector);
+              addEventBtn.addEventListener("click", showEventDataModal);
             }
+          }
+
+          async function showEventDataModal() {
+            try {
+              // Get current event variables
+              const preSelected = (variableMappings && variableMappings.eventVariables) || [];
+              
+              // Show modal
+              const selected = await EventDataModal.show({ preSelected });
+              
+              // Save selected variables
+              if (!variableMappings) variableMappings = {};
+              variableMappings.eventVariables = selected;
+              
+              // Register in variable registry
+              selected.forEach(varPath => {
+                VariableRegistry.register(varPath, { source: 'event' });
+              });
+              
+              // Mark changes and render
+              try { pendingChanges = true; } catch(e) {}
+              try { document.getElementById("action-status").textContent = "Pending changes..."; } catch(e) {}
+              renderEventBindings();
+              
+              showToast(`${selected.length} event variables selected`, 'success');
+            } catch (error) {
+              console.error('Event Data Modal error:', error);
+              showToast('Failed to open event data selector', 'error');
+            }
+          }
+
+          async function setupDbAttributeHandlers() {
+            const addDbBtn = document.getElementById('add-db-attribute');
+            if (addDbBtn) {
+              // enable button only when schema is available
+              try {
+                const schema = await loadSchemaMetadata();
+                if (schema && Array.isArray(schema.tablesList) && schema.tablesList.length > 0) addDbBtn.disabled = false;
+              } catch (e) {}
+              addDbBtn.addEventListener('click', showDbPickerModal);
+            }
+            // render initial list
+            try { renderDbAttributesList(); } catch(e){}
+          }
+
+          async function showDbPickerModal() {
+            try {
+              // Get current DB variables
+              const preSelected = (variableMappings && variableMappings.dbAttributes) || [];
+              
+              // Show modal
+              const selected = await DbPickerModal.show({ preSelected });
+              
+              // Save selected variables
+              if (!variableMappings) variableMappings = {};
+              variableMappings.dbAttributes = selected;
+              
+              // Register in variable registry
+              selected.forEach(col => {
+                const varPath = col.path || `{{db.${col.table}.${col.column}}}`;
+                VariableRegistry.register(varPath, { 
+                  source: 'db', 
+                  table: col.table, 
+                  column: col.column 
+                });
+              });
+              
+              // Mark changes and render
+              try { pendingChanges = true; } catch(e) {}
+              try { document.getElementById("action-status").textContent = "Pending changes..."; } catch(e) {}
+              renderDbAttributesList();
+              
+              showToast(`${selected.length} DB columns selected`, 'success');
+            } catch (error) {
+              console.error('DB Picker Modal error:', error);
+              showToast('Failed to open DB picker', 'error');
+            }
+          }
+
+          function renderDbAttributesList() {
+            const el = document.getElementById('db-attributes-list');
+            if (!el) return;
+            const attrs = (variableMappings && variableMappings.dbAttributes) ? variableMappings.dbAttributes : [];
+            if (!attrs || attrs.length === 0) {
+              el.innerHTML = `<div style="color:#8899a6;font-size:0.85rem;text-align:center;padding:12px">No DB columns selected. Click "Pick DB Column" to select database fields.</div>`;
+              return;
+            }
+            el.innerHTML = '';
+            // render draggable pills with variable paths
+            const pillWrap = document.createElement('div');
+            pillWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px';
+            attrs.forEach((a, idx) => {
+              const variablePath = a.path || `{{db.${a.table}.${a.column}}}`;
+              const pill = document.createElement('div');
+              pill.draggable = true;
+              pill.style.cssText = 'background:#10b981;color:white;padding:6px 10px;border-radius:999px;display:flex;align-items:center;gap:8px;font-size:0.85rem;cursor:move;transition:all 0.2s;border:2px solid #10b981';
+              
+              pill.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', variablePath);
+                e.dataTransfer.effectAllowed = 'copy';
+                pill.style.opacity = '0.5';
+              });
+              
+              pill.addEventListener('dragend', () => {
+                pill.style.opacity = '1';
+              });
+              
+              pill.onmouseenter = () => {
+                pill.style.background = '#059669';
+                pill.style.transform = 'scale(1.05)';
+              };
+              pill.onmouseleave = () => {
+                pill.style.background = '#10b981';
+                pill.style.transform = 'scale(1)';
+              };
+              
+              const textSpan = document.createElement('span');
+              textSpan.style.fontFamily = 'monospace';
+              textSpan.textContent = variablePath;
+              pill.appendChild(textSpan);
+              
+              const removeBtn = document.createElement('button');
+              removeBtn.className = 'btn btn-sm';
+              removeBtn.style.cssText = 'padding:2px 6px;font-size:0.75rem;background:transparent;border:none;color:white;cursor:pointer';
+              removeBtn.textContent = '✕';
+              removeBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                variableMappings.dbAttributes.splice(idx,1);
+                // Unregister from variable registry
+                VariableRegistry.unregister(variablePath);
+                // mark unsaved changes; do not auto-save
+                try { pendingChanges = true; } catch(e) {}
+                try { document.getElementById("action-status").textContent = "Pending changes..."; } catch(e) {}
+                renderDbAttributesList();
+              });
+              pill.appendChild(removeBtn);
+              pillWrap.appendChild(pill);
+            });
+            el.appendChild(pillWrap);
+            // reflect generate button enablement whenever DB attributes change
+            try { updateGenerateEnabled(); } catch (e) { console.warn(e); }
           }
 
           async function showEventSelector() {
@@ -2226,120 +2434,73 @@
 
           function renderEventBindings() {
             const container = document.getElementById("event-bindings-list");
+            const eventVars = (variableMappings && variableMappings.eventVariables) || [];
 
-            if (eventBindings.length === 0) {
+            if (eventVars.length === 0) {
               container.innerHTML =
-                '<div style="color: #8899a6; font-size: 0.85rem; text-align: center; padding: 12px;">No events connected. Click "Add Event" to bind event payloads to this action.</div>';
+                '<div style="color: #8899a6; font-size: 0.85rem; text-align: center; padding: 12px;">No event data selected. Click "Add Event Data" to select event fields.</div>';
               return;
             }
 
-            container.innerHTML = eventBindings
-              .map((binding, index) => {
-                const primaryFields =
-                  binding.payloadSchema?.primaryFields || {};
-                const metadataFields =
-                  binding.payloadSchema?.metadataFields || {};
-                const hasPrimary = Object.keys(primaryFields).length > 0;
-                const hasMetadata = Object.keys(metadataFields).length > 0;
-
-                return `
-              <div style="background: white; border: 1px solid #e1e8ed; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: start;">
-                  <div style="flex: 1;">
-                    <div style="font-weight: 600; color: #2c3e50; font-size: 0.9rem;">${
-                      binding.eventName
-                    }</div>
-                    <div style="font-size: 0.75rem; color: #8899a6; margin-top: 2px;">${
-                      binding.eventDescription || "Event data fields"
-                    }</div>
-
-                    ${
-                      hasPrimary
-                        ? `
-                    <div style="margin-top: 8px;">
-                      <div style="font-size: 0.75rem; font-weight: 600; color: #2c3e50; margin-bottom: 4px;">📦 Event Data (Click to insert):</div>
-                      <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                        ${Object.keys(primaryFields)
-                          .map((field) => {
-                            const info = primaryFields[field];
-                            const sampleDisplay =
-                              info.sample !== undefined && info.sample !== null
-                                ? typeof info.sample === "object"
-                                  ? JSON.stringify(info.sample).substring(0, 30)
-                                  : String(info.sample).substring(0, 30)
-                                : "";
-                            return `
-                            <span
-                              style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 10px; border-radius: 14px; font-size: 0.75rem; cursor: pointer; box-shadow: 0 2px 4px rgba(102,126,234,0.3); transition: all 0.2s;"
-                              onclick="insertPayloadField('${field}', '${
-                              binding.eventId
-                            }')"
-                              onmouseenter="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 8px rgba(102,126,234,0.5)';"
-                              onmouseleave="this.style.transform=''; this.style.boxShadow='0 2px 4px rgba(102,126,234,0.3)';"
-                              title="${info.description}${
-                              sampleDisplay ? "\nSample: " + sampleDisplay : ""
-                            }"
-                            >
-                              <strong>${field}</strong> ${
-                              sampleDisplay
-                                ? `= "${sampleDisplay}"`
-                                : `(${info.type})`
-                            }
-                            </span>
-                          `;
-                          })
-                          .join("")}
-                      </div>
-                    </div>
-                    `
-                        : ""
-                    }
-
-                    ${
-                      hasMetadata
-                        ? `
-                    <div style="margin-top: 8px;">
-                      <div
-                        style="font-size: 0.75rem; color: #657786; cursor: pointer; user-select: none;"
-                        onclick="toggleMetadata('metadata-${index}')"
-                      >
-                        <span id="metadata-toggle-${index}">▶</span> Event Metadata (${
-                            Object.keys(metadataFields).length
-                          } fields)
-                      </div>
-                      <div id="metadata-${index}" style="display: none; margin-top: 4px; padding-left: 12px;">
-                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                          ${Object.keys(metadataFields)
-                            .map((field) => {
-                              const info = metadataFields[field];
-                              return `
-                              <span
-                                style="background: #f0f3f7; color: #657786; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; cursor: pointer; border: 1px solid #e1e8ed;"
-                                onclick="insertPayloadField('${field}', '${binding.eventId}')"
-                                title="${info.description}"
-                              >
-                                ${field}
-                              </span>
-                            `;
-                            })
-                            .join("")}
-                        </div>
-                      </div>
-                    </div>
-                    `
-                        : ""
-                    }
-                  </div>
-                  <button class="btn btn-danger" onclick="removeEventBinding(${index})" style="padding: 4px 8px; font-size: 0.75rem;">✕</button>
-                </div>
-              </div>
-            `;
-              })
-              .join("");
-
+            container.innerHTML = '';
+            // render draggable pills with variable paths
+            const pillWrap = document.createElement('div');
+            pillWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px';
+            
+            eventVars.forEach((variablePath, idx) => {
+              const pill = document.createElement('div');
+              pill.draggable = true;
+              pill.style.cssText = 'background:#1da1f2;color:white;padding:6px 10px;border-radius:999px;display:flex;align-items:center;gap:8px;font-size:0.85rem;cursor:move;transition:all 0.2s;border:2px solid #1da1f2';
+              
+              pill.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', variablePath);
+                e.dataTransfer.effectAllowed = 'copy';
+                pill.style.opacity = '0.5';
+              });
+              
+              pill.addEventListener('dragend', () => {
+                pill.style.opacity = '1';
+              });
+              
+              pill.onmouseenter = () => {
+                pill.style.background = '#1a91da';
+                pill.style.transform = 'scale(1.05)';
+              };
+              pill.onmouseleave = () => {
+                pill.style.background = '#1da1f2';
+                pill.style.transform = 'scale(1)';
+              };
+              
+              const textSpan = document.createElement('span');
+              textSpan.style.fontFamily = 'monospace';
+              textSpan.textContent = variablePath;
+              pill.appendChild(textSpan);
+              
+              const removeBtn = document.createElement('button');
+              removeBtn.className = 'btn btn-sm';
+              removeBtn.style.cssText = 'padding:2px 6px;font-size:0.75rem;background:transparent;border:none;color:white;cursor:pointer';
+              removeBtn.textContent = '✕';
+              removeBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                variableMappings.eventVariables.splice(idx,1);
+                // Unregister from variable registry
+                VariableRegistry.unregister(variablePath);
+                // mark unsaved changes
+                try { pendingChanges = true; } catch(e) {}
+                try { document.getElementById("action-status").textContent = "Pending changes..."; } catch(e) {}
+                renderEventBindings();
+              });
+              pill.appendChild(removeBtn);
+              pillWrap.appendChild(pill);
+            });
+            
+            container.appendChild(pillWrap);
+            
             // Show test execution area when events are bound
             document.getElementById("test-execution-area").style.display =
               "block";
+            // update Generate button enablement when events change
+            try { updateGenerateEnabled(); } catch (e) { console.warn(e); }
           }
 
           globalThis.toggleMetadata = function (id) {
@@ -2423,6 +2584,8 @@
               <div style="font-size: 0.85rem; color: #2c3e50; margin-bottom: 8px;">
                 <strong>Detected Parameters:</strong>
               </div>
+              <div id="selected-db-attributes" style="margin-bottom:8px;">
+              </div>
               ${params
                 .map((param) => {
                   // param is now {eventName, fieldName, fullMatch}
@@ -2499,6 +2662,9 @@
                 })
                 .join("")}
             `;
+
+            // DB attributes are rendered in the dedicated DB Attributes section
+            try { renderDbAttributesList(); } catch (e) {}
           }
           
 
@@ -2640,8 +2806,10 @@
                     if (!variableMappings) variableMappings = {};
                     variableMappings.executedQuery = entry.result.processedQuery || null;
                     variableMappings.template = query;
-                    try { await saveAction(true); } catch(e) { console.warn('Auto-save failed after real event match', e); }
-                    showToast('Matched row found and metadata saved', 'success');
+                    // mark as pending changes instead of auto-saving
+                    try { pendingChanges = true; } catch(e) {}
+                    try { document.getElementById("action-status").textContent = "Pending changes..."; } catch(e) {}
+                    showToast('Matched row found (metadata marked unsaved)', 'success');
                   } catch (e) {
                     console.warn('Failed to persist match metadata', e);
                   }
@@ -3436,6 +3604,7 @@
               eventBindings = currentAction.eventBindings || [];
               variableMappings = currentAction.variableMappings || {};
               renderEventBindings();
+              try { renderDbAttributesList(); } catch(e) {}
               detectSQLParameters();
             }
           };
@@ -3503,140 +3672,7 @@
             }
           }
 
-          async function loadDbSchema() {
-            const out = document.getElementById("db-accordion");
-            out.innerHTML = '<div class="muted">Loading DB schema...</div>';
-            try {
-              let schema = null;
-
-              // Try primary DB schema API first
-              let schemaSource = null;
-              try {
-                const r = await fetch("/api/db/schema");
-                if (r.ok) {
-                  const data = await r.json();
-                  if (data && Object.keys(data.tables || {}).length) {
-                    schema = data;
-                    schemaSource = "/api/db/schema";
-                  }
-                }
-              } catch (e) {
-                console.warn(
-                  "/api/db/schema failed, will try metadata fallback",
-                  e
-                );
-              }
-
-              // Fallback to local metadata file `config/database.json` when API empty/unavailable
-              if (!schema) {
-                try {
-                  const r2 = await fetch("/config/database.json");
-                  if (r2.ok) {
-                    const meta = await r2.json();
-                    let tables = {};
-                    if (meta && meta.tables) {
-                      tables = meta.tables;
-                    } else if (Array.isArray(meta)) {
-                      meta.forEach((t) => {
-                        if (t && t.name)
-                          tables[t.name] = t.columns || t.fields || [];
-                      });
-                    } else if (typeof meta === "object") {
-                      // accept a simple object where keys are table names
-                      // and values are arrays or objects with `columns`
-                      Object.keys(meta).forEach((k) => {
-                        const v = meta[k];
-                        if (Array.isArray(v)) tables[k] = v;
-                        else if (v && v.columns) tables[k] = v.columns;
-                      });
-                    }
-                    schema = { tables };
-                    schemaSource = "/config/database.json";
-                  }
-                } catch (e) {
-                  console.warn("Failed to load config/database.json", e);
-                }
-              }
-
-              if (!schema) {
-                out.innerHTML =
-                  '<div class="muted">Failed to load DB schema</div>';
-                return;
-              }
-
-              // Log source and a small preview of the schema for debugging in Actions tab
-              try {
-                console.log(
-                  "loadDbSchema: source=",
-                  schemaSource || "unknown",
-                  schema
-                );
-                const dbg = document.getElementById("actions-debug");
-                if (dbg)
-                  dbg.textContent = schemaSource
-                    ? "Schema: " + schemaSource
-                    : "Schema: unknown";
-              } catch (e) {
-                console.warn("Failed to console.log schema", e);
-              }
-
-              const tables = schema.tables || {};
-              const keys = Object.keys(tables).sort();
-              if (!keys.length) {
-                out.innerHTML = '<div class="muted">No tables in schema</div>';
-                return;
-              }
-
-              out.innerHTML = keys
-                .map((t) => {
-                  const raw = tables[t];
-                  const cols = Array.isArray(raw)
-                    ? raw
-                    : raw.columns || raw.fields || [];
-                  const colsHtml = cols
-                    .map((c) => {
-                      const colName =
-                        typeof c === "string"
-                          ? c
-                          : c &&
-                            (c.name || c.Field || c.column || c.COLUMN_NAME)
-                          ? c.name || c.Field || c.column || c.COLUMN_NAME
-                          : "";
-                      return `<div class="db-column" data-table="${t}" data-column="${colName}"><span>${colName}</span><button class="btn btn-secondary" style="font-size:12px;">+</button></div>`;
-                    })
-                    .join("");
-                  return `<div style="margin-bottom:8px;"><div class="group-header" style="cursor:pointer; font-weight:700;">▸ ${t}</div><div class="group-items" style="margin-top:6px; display:none;">${colsHtml}</div></div>`;
-                })
-                .join("");
-
-              // attach handlers
-              out.querySelectorAll(".group-header").forEach((h) => {
-                h.addEventListener("click", () => {
-                  const items = h.nextElementSibling;
-                  if (!items) return;
-                  const shown = items.style.display !== "none";
-                  items.style.display = shown ? "none" : "block";
-                  h.textContent =
-                    (shown ? "▸ " : "▾ ") + h.textContent.slice(2);
-                });
-              });
-              out.querySelectorAll(".db-column").forEach((colEl) => {
-                const btn = colEl.querySelector("button");
-                btn.addEventListener("click", (ev) => {
-                  ev.stopPropagation();
-                  const table = colEl.dataset.table;
-                  const column = colEl.dataset.column;
-                  // insert table.column into description at cursor
-                  const desc = document.getElementById("action-desc");
-                  if (desc) insertAtCursor(desc, `${table}.${column}`);
-                });
-              });
-            } catch (e) {
-              console.error("loadDbSchema", e);
-              out.innerHTML =
-                '<div class="muted">Error loading DB schema</div>';
-            }
-          }
+          
 
           function insertAtCursor(input, text) {
             try {
@@ -3738,6 +3774,23 @@
             document.getElementById("test-with-real-events").disabled = false;
           }
 
+          // Enable Generate button only when required inputs are present:
+          //  - at least one event binding
+          //  - at least one DB attribute selected
+          //  - non-empty Description
+          function updateGenerateEnabled() {
+            try {
+              const generateBtn = document.getElementById("generate-query-btn");
+              if (!generateBtn) return;
+              const desc = (document.getElementById("action-desc").value || "").trim();
+              const hasEvent = Array.isArray(eventBindings) && eventBindings.length > 0;
+              const hasDbAttr = variableMappings && Array.isArray(variableMappings.dbAttributes) && variableMappings.dbAttributes.length > 0;
+              generateBtn.disabled = !(desc && hasEvent && hasDbAttr);
+            } catch (e) {
+              console.warn('updateGenerateEnabled failed', e);
+            }
+          }
+
           async function saveAction(now) {
             const status = document.getElementById("action-status");
             const data = collectEditor();
@@ -3787,6 +3840,7 @@
               const d = await r.json();
               if (d && d.ok) {
                 currentAction = data;
+                try { pendingChanges = false; } catch(e) {}
                 showToast("Action saved", "success");
                 fetchActions();
                 status.textContent = "Saved";
@@ -3806,10 +3860,9 @@
           }
 
           function triggerAutosave() {
-            clearTimeout(autosaveTimer);
-            autosaveTimer = setTimeout(() => saveAction(false), 900);
-            document.getElementById("action-status").textContent =
-              "Pending changes...";
+            // Mark as having pending changes but do NOT perform automatic save.
+            try { pendingChanges = true; } catch (e) {}
+            try { document.getElementById("action-status").textContent = "Pending changes..."; } catch (e) {}
           }
 
           async function deleteAction(id) {
@@ -3863,6 +3916,7 @@
               "Action Editor";
             // Disable all fields until name is entered
             disableFormFields();
+            try { pendingChanges = false; } catch(e) {}
           }
 
           async function openForEdit(id) {
@@ -3881,6 +3935,7 @@
                 return;
               }
               currentAction = a;
+              try { pendingChanges = false; } catch(e) {}
               const idEl = document.getElementById("action-id");
               idEl.value = a.id || "";
               // id must not be editable once created
@@ -3978,7 +4033,6 @@
           // init
           globalThis.initActionsTab = async function () {
             await fetchActions();
-            await loadDbSchema();
           };
           // call immediately in case panel already visible
           try {
@@ -5555,7 +5609,7 @@
           );
           if (!actions.length) {
             container.innerHTML =
-              '<div class="muted">No business actions defined.</div>';
+              '<div class="muted">No database actions defined. Click "➕ Add DB Action" to create one.</div>';
             console.log("loadActions: no actions");
             return;
           }
@@ -7083,6 +7137,16 @@
           });
         }
 
+      // Convenience wrapper used across the UI
+      function showModal(opts) {
+        try {
+          // call _createModal but do not require callers to await
+          _createModal(opts).catch((e) => console.error('Modal error:', e));
+        } catch (e) {
+          console.error('showModal failed:', e);
+        }
+      }
+
         function renderChips() {
           chipsRow.innerHTML = "";
           selectedColumns.forEach((c) => {
@@ -8106,15 +8170,15 @@
       }
 
       async function showAddActionDialog() {
-        const form = await showFormModal("Add Action", [
-          { name: "name", label: "Action name" },
+        const form = await showFormModal("Add DB Action", [
+          { name: "name", label: "DB Action Name", placeholder: "e.g., insert_customer, update_order" },
           {
             name: "target",
-            label: "DB Target (table or table.column)",
-            placeholder: "schema.table or table.column",
+            label: "Database Target (table.column)",
+            placeholder: "e.g., customers.email, orders.status",
             dbChooser: true,
           },
-          { name: "description", label: "Description", type: "textarea" },
+          { name: "description", label: "Description", placeholder: "What does this database action do?", type: "textarea" },
           { name: "concept", label: "Concept (optional)", dbChooser: true },
         ]);
         if (!form) return;
@@ -8148,18 +8212,20 @@
         try {
           const act = taxonomy.actions && taxonomy.actions[id];
           if (!act) return showToast("Action not found", "error");
-          const form = await showFormModal("Edit Action", [
-            { name: "name", label: "Action name", value: act.name },
+          const form = await showFormModal("Edit DB Action", [
+            { name: "name", label: "DB Action Name", value: act.name },
             {
               name: "target",
-              label: "DB Target (table or table.column)",
+              label: "Database Target (table.column)",
               value: act.target || "",
+              placeholder: "e.g., customers.email, orders.status",
               dbChooser: true,
             },
             {
               name: "description",
               label: "Description",
               value: act.description || "",
+              placeholder: "What does this database action do?",
               type: "textarea",
             },
             {

@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Variable System Demo & Test</title>
+    <link rel="stylesheet" href="assets/css/theme.css" />
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          Cantarell, sans-serif;
+        background: #f5f8fa;
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .demo-section {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #2c3e50;
+        margin-bottom: 8px;
+      }
+      h2 {
+        color: #34495e;
+        margin-top: 0;
+        font-size: 1.2rem;
+      }
+      .subtitle {
+        color: #7f8c8d;
+        margin-bottom: 24px;
+      }
+      .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.2s;
+        margin-right: 8px;
+        margin-bottom: 8px;
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      }
+      .btn-success {
+        background: #10b981;
+        color: white;
+      }
+      .btn-success:hover {
+        background: #059669;
+      }
+      .demo-textarea {
+        width: 100%;
+        min-height: 120px;
+        padding: 12px;
+        border: 2px solid #e1e8ed;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 14px;
+        resize: vertical;
+        transition: all 0.2s;
+      }
+      .demo-textarea:focus {
+        outline: none;
+        border-color: #1da1f2;
+        box-shadow: 0 0 0 3px rgba(29, 161, 242, 0.1);
+      }
+      .pill-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 16px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        min-height: 60px;
+        border: 2px dashed #dee2e6;
+      }
+      .info-box {
+        background: #e6f7ff;
+        border-left: 4px solid #1da1f2;
+        padding: 12px;
+        border-radius: 4px;
+        margin-top: 12px;
+        font-size: 14px;
+      }
+      .success-box {
+        background: #f0fdf4;
+        border-left: 4px solid #10b981;
+        padding: 12px;
+        border-radius: 4px;
+        margin-top: 12px;
+        font-size: 14px;
+      }
+      .code-block {
+        background: #2c3e50;
+        color: #ecf0f1;
+        padding: 16px;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 13px;
+        overflow-x: auto;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🧪 Variable System Demo & Test</h1>
+    <div class="subtitle">Production-Grade Event Data & DB Picker System</div>
+
+    <!-- Test 1: Event Data Modal -->
+    <div class="demo-section">
+      <h2>📊 Test 1: Sample Event Data Picker</h2>
+      <p>
+        Click the button to open the event data modal, select fields, and see
+        draggable pills appear.
+      </p>
+
+      <button class="btn btn-primary" onclick="testEventDataModal()">
+        🚀 Open Event Data Picker
+      </button>
+
+      <div
+        id="event-pills-container"
+        class="pill-container"
+        style="margin-top: 16px"
+      >
+        <span style="color: #8899a6">No event variables selected yet</span>
+      </div>
+
+      <div class="info-box">
+        <strong>💡 Try this:</strong> Open the modal, browse events, expand one,
+        and click "+ Add" on fields. The pills will appear here and can be
+        dragged into the textarea below.
+      </div>
+    </div>
+
+    <!-- Test 2: DB Picker Modal -->
+    <div class="demo-section">
+      <h2>🗄️ Test 2: DB Picker</h2>
+      <p>
+        Click the button to open the DB picker modal and select database
+        columns.
+      </p>
+
+      <button class="btn btn-success" onclick="testDbPickerModal()">
+        🗄️ Open DB Picker
+      </button>
+
+      <div
+        id="db-pills-container"
+        class="pill-container"
+        style="margin-top: 16px"
+      >
+        <span style="color: #8899a6">No DB columns selected yet</span>
+      </div>
+
+      <div class="info-box">
+        <strong>💡 Try this:</strong> Open the modal, search or browse tables,
+        and click "+" on columns. Green pills will appear that you can drag into
+        SQL queries.
+      </div>
+    </div>
+
+    <!-- Test 3: Drag & Drop -->
+    <div class="demo-section">
+      <h2>🎯 Test 3: Drag & Drop Into Textarea</h2>
+      <p>
+        Drag the pills from above into this textarea. The variable path will be
+        inserted at your cursor.
+      </p>
+
+      <textarea
+        id="drop-zone-test"
+        class="demo-textarea"
+        placeholder="Type SQL here or drag variable pills from above...
+
+Example: SELECT * FROM users WHERE id = [drag pill here]"
+      ></textarea>
+
+      <div class="success-box">
+        <strong>✅ Drop Zone Enabled!</strong> You can drag event (blue) and DB
+        (green) pills directly into this textarea.
+      </div>
+    </div>
+
+    <!-- Test 4: Variable Resolution -->
+    <div class="demo-section">
+      <h2>🔄 Test 4: Variable Resolution</h2>
+      <p>
+        See how variables are resolved to actual values in execution context.
+      </p>
+
+      <button class="btn btn-primary" onclick="testVariableResolution()">
+        ⚡ Test Resolution
+      </button>
+
+      <div id="resolution-output"></div>
+    </div>
+
+    <!-- Test 5: Variable Registry -->
+    <div class="demo-section">
+      <h2>📋 Test 5: Variable Registry</h2>
+      <p>View all registered variables and their metadata.</p>
+
+      <button class="btn btn-primary" onclick="showAllVariables()">
+        📋 Show All Variables
+      </button>
+
+      <div id="registry-output"></div>
+    </div>
+
+    <!-- Component Scripts -->
+    <script src="builder-tabs/variable-registry.html"></script>
+    <script src="builder-tabs/event-data-modal.html"></script>
+    <script src="builder-tabs/db-picker-modal.html"></script>
+    <script src="builder-tabs/variable-insertion.html"></script>
+
+    <!-- Demo Scripts -->
+    <script>
+      // Mock data for testing
+      const mockEventData = {
+        id: "evt_12345",
+        timestamp: new Date().toISOString(),
+        type: "user.created",
+        payload: {
+          userId: 67890,
+          email: "test@example.com",
+          username: "testuser",
+          plan: "premium",
+        },
+        metadata: {
+          source: "api",
+          version: "2.0",
+        },
+      };
+
+      const mockDbContext = {
+        users: { name: "John Doe", email: "john@example.com" },
+        orders: { total: 199.99, status: "completed" },
+      };
+
+      // Initialize
+      window.addEventListener("DOMContentLoaded", () => {
+        // Enable drop zone
+        const textarea = document.getElementById("drop-zone-test");
+        if (typeof VariableInsertion !== "undefined") {
+          VariableInsertion.enableDropZone(textarea);
+        }
+      });
+
+      // Test 1: Event Data Modal
+      async function testEventDataModal() {
+        try {
+          const selected = await EventDataModal.show({
+            preSelected: [],
+          });
+
+          // Render pills
+          renderEventPills(selected);
+
+          // Register in variable registry
+          selected.forEach((path) => {
+            VariableRegistry.register(path, { source: "event" });
+          });
+
+          showToast(`Selected ${selected.length} event variables`, "success");
+        } catch (error) {
+          console.error("Event modal error:", error);
+          alert("Error: " + error.message);
+        }
+      }
+
+      function renderEventPills(variables) {
+        const container = document.getElementById("event-pills-container");
+        container.innerHTML = "";
+
+        if (variables.length === 0) {
+          container.innerHTML =
+            '<span style="color: #8899a6;">No event variables selected yet</span>';
+          return;
+        }
+
+        variables.forEach((varPath) => {
+          const pill = createDraggablePill(varPath, "#1da1f2");
+          container.appendChild(pill);
+        });
+      }
+
+      // Test 2: DB Picker Modal
+      async function testDbPickerModal() {
+        try {
+          const selected = await DbPickerModal.show({
+            preSelected: [],
+          });
+
+          // Render pills
+          renderDbPills(selected);
+
+          // Register in variable registry
+          selected.forEach((col) => {
+            const path = col.path || `{{db.${col.table}.${col.column}}}`;
+            VariableRegistry.register(path, {
+              source: "db",
+              table: col.table,
+              column: col.column,
+            });
+          });
+
+          showToast(`Selected ${selected.length} DB columns`, "success");
+        } catch (error) {
+          console.error("DB picker error:", error);
+          alert("Error: " + error.message);
+        }
+      }
+
+      function renderDbPills(columns) {
+        const container = document.getElementById("db-pills-container");
+        container.innerHTML = "";
+
+        if (columns.length === 0) {
+          container.innerHTML =
+            '<span style="color: #8899a6;">No DB columns selected yet</span>';
+          return;
+        }
+
+        columns.forEach((col) => {
+          const path = col.path || `{{db.${col.table}.${col.column}}}`;
+          const pill = createDraggablePill(path, "#10b981");
+          container.appendChild(pill);
+        });
+      }
+
+      function createDraggablePill(text, color) {
+        const pill = document.createElement("div");
+        pill.draggable = true;
+        pill.style.cssText = `
+        background: ${color};
+        color: white;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-family: monospace;
+        font-size: 0.85rem;
+        cursor: move;
+        display: inline-block;
+        transition: all 0.2s;
+      `;
+        pill.textContent = text;
+
+        pill.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/plain", text);
+          pill.style.opacity = "0.5";
+        });
+
+        pill.addEventListener("dragend", () => {
+          pill.style.opacity = "1";
+        });
+
+        pill.addEventListener("mouseenter", () => {
+          pill.style.transform = "scale(1.05)";
+        });
+
+        pill.addEventListener("mouseleave", () => {
+          pill.style.transform = "scale(1)";
+        });
+
+        return pill;
+      }
+
+      // Test 4: Variable Resolution
+      function testVariableResolution() {
+        const output = document.getElementById("resolution-output");
+
+        const testCases = [
+          {
+            template: "User ID: {{event.payload.userId}}",
+            context: { event: mockEventData },
+          },
+          {
+            template:
+              "SELECT * FROM users WHERE email = {{event.payload.email}}",
+            context: { event: mockEventData },
+          },
+          {
+            template: "Total: {{db.orders.total}}",
+            context: { db: mockDbContext },
+          },
+        ];
+
+        let html = '<div class="code-block">';
+        testCases.forEach((test) => {
+          const resolved = VariableRegistry.resolveTemplate(
+            test.template,
+            test.context,
+          );
+          html += `<div style="margin-bottom: 12px;">`;
+          html += `<div style="color: #95a5a6;">Input:</div>`;
+          html += `<div style="margin-left: 16px;">${test.template}</div>`;
+          html += `<div style="color: #95a5a6; margin-top: 8px;">Resolved:</div>`;
+          html += `<div style="margin-left: 16px; color: #2ecc71;">${resolved}</div>`;
+          html += `</div>`;
+        });
+        html += "</div>";
+
+        output.innerHTML = html;
+      }
+
+      // Test 5: Show All Variables
+      function showAllVariables() {
+        const output = document.getElementById("registry-output");
+        const allVars = VariableRegistry.getAll();
+
+        if (allVars.length === 0) {
+          output.innerHTML =
+            '<div class="info-box">No variables registered yet. Try selecting some from the modals above!</div>';
+          return;
+        }
+
+        let html = '<div class="code-block">';
+        html += `<div style="margin-bottom: 12px; color: #3498db;">Registered Variables (${allVars.length}):</div>`;
+
+        allVars.forEach((v) => {
+          html += `<div style="margin-bottom: 8px; padding-left: 16px;">`;
+          html += `<span style="color: ${v.source === "event" ? "#1da1f2" : "#10b981"}">${v.originalPath}</span>`;
+          html += ` <span style="color: #95a5a6;">→ Source: ${v.source}</span>`;
+          html += `</div>`;
+        });
+
+        html += "</div>";
+        output.innerHTML = html;
+      }
+
+      // Toast notification helper
+      function showToast(message, type = "info") {
+        const colors = {
+          success: "#10b981",
+          error: "#ef4444",
+          info: "#1da1f2",
+          warning: "#f59e0b",
+        };
+
+        const toast = document.createElement("div");
+        toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${colors[type] || colors.info};
+        color: white;
+        padding: 16px 24px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 10000;
+        font-weight: 600;
+        animation: slideIn 0.3s ease;
+      `;
+        toast.textContent = message;
+
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+          toast.style.animation = "slideOut 0.3s ease";
+          setTimeout(() => toast.remove(), 300);
+        }, 3000);
+      }
+
+      // Add animations
+      const style = document.createElement("style");
+      style.textContent = `
+      @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+      }
+    `;
+      document.head.appendChild(style);
+    </script>
+  </body>
+</html>

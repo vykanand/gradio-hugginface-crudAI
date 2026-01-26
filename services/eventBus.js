@@ -351,6 +351,21 @@ async function publishEvent(obj, opts) {
       attempts: 0
     };
 
+    // Preserve modal/session and routing metadata if present on incoming envelope
+    try {
+      if (evt && evt.modalSessionId) {
+        rec.modalSessionId = evt.modalSessionId;
+      } else if (isProperEnvelope && evt.payload && evt.payload.modalSessionId) {
+        rec.modalSessionId = evt.payload.modalSessionId;
+      }
+      // If incoming provided a canonicalEvent override, ensure it's reflected
+      if (evt && evt.event) {
+        rec.event = evt.event;
+      }
+      if (evt && evt.module) rec.module = evt.module;
+      if (evt && evt.domain) rec.domain = evt.domain;
+    } catch (e) { /* ignore */ }
+
     // Tag technical field-level events and derive a canonical event name
     try {
       if (rec.event && typeof rec.event === 'string') {
@@ -436,7 +451,9 @@ async function _processSend(id) {
         pendingSends.delete(id);
         console.error('Event moved to DLQ', id, rec.lastError);
         // broadcast failure notice to SSE clients
-        const payload = JSON.stringify({ ts: Date.now(), module: rec.module, event: rec.event, id, status: 'failed', detail: rec });
+        var promotedModal = null;
+        try { promotedModal = rec && (rec.modalSessionId || (rec.payload && rec.payload.modalSessionId) || (rec.detail && rec.detail.modalSessionId)) || null; } catch(e) { promotedModal = null; }
+        const payload = JSON.stringify({ ts: Date.now(), module: rec.module, event: rec.event, id, status: 'failed', modalSessionId: promotedModal, detail: rec });
         for (const res of sseClients) {
           try { res.write(`data: ${payload}\n\n`); } catch(e5){}
         }
@@ -473,7 +490,12 @@ function _updateRegistryAndBroadcast(evt) {
     // persist module counts to local DB (best-effort)
     try { _persistModule(module).catch(()=>{}); } catch(e){}
 
-    const payload = JSON.stringify({ ts: Date.now(), module, event: evName, level: evt.level || 'domain', detail: evt });
+    // Ensure modalSessionId is exposed at top-level for consumers if present anywhere in the envelope
+    var promotedModalSession = null;
+    try {
+      promotedModalSession = evt && (evt.modalSessionId || (evt.payload && evt.payload.modalSessionId) || (evt.detail && evt.detail.modalSessionId)) || null;
+    } catch (e) { promotedModalSession = null; }
+    const payload = JSON.stringify({ ts: Date.now(), module, event: evName, level: evt.level || 'domain', modalSessionId: promotedModalSession, detail: evt });
     // broadcast to SSE clients
     for (const res of sseClients) {
       try {

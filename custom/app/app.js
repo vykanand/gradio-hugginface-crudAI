@@ -56,6 +56,13 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   const port = location.port ? `:${location.port}` : '';
   const basePath = location.pathname.split('/')[1];
   $scope.url = `${protocol}//${hostname}${port}/${basePath}/api`;
+  // Require logged-in user data in localStorage: if missing, redirect to root
+  try {
+    var __udstr = localStorage.getItem('userdat');
+    if (!__udstr) {
+      try { location.href = protocol + '//' + hostname + (port || '') + '/'; } catch(e) {}
+    }
+  } catch(e) {}
   // Determine orchestrator server base (SSE and event POST). Preference order:
   // 1. window.__RUNTIME_CONFIG__ (served by orchestrator at /client-config.js)
   // 2. window.__ORCHESTRATOR_URL__ (explicit override)
@@ -73,6 +80,17 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     return `${location.protocol}//${location.hostname}${location.port ? ':'+location.port : ''}`;
   })();
   $scope.__orchestratorBase = orchestratorBase;
+  // Helper to generate a UUIDv4 for modal session tracking
+  function generateUUID() {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    } catch (e) {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
   // Simple toast/notification helper (top-right)
   function _ensureToastContainer() {
     if (document.getElementById('app-toast-container')) return document.getElementById('app-toast-container');
@@ -269,6 +287,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
     if ($scope.modalInstance) {
       $scope.modalInstance.dismiss("cancel");
     }
+    try { delete $scope.modalSessionId; } catch(e) {}
     document.getElementById("mainsection").classList.remove("blurcontent");
   };
 
@@ -747,6 +766,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
   
   var amodalPopup = function () {
     document.getElementById("mainsection").classList.add("blurcontent");
+    try { $scope.modalSessionId = 'modal-' + generateUUID(); } catch(e) { $scope.modalSessionId = 'modal-' + Date.now(); }
 
     return ($scope.modalInstance = $uibModal.open({
       animation: true,
@@ -860,6 +880,8 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         try { Object.keys($scope._pendingFieldChanges.add||{}).forEach(function(k){ try{$scope._flushFieldChange('add',k);}catch(e){} }); } catch(e) {}
         // disconnect observer if any
         try { if ($scope._addModalObserver) { $scope._addModalObserver.disconnect(); delete $scope._addModalObserver; } } catch(e) {}
+        try { delete $scope.modalSessionId; } catch(e) {}
+        try { delete $scope.modalSessionId; } catch(e) {}
         document.getElementById("mainsection").classList.remove("blurcontent");
       });
   };
@@ -1535,8 +1557,19 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
           var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
           var addAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'add'; });
           if (addAction && addAction.event) {
-            // Simplified payload - just the POJO data from UI
-            $scope.dispatchModuleEvent(addAction.event, addata);
+            // Envelope the payload with top-level routing metadata so listeners
+            // can correlate by modal session and module/domain context.
+            try {
+              var envelope = Object.assign({}, addata || {});
+              envelope.modalSessionId = $scope.modalSessionId || null;
+              envelope.event = addAction.event;
+              envelope.module = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
+              envelope.domain = envelope.module;
+              $scope.dispatchModuleEvent(addAction.event, envelope);
+            } catch(e) {
+              console.warn('dispatch add envelope failed', e);
+              $scope.dispatchModuleEvent(addAction.event, addata);
+            }
           }
           // NOTE: Per-field add events were originally emitted here on submit.
           // Commenting out to avoid duplicate events because per-field events
@@ -1550,6 +1583,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         // the dispatchModuleEvent default (300ms).
         setTimeout(function(){
           try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("success^Created Successfully", location.origin); } catch(e){}
+          try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage({ type: 'modal-result', status: 'success', action: 'create', message: 'Created Successfully', modalSessionId: $scope.modalSessionId || null }, location.origin); } catch(e){}
           try { location.reload(); } catch(e){}
         }, 500);
       })
@@ -1565,6 +1599,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
           }
         } catch(e) { console.warn('emit add error event failed', e); }
         try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("error^Some Error Occured", location.origin); } catch(e){}
+        try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage({ type: 'modal-result', status: 'error', action: 'create', message: 'Some Error Occured', modalSessionId: $scope.modalSessionId || null }, location.origin); } catch(e){}
         try { location.reload(); } catch(e){}
       });
   };
@@ -1717,12 +1752,22 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         console.log(response);
         // alert('Edited successfully');
         try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("success^Edited Successfully", location.origin); } catch(e){}
+        try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage({ type: 'modal-result', status: 'success', action: 'edit', message: 'Edited Successfully', modalSessionId: $scope.modalSessionId || null }, location.origin); } catch(e){}
         try {
           var mod = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
           var updAction = ($scope.moduleEvents.actions || []).find(function(x){ return x && x.key === 'update'; });
           if (updAction && updAction.event) {
-            // Simplified payload - just the POJO data from UI
-            $scope.dispatchModuleEvent(updAction.event, eddata);
+            try {
+              var envelopeUp = Object.assign({}, eddata || {});
+              envelopeUp.modalSessionId = $scope.modalSessionId || null;
+              envelopeUp.event = updAction.event;
+              envelopeUp.module = ($scope.moduleEvents && $scope.moduleEvents.module) ? $scope.moduleEvents.module.toString() : (localStorage.getItem('headinfo') || 'module');
+              envelopeUp.domain = envelopeUp.module;
+              $scope.dispatchModuleEvent(updAction.event, envelopeUp);
+            } catch(e) {
+              console.warn('dispatch update envelope failed', e);
+              $scope.dispatchModuleEvent(updAction.event, eddata);
+            }
           }
           // NOTE: Per-field edit events were originally emitted here on submit.
           // Commenting out to avoid duplicate events because per-field events
@@ -1742,6 +1787,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
         // listeners can react to the edit events first.
         setTimeout(function(){
           try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("success^Edited Successfully", location.origin); } catch(e){}
+          try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage({ type: 'modal-result', status: 'success', action: 'edit', message: 'Edited Successfully', modalSessionId: $scope.modalSessionId || null }, location.origin); } catch(e){}
           try { location.reload(); } catch(e){}
         }, 500);
       })
@@ -1765,6 +1811,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
 
   var emodalPopup = function () {
     document.getElementById("mainsection").classList.add("blurcontent");
+    try { $scope.modalSessionId = 'modal-' + generateUUID(); } catch(e) { $scope.modalSessionId = 'modal-' + Date.now(); }
     return ($scope.modalInstance = $uibModal.open({
       animation: true,
       templateUrl: "blocks/modal/edit.html",
@@ -1974,6 +2021,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
       // have a chance to process the deletion.
       setTimeout(function(){
         try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage("success^Deleted Successfully", location.origin); } catch(e){}
+        try { if (globalThis.top && typeof globalThis.top.postMessage === 'function') globalThis.top.postMessage({ type: 'modal-result', status: 'success', action: 'delete', message: 'Deleted Successfully', modalSessionId: $scope.modalSessionId || null }, location.origin); } catch(e){}
         try { location.reload(); } catch(e){}
       }, 500);
     });
@@ -2273,6 +2321,41 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                                   actor: a,
                                   payload: payloadObj || {}
                                 };
+                                // Promote any modal/session or routing keys found inside the payload or incoming event
+                                  try {
+                                    var payloadSrc = (envelope.payload && typeof envelope.payload === 'object') ? envelope.payload : {};
+                                    // Prefer modalSessionId from payload, then from incoming event object, then current scope
+                                    if (payloadSrc.modalSessionId) {
+                                      envelope.modalSessionId = payloadSrc.modalSessionId;
+                                      try { delete payloadSrc.modalSessionId; } catch(e){}
+                                    } else if (e && e.modalSessionId) {
+                                      envelope.modalSessionId = e.modalSessionId;
+                                    } else if ($scope && $scope.modalSessionId) {
+                                      envelope.modalSessionId = $scope.modalSessionId;
+                                    }
+                                    // If caller provided explicit event in payload or event object, prefer it
+                                    if (payloadSrc.event) {
+                                      envelope.event = String(payloadSrc.event);
+                                      try { delete payloadSrc.event; } catch(e){}
+                                    } else if (e && e.event) {
+                                      envelope.event = String(e.event);
+                                    }
+                                    // Promote module/domain if provided in payload or event
+                                    if (payloadSrc.module) {
+                                      envelope.module = String(payloadSrc.module);
+                                      try { delete payloadSrc.module; } catch(e){}
+                                    } else if (e && e.module) {
+                                      envelope.module = String(e.module);
+                                    }
+                                    if (payloadSrc.domain) {
+                                      envelope.domain = String(payloadSrc.domain);
+                                      try { delete payloadSrc.domain; } catch(e){}
+                                    } else if (e && e.domain) {
+                                      envelope.domain = String(e.domain);
+                                    }
+                                    // assign back any cleaned payload
+                                    envelope.payload = payloadSrc;
+                                  } catch(promoteErr) { console.warn('promote envelope keys failed', promoteErr); }
                                 console.log('Built envelope for forwarding:', JSON.stringify(envelope, null, 2));
                               } catch(envErr) { console.warn('envelope build error', envErr); }
                               if (envelope) {
@@ -2361,9 +2444,15 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
           console.log('====EVENT FIRED====', eventName, payload || {});
               // Keep payload as clean POJO - envelope builder handles actor separately
               var payloadData = (payload && typeof payload === 'object') ? JSON.parse(JSON.stringify(payload)) : {};
+              // Attach current modal session id if present so listeners can correlate events to the modal session
+              try {
+                if ($scope && $scope.modalSessionId) payloadData.modalSessionId = $scope.modalSessionId;
+              } catch(e) {}
 
               const mainEvt = new CustomEvent(eventName);
               mainEvt.payload = payloadData; // Flat structure: payload at top level
+              // Ensure modalSessionId is also present at top-level for consumers
+              try { mainEvt.modalSessionId = (payloadData && payloadData.modalSessionId) ? payloadData.modalSessionId : ($scope && $scope.modalSessionId ? $scope.modalSessionId : null); } catch(e) { mainEvt.modalSessionId = null; }
               mainEvt.event = eventName;
               globalThis.dispatchEvent(mainEvt);
               try {
@@ -2371,6 +2460,7 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
                 console.log('====EVENT FIRED==== (listener variant) ', listenerName, payloadData || {});
                 const listenerEvt = new CustomEvent(listenerName);
                 listenerEvt.payload = payloadData;
+                try { listenerEvt.modalSessionId = (payloadData && payloadData.modalSessionId) ? payloadData.modalSessionId : ($scope && $scope.modalSessionId ? $scope.modalSessionId : null); } catch(e) { listenerEvt.modalSessionId = null; }
                 listenerEvt.event = eventName;
                 globalThis.dispatchEvent(listenerEvt);
               } catch(e2) { }
@@ -2733,13 +2823,15 @@ app.controller("mtctrl", function ($scope, $http, $location, $uibModal, $q, $tim
           console.log('Plugin iframe loaded, sending form data...');
           try {
             // Send the form data and field types to the plugin
-            pluginFrame.contentWindow.postMessage({
+            const msgPayload = {
               type: 'form-data',
               source: source,
               fieldName: fieldName,
               formData: formData,
               fieldTypes: fieldTypes
-            }, location.origin);
+            };
+            try { if ($scope && $scope.modalSessionId) msgPayload.modalSessionId = $scope.modalSessionId; } catch(e) {}
+            pluginFrame.contentWindow.postMessage(msgPayload, location.origin);
             console.log('Sent form data to plugin:', {
               type: 'form-data',
               source: source,

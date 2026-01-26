@@ -1,7 +1,7 @@
 <div id="actions-panel" class="tab-panel">
   <div class="toolbar">
     <button class="btn btn-primary" onclick="showAddActionDialog()">
-      ➕ Add Action
+      ➕ Add DB Action
     </button>
     <button class="btn btn-secondary" onclick="loadActions()">
       🔄 Refresh
@@ -9,7 +9,11 @@
   </div>
   <div class="main">
     <div class="content-area">
-      <h2 style="margin-bottom: 1rem">Business Actions</h2>
+      <h2 style="margin-bottom: 1rem">🗄️ Database Actions</h2>
+      <p style="color: #8899a6; font-size: 0.9rem; margin-bottom: 1rem">
+        Define database operations (INSERT, UPDATE, DELETE) that can be
+        triggered by events
+      </p>
       <div id="actions-main-list"></div>
     </div>
   </div>

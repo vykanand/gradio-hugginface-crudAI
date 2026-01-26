@@ -12,7 +12,8 @@ include "../config.php";
 $table_name = basename(getcwd());
 
 // Helper: fetch table columns (for validation)
-function get_table_columns($db, $table_name) {
+function get_table_columns($db, $table_name)
+{
     $cols = array();
     $res = mysqli_query($db, "SHOW COLUMNS FROM `" . mysqli_real_escape_string($db, $table_name) . "`") or die(mysqli_error($db));
     while ($r = mysqli_fetch_assoc($res)) {
@@ -22,17 +23,22 @@ function get_table_columns($db, $table_name) {
 }
 
 // Helper: build WHERE clause from allowed $_GET filters (only columns present in table)
-function build_where_from_get($db, $table_name, $allowed_columns) {
+function build_where_from_get($db, $table_name, $allowed_columns)
+{
     $where_clauses = array();
     $params = array();
     foreach ($_GET as $k => $v) {
-        if ($k === 'getpluginmap' || $k === 'getfieldtypes' || $k === 'getfieldrequired' || $k === 'getfieldoptions' || $k === 'getfirstcontent' || $k === 'getcontent' || $k === 'filters' || $k === 'distinct') continue;
+        if ($k === 'getpluginmap' || $k === 'getfieldtypes' || $k === 'getfieldrequired' || $k === 'getfieldoptions' || $k === 'getfirstcontent' || $k === 'getcontent' || $k === 'filters' || $k === 'distinct')
+            continue;
         // skip empty keys and control params
-        if ($v === '' || $v === null) continue;
+        if ($v === '' || $v === null)
+            continue;
         if (in_array($k, $allowed_columns)) {
             // support comma-separated values for IN queries
             if (strpos($v, ',') !== false) {
-                $vals = array_map(function($x) use ($db) { return "'" . mysqli_real_escape_string($db, trim($x)) . "'"; }, explode(',', $v));
+                $vals = array_map(function ($x) use ($db) {
+                    return "'" . mysqli_real_escape_string($db, trim($x)) . "'";
+                }, explode(',', $v));
                 $where_clauses[] = "`$k` IN (" . implode(',', $vals) . ")";
             } else {
                 $where_clauses[] = "`$k` = '" . mysqli_real_escape_string($db, $v) . "'";
@@ -50,7 +56,7 @@ function build_where_from_get($db, $table_name, $allowed_columns) {
 if (isset($_GET["getpluginmap"])) {
     $sql = "SELECT plugin FROM navigation WHERE nav = '$table_name'";
     $result = mysqli_query($db, $sql);
-    
+
     $pluginMap = array();
     if ($result && mysqli_num_rows($result) > 0) {
         $row = mysqli_fetch_assoc($result);
@@ -61,7 +67,7 @@ if (isset($_GET["getpluginmap"])) {
             }
         }
     }
-    
+
     header('Content-Type: application/json');
     echo json_encode($pluginMap);
     exit();
@@ -71,7 +77,7 @@ if (isset($_GET["getpluginmap"])) {
 if (isset($_GET["getfieldtypes"])) {
     $sql = "SELECT field_types FROM navigation WHERE nav = '$table_name'";
     $result = mysqli_query($db, $sql);
-    
+
     $fieldTypeMap = array();
     if ($result && mysqli_num_rows($result) > 0) {
         $row = mysqli_fetch_assoc($result);
@@ -82,7 +88,7 @@ if (isset($_GET["getfieldtypes"])) {
             }
         }
     }
-    
+
     header('Content-Type: application/json');
     echo json_encode($fieldTypeMap);
     exit();
@@ -92,7 +98,7 @@ if (isset($_GET["getfieldtypes"])) {
 if (isset($_GET["getfieldrequired"])) {
     $sql = "SELECT field_required FROM navigation WHERE nav = '$table_name'";
     $result = mysqli_query($db, $sql);
-    
+
     $fieldRequiredMap = array();
     if ($result && mysqli_num_rows($result) > 0) {
         $row = mysqli_fetch_assoc($result);
@@ -117,7 +123,7 @@ if (isset($_GET["getfieldrequired"])) {
             }
         }
     }
-    
+
     header('Content-Type: application/json');
     echo json_encode($fieldRequiredMap);
     exit();
@@ -127,7 +133,7 @@ if (isset($_GET["getfieldrequired"])) {
 if (isset($_GET["getfieldoptions"])) {
     $sql = "SELECT field_options FROM navigation WHERE nav = '$table_name'";
     $result = mysqli_query($db, $sql);
-    
+
     $fieldOptionsMap = array();
     if ($result && mysqli_num_rows($result) > 0) {
         $row = mysqli_fetch_assoc($result);
@@ -138,7 +144,7 @@ if (isset($_GET["getfieldoptions"])) {
             }
         }
     }
-    
+
     header('Content-Type: application/json');
     echo json_encode($fieldOptionsMap);
     exit();
@@ -166,8 +172,7 @@ if (isset($_GET["getfirstcontent"])) {
 }
 
 
-if (isset($_GET["getcontent"]))
-{
+if (isset($_GET["getcontent"])) {
 
     // allow filtering by any column via query params. e.g. ?getcontent&status=active&category=5
     $allowed_columns = get_table_columns($db, $table_name);
@@ -216,8 +221,7 @@ if (isset($_GET['distinct'])) {
     echo json_encode($values);
 }
 
-if (isset($_REQUEST["setcontent"]))
-{
+if (isset($_REQUEST["setcontent"])) {
     $data = $_POST;
     unset($data["setcontent"]);
     $key = array_keys($data); //get key( column name)
@@ -226,14 +230,11 @@ if (isset($_REQUEST["setcontent"]))
 
     $result = mysqli_query($db, $sql) or die(mysqli_error($db));
 
-    if ($result)
-    {
+    if ($result) {
         $message = array(
             "response" => "success"
         );
-    }
-    else
-    {
+    } else {
         $message = array(
             "response" => "failed"
         );
@@ -242,32 +243,28 @@ if (isset($_REQUEST["setcontent"]))
 
 }
 
-if (isset($_POST["edcontent"]))
-{
+if (isset($_POST["edcontent"])) {
     unset($_POST["edcontent"]);
     $query = "UPDATE $table_name SET";
     $comma = " ";
-    foreach($_POST as $key => $val) {
-    if( ! empty($val)) {
-        $query .= $comma . $key . " = '" . mysqli_real_escape_string($db,trim($val)) . "'";
-        $comma = ", ";
+    foreach ($_POST as $key => $val) {
+        if (!empty($val)) {
+            $query .= $comma . $key . " = '" . mysqli_real_escape_string($db, trim($val)) . "'";
+            $comma = ", ";
+        }
     }
-}
 
-$product_id = $_POST['id'];
+    $product_id = $_POST['id'];
 
-$query = $query . "WHERE id = '".$product_id."' ";
+    $query = $query . "WHERE id = '" . $product_id . "' ";
 
-$result = mysqli_query($db, $query) or die(mysqli_error($db));
+    $result = mysqli_query($db, $query) or die(mysqli_error($db));
 
-    if ($result)
-    {
+    if ($result) {
         $message = array(
             "response" => "success"
         );
-    }
-    else
-    {
+    } else {
         $message = array(
             "response" => "failed"
         );
@@ -278,19 +275,15 @@ $result = mysqli_query($db, $query) or die(mysqli_error($db));
 
 
 
-if (isset($_GET["delcontentsa"]))
-{
+if (isset($_GET["delcontentsa"])) {
     $id = $_GET['id'];
     $sql = "DELETE FROM $table_name WHERE id='$id'";
     $result = mysqli_query($db, $sql) or die(mysqli_error($db));
-    if ($result)
-    {
+    if ($result) {
         $message = array(
             "response" => "success"
         );
-    }
-    else
-    {
+    } else {
         $message = array(
             "response" => "failed"
         );
@@ -299,5 +292,60 @@ if (isset($_GET["delcontentsa"]))
 
 }
 
-$db -> close();
+/**
+ * SIMPLE BULK INSERT/UPSERT
+ * POST /appsthink_crm/api.php?upsert
+ * [
+ *   { "email": "john@example.com", "name": "John" },
+ *   { "email": "jane@example.com", "name": "Jane" }
+ * ]
+ */
+if (isset($_GET["upsert"])) {
+    header('Content-Type: application/json');
+
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    if (!$input || !is_array($input)) {
+        echo json_encode(array('status' => 'error', 'message' => 'Invalid input'));
+        exit();
+    }
+
+    $allowed_columns = get_table_columns($db, $table_name);
+    $success = 0;
+    $failed = 0;
+
+    foreach ($input as $record) {
+        $data = array();
+        foreach ($record as $field => $value) {
+            if (in_array($field, $allowed_columns) && $field !== 'id') {
+                $data[$field] = mysqli_real_escape_string($db, $value);
+            }
+        }
+
+        if (empty($data)) {
+            $failed++;
+            continue;
+        }
+
+        $fields = array_keys($data);
+        $values = array_values($data);
+        $updates = array();
+        foreach ($data as $k => $v) {
+            $updates[] = "`$k` = '$v'";
+        }
+
+        $sql = "INSERT INTO `$table_name` (`" . implode('`, `', $fields) . "`) VALUES ('" . implode("', '", $values) . "') ON DUPLICATE KEY UPDATE " . implode(', ', $updates);
+
+        if (mysqli_query($db, $sql)) {
+            $success++;
+        } else {
+            $failed++;
+        }
+    }
+
+    echo json_encode(array('status' => 'success', 'success' => $success, 'failed' => $failed));
+    exit();
+}
+
+$db->close();
 ?>
