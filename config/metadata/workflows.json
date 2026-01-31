@@ -208,6 +208,153 @@
           "name": "Complete"
         }
       ]
+    },
+    {
+      "id": "wf_1769462424453",
+      "name": "New Workflow",
+      "description": "",
+      "steps": [
+        {
+          "id": "node_1",
+          "type": "action",
+          "name": "Action 2",
+          "next": null,
+          "x": 110,
+          "y": 121,
+          "outgoing": []
+        },
+        {
+          "id": "node_2",
+          "type": "connect",
+          "name": "Connect 3",
+          "next": null,
+          "x": 400,
+          "y": 135,
+          "outgoing": []
+        }
+      ],
+      "concept": "",
+      "triggerEvent": "",
+      "connections": []
+    },
+    {
+      "id": "wf_1769462593726",
+      "name": "n2",
+      "description": "",
+      "steps": [
+        {
+          "id": "node_1",
+          "type": "action",
+          "name": "Action 2",
+          "next": null,
+          "x": 206,
+          "y": 134,
+          "outgoing": [],
+          "action": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63"
+        },
+        {
+          "id": "node_2",
+          "type": "connect",
+          "name": "Connect 3",
+          "next": null,
+          "x": 595,
+          "y": 196,
+          "outgoing": []
+        }
+      ],
+      "concept": "",
+      "triggerEvent": "",
+      "connections": []
+    },
+    {
+      "id": "wf_1769809382007",
+      "name": "Workflow-IBE2",
+      "description": "",
+      "steps": [
+        {
+          "id": "node_1",
+          "type": "event",
+          "name": "Event 2",
+          "next": "node_2",
+          "x": 55,
+          "y": 176,
+          "event": "appsthink_crm:recordAdded",
+          "module": "appsthink_crm",
+          "outgoing": [
+            "node_2"
+          ]
+        },
+        {
+          "id": "node_2",
+          "type": "connect",
+          "name": "Connect 3",
+          "next": "node_3",
+          "x": 369,
+          "y": 216,
+          "mapping": {
+            "phone_number": "phone_number"
+          },
+          "mappingPreview": {
+            "phone_number": "768790"
+          },
+          "outgoing": [
+            "node_3"
+          ],
+          "variableMappings": {
+            "_exampleOutputs": [
+              {
+                "phone_number": "768790",
+                "__parsers": {
+                  "phone_number": "phone_number"
+                }
+              }
+            ]
+          },
+          "mappingPaths": {
+            "phone_number": "phone_number"
+          }
+        },
+        {
+          "id": "node_3",
+          "type": "action",
+          "name": "Action 4",
+          "next": null,
+          "x": 630,
+          "y": 211,
+          "variableMappings": {
+            "inputMapping": {
+              "phone_number": "phone_number"
+            },
+            "_exampleOutputs": [
+              {
+                "phone_number": null
+              }
+            ],
+            "template": "-- Mapping template (no table detected)\n-- {\n  \"phone_number\": \"phone_number\"\n}\nphone_number => {{connect_node_2.phone_number}}"
+          },
+          "inputSource": {
+            "type": "connect",
+            "nodeId": "node_2"
+          },
+          "query": "-- Mapping template (no table detected)\n-- {\n  \"phone_number\": \"phone_number\"\n}\nphone_number => {{connect_node_2.phone_number}}",
+          "action": "Appsthink crm to extract_contact matching",
+          "outgoing": []
+        }
+      ],
+      "concept": "",
+      "triggerEvent": "",
+      "connections": [
+        {
+          "from": "node_1",
+          "to": "node_2",
+          "id": "c_1769809341204_1307"
+        },
+        {
+          "from": "node_2",
+          "to": "node_3",
+          "id": "c_1769809365762_4517"
+        }
+      ]
     }
   ]
 }

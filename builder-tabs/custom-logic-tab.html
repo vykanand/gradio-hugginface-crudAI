@@ -1,8 +1,5 @@
 <div id="custom-logic-panel" class="tab-panel">
   <div class="toolbar">
-    <button class="btn btn-primary" onclick="addCustomLogic()">
-      ➕ New Custom Logic
-    </button>
     <button class="btn btn-secondary" onclick="loadCustomLogics()">
       🔄 Refresh
     </button>
@@ -286,7 +283,7 @@ No inputs defined</pre
               padding: 8px;
               border: 1px solid #e1e8ed;
               border-radius: 4px;
-              font-family: 'Courier New', monospace;
+              font-family: &quot;Courier New&quot;, monospace;
               font-size: 0.85rem;
               background: #f8f9fa;
               cursor: not-allowed;
@@ -425,13 +422,86 @@ No inputs defined</pre
   window.initCustomLogicTab = async function () {
     try {
       await ensureRuntimeConfig();
-      await loadCustomLogics();
+      // Prefer the active workflow from the Workflow Editor (single source of truth)
+      if (globalThis.currentWorkflow && globalThis.currentWorkflow.id) {
+        await loadWorkflowLogics(globalThis.currentWorkflow.id);
+      } else {
+        const container = document.getElementById("custom-logic-list");
+        if (container)
+          container.innerHTML =
+            '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">Select a workflow in the Workflows toolbar to view its custom logic.</div>';
+      }
       await loadAvailableEvents();
       await loadAvailableActions();
     } catch (e) {
       console.warn("initCustomLogicTab error", e);
     }
   };
+
+  async function loadWorkflowsForLogics() {
+    try {
+      // Keep a cached list available for internal use, but do not render a selector here.
+      const res = await fetch("/api/unified-workflows");
+      const data = await res.json();
+      if (data && data.ok)
+        globalThis.__availableWorkflows = data.workflows || [];
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+
+  async function loadWorkflowLogics(workflowId) {
+    const container = document.getElementById("custom-logic-list");
+    if (!workflowId) {
+      container.innerHTML =
+        '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">Select a workflow to view its custom logic nodes (add nodes in the workflow editor).</div>';
+      return;
+    }
+    container.innerHTML =
+      '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">Loading workflow components...</div>';
+    try {
+      const res = await fetch(
+        `/api/unified-workflows/${encodeURIComponent(workflowId)}/components`,
+      );
+      const data = await res.json();
+      if (!data || !data.ok) {
+        container.innerHTML =
+          '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">Failed to load components</div>';
+        return;
+      }
+      const logics = Object.values(data.logics || {});
+      if (!logics.length) {
+        container.innerHTML =
+          '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">No Custom Logic defined for this workflow. Add Custom Logic nodes to the workflow canvas to create them.</div>';
+        return;
+      }
+      container.innerHTML = logics
+        .map(
+          (l) =>
+            `\n        <div class="list-item" style="margin-bottom:8px;">\n          <div style="font-weight:600">${l.name || l.id} <span class="muted">${l.id}</span></div>\n          <div style="font-size:0.85rem;color:#657786">${l.description || ""}</div>\n          <div style="margin-top:6px; display:flex; gap:8px">\n            <button class="btn btn-secondary" onclick="selectLogic('${l.id}')">Open</button>\n            <button class="btn btn-danger" onclick="deleteLogic('${l.id}')">Delete</button>\n          </div>\n        </div>\n      `,
+        )
+        .join("");
+      // Auto-open first logic item for convenience
+      try {
+        if (logics && logics.length && typeof selectLogic === "function") {
+          const first = logics[0];
+          setTimeout(() => {
+            try {
+              selectLogic(first.id);
+            } catch (e) {
+              /* ignore */
+            }
+          }, 60);
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    } catch (e) {
+      console.warn(e);
+      container.innerHTML =
+        '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">Error loading components</div>';
+    }
+  }
 
   async function loadCustomLogics() {
     // Try API first, fall back to static config file so the editor works
@@ -491,11 +561,11 @@ No inputs defined</pre
         }</div>
         <div style="font-size: 0.7rem; color: #657786; margin-top: 4px;">
           Inputs: ${(logic.inputs || []).length} | Updated: ${new Date(
-          logic.updatedAt || Date.now()
-        ).toLocaleDateString()}
+            logic.updatedAt || Date.now(),
+          ).toLocaleDateString()}
         </div>
       </div>
-    `
+    `,
       )
       .join("");
   }
@@ -615,7 +685,7 @@ No inputs defined</pre
         document.getElementById("logic-test-data").value = JSON.stringify(
           testInputs,
           null,
-          2
+          2,
         );
       }
     } catch (e) {
@@ -676,13 +746,13 @@ No inputs defined</pre
             input.parserPath
               ? `<div style="color: #1a73e8; font-size: 0.75rem; margin-top:4px; font-family:monospace;">→ <strong>${input.parserVarName}</strong> = ${input.parserPath}</div>`
               : input.field
-              ? `<span style="color: #657786; font-size: 0.75rem;"> → ${input.field}</span>`
-              : '<span style="color:#657786; font-size:0.75rem; margin-left:8px;"> (full)</span>'
+                ? `<span style="color: #657786; font-size: 0.75rem;"> → ${input.field}</span>`
+                : '<span style="color:#657786; font-size:0.75rem; margin-left:8px;"> (full)</span>'
           }
         </div>
         <button class="btn btn-sm btn-danger" onclick="removeInput(${idx})" style="padding: 2px 8px; font-size: 0.75rem;">✕</button>
       </div>
-    `
+    `,
       )
       .join("");
   }
@@ -747,7 +817,7 @@ No inputs defined</pre
         } catch (e) {
           schemaMap[ev.id] = null;
         }
-      })
+      }),
     );
 
     // Expose schema map for the modal helpers
@@ -764,20 +834,20 @@ No inputs defined</pre
         const info = primary[k];
         const title = info.description || k;
         parts.push(
-          `<span style=\"background:#f0f3f5;padding:6px 10px;border-radius:12px;cursor:pointer;border:1px solid #e1e8ed; font-size:0.85rem;\" data-field=\"${k}\" title=\"${title}\" onclick=\"window.__customLogicToggleField(this)\">${k}</span>`
+          `<span style=\"background:#f0f3f5;padding:6px 10px;border-radius:12px;cursor:pointer;border:1px solid #e1e8ed; font-size:0.85rem;\" data-field=\"${k}\" title=\"${title}\" onclick=\"window.__customLogicToggleField(this)\">${k}</span>`,
         );
       });
       Object.keys(metadata).forEach((k) => {
         const info = metadata[k];
         const title = info.description || k;
         parts.push(
-          `<span style=\"background:#f8fafb;padding:4px 8px;border-radius:12px;cursor:pointer;border:1px solid #e9eef2;color:#657786;font-size:0.8rem;\" data-field=\"${k}\" title=\"${title}\" onclick=\"window.__customLogicToggleField(this)\">${k}</span>`
+          `<span style=\"background:#f8fafb;padding:4px 8px;border-radius:12px;cursor:pointer;border:1px solid #e9eef2;color:#657786;font-size:0.8rem;\" data-field=\"${k}\" title=\"${title}\" onclick=\"window.__customLogicToggleField(this)\">${k}</span>`,
         );
       });
       if (parts.length === 0)
         return '<div class="muted">No fields discovered</div>';
       return `<div style=\"display:flex;flex-wrap:wrap;gap:6px;\">${parts.join(
-        ""
+        "",
       )}</div>`;
     }
 
@@ -788,10 +858,10 @@ No inputs defined</pre
       <div style="margin-bottom: 12px;">
         <label style="display: block; margin-bottom: 4px;">Event</label>
         <select id="event-input-select" data-events='${JSON.stringify(
-          events
+          events,
         ).replace(
           /</g,
-          "\\u003c"
+          "\\u003c",
         )}' style="width: 100%; padding: 8px; border: 1px solid #e1e8ed; border-radius: 4px;" onchange="window.populateCustomLogicEventFields && window.populateCustomLogicEventFields(this)">
           ${eventSelect}
         </select>
@@ -1092,7 +1162,7 @@ No inputs defined</pre
           }
         } catch (e) {
           errors.push(
-            `Failed to parse event input ${inp.eventName}: ${e.message}`
+            `Failed to parse event input ${inp.eventName}: ${e.message}`,
           );
         }
       });
@@ -1146,7 +1216,7 @@ No inputs defined</pre
             }
           } catch (e) {
             errors.push(
-              `Failed to parse action input ${inp.actionId}: ${e.message}`
+              `Failed to parse action input ${inp.actionId}: ${e.message}`,
             );
           }
         });
@@ -1218,7 +1288,7 @@ No inputs defined</pre
     // Fail if parsing errors occurred
     if (!parsed.valid) {
       const error = new Error(
-        `Input parsing failed:\n${parsed.errors.join("\n")}`
+        `Input parsing failed:\n${parsed.errors.join("\n")}`,
       );
       error.parsingErrors = parsed.errors;
       throw error;
@@ -1228,7 +1298,7 @@ No inputs defined</pre
     if (parsed.schema) {
       const validation = validateInputsAgainstSchema(
         parsed.inputs,
-        parsed.schema
+        parsed.schema,
       );
       if (!validation.valid) {
         console.warn("Input validation warnings:", validation.errors);
@@ -1249,7 +1319,7 @@ No inputs defined</pre
     } catch (error) {
       // Enhance error message with context
       const enhancedError = new Error(
-        `Custom Logic Execution Error: ${error.message}`
+        `Custom Logic Execution Error: ${error.message}`,
       );
       enhancedError.stack = error.stack;
       enhancedError.originalError = error;
@@ -1303,7 +1373,7 @@ No inputs defined</pre
               if (inp.type === "event") {
                 const eid = inp.eventId || inp.eventName || inp.source;
                 const evtVar = normalizeVarName(
-                  inp.eventName || inp.eventId || eid
+                  inp.eventName || inp.eventId || eid,
                 );
                 const v =
                   uiTestData[evtVar] ??
@@ -1523,13 +1593,13 @@ No inputs defined</pre
           }
           // reset UI
           const resultSec = document.getElementById(
-            "test-action-result-section"
+            "test-action-result-section",
           );
           const fieldsSec = document.getElementById(
-            "test-action-fields-section"
+            "test-action-fields-section",
           );
           const selSec = document.getElementById(
-            "selected-parser-paths-section"
+            "selected-parser-paths-section",
           );
           if (resultSec) resultSec.style.display = "none";
           if (fieldsSec) fieldsSec.style.display = "none";
@@ -1541,7 +1611,7 @@ No inputs defined</pre
             try {
               const qSec = document.getElementById("test-action-query-section");
               const qDisp = document.getElementById(
-                "test-action-query-display"
+                "test-action-query-display",
               );
               if (qDisp && qSec) {
                 const act = actions.find((a) => a && a.id === actionId) || null;
@@ -1572,7 +1642,7 @@ No inputs defined</pre
       [
         { label: "Add Selected Variables", value: "save", primary: true },
         { label: "Cancel", value: null },
-      ]
+      ],
     );
 
     // After the modal is inserted into the DOM, try to auto-select an action
@@ -1632,7 +1702,7 @@ No inputs defined</pre
             li &&
             li.type === "action" &&
             li.parserPath === path &&
-            li.actionId === actionId
+            li.actionId === actionId,
         );
         if (!exists) {
           logicInputs.push({
@@ -1657,7 +1727,7 @@ No inputs defined</pre
       // function (via `saveCustomLogic()`). No action metadata is modified here.
       showToast(
         "Selected parser path variables added to the Custom Logic inputs — save the logic to persist.",
-        "success"
+        "success",
       );
     }
   };
@@ -1808,7 +1878,7 @@ No inputs defined</pre
         });
         throw new Error(
           "Server returned non-JSON response: " +
-            (txt.length > 400 ? txt.substring(0, 400) + "..." : txt)
+            (txt.length > 400 ? txt.substring(0, 400) + "..." : txt),
         );
       }
 
@@ -1820,8 +1890,8 @@ No inputs defined</pre
             data.rowCount != null
               ? data.rowCount
               : Array.isArray(data.data)
-              ? data.data.length
-              : 0,
+                ? data.data.length
+                : 0,
           sql: data.executedQuery || data.query || queryText,
           actionId: actionId,
         };
@@ -1907,7 +1977,7 @@ No inputs defined</pre
         </div>
         <button class="btn btn-sm" onclick="window.__selectParserPath('${path.replace(
           /'/g,
-          "\\'"
+          "\\'",
         )}')" style="padding: 2px 8px; font-size: 0.75rem;">+ Add Variable</button>
       `;
       fieldDiv.onmouseover = () => (fieldDiv.style.background = "#f0f0f0");
@@ -1953,7 +2023,7 @@ No inputs defined</pre
         }
         if (v.length > 120) v = v.substring(0, 120) + "...";
         parts.push(
-          `<div style="display:flex; justify-content:space-between; gap:12px; padding:4px 0; border-bottom:1px dashed #eee"><div style="font-family:monospace; color:#1a73e8">${k}</div><div style="color:#333; font-family:monospace">${v}</div></div>`
+          `<div style="display:flex; justify-content:space-between; gap:12px; padding:4px 0; border-bottom:1px dashed #eee"><div style="font-family:monospace; color:#1a73e8">${k}</div><div style="color:#333; font-family:monospace">${v}</div></div>`,
         );
       });
 
@@ -1984,7 +2054,7 @@ No inputs defined</pre
       const normalizedAction = normalize(rawActionName).slice(0, 20);
       const normalizedPath = normalize(path).slice(
         0,
-        maxLen - normalizedAction.length - 1
+        maxLen - normalizedAction.length - 1,
       );
       let baseVarName =
         `${normalizedAction}_${normalizedPath}` || normalize(path) || "var";
@@ -2007,7 +2077,7 @@ No inputs defined</pre
 
       const varName = prompt(
         `Enter variable name for path "${path}":`,
-        uniqueName || "var"
+        uniqueName || "var",
       );
       if (!varName) return;
       if (!varName) return;
@@ -2060,12 +2130,12 @@ No inputs defined</pre
             }</div>
             <div style="font-size: 0.85rem; color: #666; font-family: monospace;">Path: ${path}</div>
             <div style="font-size: 0.85rem; color: #888; margin-top:4px;">Sample: ${JSON.stringify(
-              data.value
+              data.value,
             )}</div>
           </div>
           <button class="btn btn-sm btn-danger" onclick="window.__removeParserPath('${path.replace(
             /'/g,
-            "\\'"
+            "\\'",
           )}')" style="padding: 4px 12px;">Remove</button>
         </div>
       `;
@@ -2160,7 +2230,7 @@ No inputs defined</pre
 
         // Gather selected cells and build POJO using first selected row preference
         const checked = Array.from(
-          container.querySelectorAll("input[type=checkbox]:checked")
+          container.querySelectorAll("input[type=checkbox]:checked"),
         );
         if (checked.length === 0) {
           showToast("No cells selected", "error");
@@ -2200,7 +2270,7 @@ No inputs defined</pre
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ variableMappings: { outputShape } }),
-          }
+          },
         );
         const data = await res.json();
         if (res.ok && data && data.ok) {
@@ -2217,7 +2287,7 @@ No inputs defined</pre
           showToast(
             "Failed to save output shape: " +
               (data && data.error ? data.error : "unknown"),
-            "error"
+            "error",
           );
         }
       } catch (e) {
@@ -2240,7 +2310,7 @@ No inputs defined</pre
           li &&
           li.type === "action" &&
           li.parserPath === path &&
-          li.actionId === actId
+          li.actionId === actId,
       );
       if (exists) return;
 
@@ -2264,7 +2334,7 @@ No inputs defined</pre
   function __renderActionMetadataFields(action) {
     try {
       const containerWrap = document.getElementById(
-        "test-action-metadata-fields"
+        "test-action-metadata-fields",
       );
       const list = document.getElementById("test-action-metadata-fields-list");
       if (
@@ -2328,13 +2398,13 @@ No inputs defined</pre
                 p.candidate
               }</div>
               <div style="font-size:0.85rem; color:#666; margin-top:4px">Sample: ${JSON.stringify(
-                p.sample
+                p.sample,
               )}</div>
             </div>
             <div style="margin-left:8px">
               <button class="btn btn-sm" onclick="window.__addMetadataParser('${p.candidate.replace(
                 /'/g,
-                "\\'"
+                "\\'",
               )}', '${p.field.replace(/'/g, "\\'")}')">+ Add</button>
             </div>
           </div>
@@ -2354,7 +2424,7 @@ No inputs defined</pre
       const defaultVar = fieldName || candidatePath.split(".").pop();
       const varName = prompt(
         `Enter variable name for path "${candidatePath}":`,
-        defaultVar || "var"
+        defaultVar || "var",
       );
       if (!varName) return;
       const sampleVal =
@@ -2424,7 +2494,7 @@ No inputs defined</pre
     if (!description) {
       showToast(
         "Please provide a description of what the logic should do",
-        "error"
+        "error",
       );
       return;
     }
@@ -2432,14 +2502,14 @@ No inputs defined</pre
     if (!logicInputs || logicInputs.length === 0) {
       showToast(
         "Please add at least one input variable before generating code",
-        "error"
+        "error",
       );
       return;
     }
 
     // Find the AI Generate button
     const aiBtn = document.querySelector(
-      'button[onclick="aiGenerateLogicCode()"]'
+      'button[onclick="aiGenerateLogicCode()"]',
     );
 
     try {
@@ -2504,7 +2574,7 @@ No inputs defined</pre
 
           showToast(
             "JavaScript code generated successfully! Review and test it.",
-            "success"
+            "success",
           );
 
           // Auto-scroll to function code section
@@ -2514,14 +2584,14 @@ No inputs defined</pre
         } else {
           showToast(
             "Failed to extract valid JavaScript code from AI response",
-            "error"
+            "error",
           );
           console.error("AI response parsing failed:", data.result);
         }
       } else {
         showToast(
           "AI generation failed: " + (data.error || "Unknown error"),
-          "error"
+          "error",
         );
       }
 
@@ -2660,7 +2730,7 @@ No inputs defined</pre
         } else {
           // Full action result
           schema.properties.actions.properties[actionVarName].type = inferType(
-            inp.sampleValue
+            inp.sampleValue,
           );
           schema.properties.actions.properties[actionVarName].sample =
             inp.sampleValue;
@@ -2746,7 +2816,7 @@ No inputs defined</pre
 
       if (expectedType !== "any" && expectedType !== actualType) {
         errors.push(
-          `Type mismatch for ${key}: expected ${expectedType}, got ${actualType}`
+          `Type mismatch for ${key}: expected ${expectedType}, got ${actualType}`,
         );
       }
 
@@ -2770,7 +2840,7 @@ No inputs defined</pre
 
           if (subExpectedType !== "any" && subExpectedType !== subActualType) {
             errors.push(
-              `Type mismatch for ${key}.${subKey}: expected ${subExpectedType}, got ${subActualType}`
+              `Type mismatch for ${key}.${subKey}: expected ${subExpectedType}, got ${subActualType}`,
             );
           }
         }
@@ -2814,11 +2884,10 @@ No inputs defined</pre
       statusEl.style.color = "#155724";
 
       document.getElementById("validation-icon").textContent = "✅ ";
-      document.getElementById(
-        "validation-message"
-      ).textContent = `Input shape defined: ${logicInputs.length} variable${
-        logicInputs.length > 1 ? "s" : ""
-      }`;
+      document.getElementById("validation-message").textContent =
+        `Input shape defined: ${logicInputs.length} variable${
+          logicInputs.length > 1 ? "s" : ""
+        }`;
 
       // Also update the variable preview with structured view
       updateStructuredPreview(schema);
@@ -2831,9 +2900,8 @@ No inputs defined</pre
       statusEl.style.color = "#721c24";
 
       document.getElementById("validation-icon").textContent = "❌ ";
-      document.getElementById(
-        "validation-message"
-      ).textContent = `Error: ${e.message}`;
+      document.getElementById("validation-message").textContent =
+        `Error: ${e.message}`;
     }
   }
 
@@ -2868,7 +2936,7 @@ No inputs defined</pre
     for (const [key, prop] of Object.entries(schema.properties || {})) {
       if (prop.type === "object" && prop.properties) {
         parts.push(
-          `<div style="margin-bottom: 8px;"><strong>${key}:</strong></div>`
+          `<div style="margin-bottom: 8px;"><strong>${key}:</strong></div>`,
         );
         for (const [subKey, subProp] of Object.entries(prop.properties)) {
           parts.push(renderProperty(subKey, subProp, key));
@@ -2950,7 +3018,7 @@ No inputs defined</pre
           if (input.parserPath) {
             resolvedSample = extractFieldValue(
               actionInfo.sample,
-              input.parserPath
+              input.parserPath,
             );
             // If extract yields null/undefined, try representative sample from result
             if (resolvedSample === null || resolvedSample === undefined) {
@@ -3232,7 +3300,7 @@ No inputs defined</pre
       if (v.sample !== undefined && v.sample !== null) {
         prompt += `   Sample Value: ${JSON.stringify(v.sample).substring(
           0,
-          200
+          200,
         )}\n`;
       }
       if (v.resultStructure) {
@@ -3364,7 +3432,7 @@ No inputs defined</pre
       (match, path, varName) => {
         console.warn(`Fixed AI syntax error: ${match} → ${path}['${varName}']`);
         return `${path}['${varName}']`;
-      }
+      },
     );
 
     // Validate JavaScript syntax
@@ -3523,7 +3591,7 @@ No inputs defined</pre
               `<div style="display:flex; justify-content:space-between; gap:12px; padding:4px 0; border-bottom:1px dashed #eee">` +
                 `<div style="font-family:monospace; color:#1a73e8; font-weight:600">${path}</div>` +
                 `<div style="color:#333; font-family:monospace; font-size:0.85rem">${displayValue}</div>` +
-                `</div>`
+                `</div>`,
             );
           }
         });

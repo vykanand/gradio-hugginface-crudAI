@@ -2,10 +2,10 @@
   "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63": {
     "id": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63",
     "name": "Appsthink crm to extract_contact matching",
-    "description": "using {{appsthink_crm:phone_number:added.data.field1}} select all matching records in extract contact data {{db.extract_contact.phoneNumbers_value}}",
-    "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.phone_number}}",
+    "description": "using {{connect_node_2.phone_number}} select all matching records in extract contact data {{db.extract_contact.phoneNumbers_value}}",
+    "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{connect_node_2.phone_number}}",
     "variableMappings": {
-      "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{appsthink_crm:phone_number:added.phone_number}}",
+      "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = '768790'",
       "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = '768790'",
       "dbAttributes": [
         {
@@ -16,6 +16,15 @@
       "eventVariables": [
         "{{appsthink_crm:phone_number:added.data.field1}}",
         "{{appsthink_crm:phone_number:added.data.field2}}"
+      ],
+      "_exampleOutputs": [
+        {
+          "id": 4,
+          "emails_value": "fdesc",
+          "phoneNumbers_value": "768790",
+          "role": "admin",
+          "created_at": "2025-12-01T20:41:44.000Z"
+        }
       ]
     },
     "eventBindings": [

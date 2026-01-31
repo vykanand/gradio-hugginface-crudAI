@@ -1,27 +1,25 @@
 /* Shared theme variables for the project */
 :root {
-  --brand-left: #0D104D;
+  --brand-left: #0d104d;
   --brand-right: #25407f;
-  --brand-gradient: linear-gradient(90deg, var(--brand-left) 0%, var(--brand-right) 100%);
+  --brand-gradient: linear-gradient(
+    90deg,
+    var(--brand-left) 0%,
+    var(--brand-right) 100%
+  );
   --brand-text: #ffffff;
   --body-text: #223a78;
   --brand-accent: #25407f;
-  --active-tab-text: #0D104D;
-  --hover-border: #25407f;
-  --primary: #667eea;
-/* Shared theme variables for the project */
-:root {
-  --brand-left: #0D104D;
-  --brand-right: #25407f;
-  --brand-gradient: linear-gradient(90deg, var(--brand-left) 0%, var(--brand-right) 100%);
-  --brand-text: #ffffff;
-  --body-text: #223a78;
-  --brand-accent: #25407f;
-  --active-tab-text: #0D104D;
+  --active-tab-text: #0d104d;
   --hover-border: #25407f;
   --primary: #667eea;
 }
 
 /* small utility classes */
-.brand-header { background: var(--brand-gradient); color: var(--brand-text); }
-.body-text { color: var(--body-text); }
+.brand-header {
+  background: var(--brand-gradient);
+  color: var(--brand-text);
+}
+.body-text {
+  color: var(--body-text);
+}

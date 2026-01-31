@@ -1,7 +1,11 @@
 <div id="actions-panel" class="tab-panel">
   <div class="toolbar">
-    <button class="btn btn-primary" onclick="showAddActionDialog()">
-      ➕ Add DB Action
+    <button
+      class="btn btn-secondary"
+      title="Create DB Actions via the Workflow Editor"
+      disabled
+    >
+      ➕ Add DB Action (use Workflow Editor)
     </button>
     <button class="btn btn-secondary" onclick="loadActions()">
       🔄 Refresh
@@ -21,7 +25,8 @@
 <script>
   globalThis.initActionsTab = async function () {
     try {
-      if (typeof loadActions === "function") await loadActions();
+      if (typeof fetchActions === "function") await fetchActions();
+      else if (typeof loadActions === "function") await loadActions();
     } catch (e) {
       console.warn("initActionsTab error", e);
     }

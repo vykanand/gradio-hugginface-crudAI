@@ -13,6 +13,7 @@ const queue = require('./services/queue');
 const taxonomyService = require('./services/taxonomyService');
 const rulesEngine = require('./services/rulesEngine');
 const customLogicEngine = require('./services/customLogicEngine');
+const unifiedWorkflowEngine = require('./services/unifiedWorkflowEngine');
 const workflowEngine = require('./services/workflowEngine');
 const executionOrchestrator = require('./services/executionOrchestrator');
 const eventBus = require('./services/eventBus');
@@ -451,7 +452,7 @@ app.post('/api/event/execute', async (req, res) => {
           binding.payloadSchema.primaryFields[k].type = binding.payloadSchema.primaryFields[k].type || (v === null ? 'null' : typeof v);
         });
 
-        // If the eventName encodes a field (either module:field:action or module:field:<action> formats),
+// If the eventName encodes a field (either module:field:action or module:field:<action> formats),
         // set a special primary.field.sample so EventBridge's fallback for 'value' can infer the actual key.
         const parts = String(binding.eventName || '').split(':');
         let inferredField = null;
@@ -2375,6 +2376,18 @@ app.put('/api/actions/:id', async (req, res) => {
   }
 });
 
+// Delete an action metadata
+app.delete('/api/actions/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const ok = await taxonomyService.deleteAction(id);
+    if (ok) return res.json({ ok: true });
+    return res.status(404).json({ ok: false, error: 'Action not found' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Create a new action
 app.post('/api/actions', async (req, res) => {
   try {
@@ -2549,6 +2562,69 @@ app.post('/api/custom-logic/:id/execute', async (req, res) => {
   try {
     const context = req.body.context || {};
     const result = await customLogicEngine.execute(req.params.id, context, pool);
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ============================================================================
+// UNIFIED WORKFLOW ENGINE API - Graph-based DB + Logic orchestration
+// ============================================================================
+app.get('/api/unified-workflows', async (req, res) => {
+  try {
+    const workflows = await unifiedWorkflowEngine.getWorkflows();
+    res.json({ ok: true, workflows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/unified-workflows/:id', async (req, res) => {
+  try {
+    const wf = await unifiedWorkflowEngine.getWorkflow(req.params.id);
+    if (!wf) return res.status(404).json({ ok: false, error: 'Workflow not found' });
+    res.json({ ok: true, workflow: wf });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/unified-workflows', async (req, res) => {
+  try {
+    const created = await unifiedWorkflowEngine.addWorkflow(req.body || {});
+    res.json({ ok: true, workflow: created });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+app.put('/api/unified-workflows/:id', async (req, res) => {
+  try {
+    const updated = await unifiedWorkflowEngine.updateWorkflow(req.params.id, req.body || {});
+    res.json({ ok: true, workflow: updated });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/unified-workflows/:id', async (req, res) => {
+  try {
+    const removed = await unifiedWorkflowEngine.deleteWorkflow(req.params.id);
+    res.json({ ok: true, removed });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/unified-workflows/:id/execute', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const options = {
+      eventId: body.eventId || (body.event && body.event.id) || null,
+      eventPayload: body.eventPayload || body.event || null
+    };
+    const result = await unifiedWorkflowEngine.execute(req.params.id, options);
     res.json({ ok: true, result });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });

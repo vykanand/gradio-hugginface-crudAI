@@ -28,6 +28,7 @@ const { v4: uuidv4 } = require('uuid');
 const taxonomyService = require('./taxonomyService');
 const rulesEngine = require('./rulesEngine');
 const dbExecutionEngine = require('./dbExecutionEngine');
+const unifiedWorkflowEngine = require('./unifiedWorkflowEngine');
 
 const WORKFLOWS_FILE = path.join(__dirname, '..', 'config', 'metadata', 'workflows.json');
 const EXECUTIONS_FILE = path.join(__dirname, '..', 'storage', 'orchestrations', 'workflow_executions.json');
@@ -885,6 +886,70 @@ class WorkflowEngine {
   /**
    * HEALTH CHECK: Monitor workflow engine health
    */
+  
+  async executeConnect(step, execution) {
+    // Delegates to unified workflow engine and merges outputs into execution.context
+    try {
+      const unifiedWorkflowId = step.unifiedWorkflowId || (step.data && step.data.unifiedWorkflowId);
+      if (!unifiedWorkflowId) throw new Error('Connect step missing unifiedWorkflowId');
+
+      // build options from step.inputMapping (simple dot-path resolution against execution.context)
+      const mapping = step.inputMapping || (step.data && step.data.inputMapping) || {};
+      function getByPath(obj, path) {
+        if (!obj || !path) return undefined;
+        const parts = String(path).split('.').filter(Boolean);
+        let cur = obj;
+        for (const p of parts) {
+          if (cur === undefined || cur === null) return undefined;
+          if (/^\d+$/.test(p)) cur = cur[parseInt(p, 10)]; else cur = cur[p];
+        }
+        return cur;
+      }
+
+      const options = {};
+      if (mapping && typeof mapping === 'object' && Object.keys(mapping).length) {
+        const payload = {};
+        for (const k of Object.keys(mapping)) {
+          const spec = mapping[k];
+          if (typeof spec === 'string') payload[k] = getByPath(execution.context, spec);
+          else payload[k] = spec;
+        }
+        options.eventPayload = payload;
+      } else {
+        options.eventPayload = execution.context || {};
+      }
+
+      const result = await unifiedWorkflowEngine.execute(unifiedWorkflowId, options);
+
+      // merge outputs according to outputMapping or default placement
+      const outMap = step.outputMapping || (step.data && step.data.outputMapping) || null;
+      if (outMap && typeof outMap === 'object') {
+        for (const targetKey of Object.keys(outMap)) {
+          const srcPath = outMap[targetKey];
+          const parts = String(srcPath || '').split('.').filter(Boolean);
+          let value = undefined;
+          if (parts.length === 0) value = result.outputs && result.outputs.vars;
+          else {
+            let cur = result.outputs && result.outputs.vars;
+            for (const p of parts) {
+              if (!cur) { cur = undefined; break; }
+              if (/^\d+$/.test(p)) cur = cur[parseInt(p,10)]; else cur = cur[p];
+            }
+            value = cur;
+          }
+          execution.context[targetKey] = value;
+        }
+      } else {
+        execution.context[`${step.id}_result`] = result.outputs || {};
+        execution.context[step.id] = result.outputs && result.outputs.vars ? result.outputs.vars : result.outputs || {};
+      }
+
+      return step.next || null;
+    } catch (e) {
+      throw e;
+    }
+  }
+
   async getHealthStatus() {
     try {
       const executions = await this.getExecutions({});

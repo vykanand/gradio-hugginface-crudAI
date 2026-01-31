@@ -19,7 +19,7 @@ globalThis.EventDataModal = (() => {
    * @param {Object} options - Configuration
    * @param {Function} options.onSelect - Callback when path is selected
    * @param {Array} options.preSelected - Pre-selected paths to show as pills
-   * @returns {Promise<Array>} - Selected variable paths
+   * @returns {Promise<any[]>} - Selected variable paths
    */
   async function show(options = {}) {
     const { onSelect, preSelected = [] } = options;
