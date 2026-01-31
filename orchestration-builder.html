@@ -1133,15 +1133,7 @@
                     >
                       Use This Query
                     </button>
-                    <button
-                      class="btn btn-secondary"
-                      id="test-generated-query"
-                      type="button"
-                    >
-                      Test Query
-                    </button>
                   </div>
-                  <div id="query-test-results" style="margin-top: 12px"></div>
                 </div>
               </div>
             </div>
@@ -1555,13 +1547,7 @@
                 });
               }
 
-              // Setup Test Query button
-              const testQueryBtn = document.getElementById(
-                "test-generated-query"
-              );
-              if (testQueryBtn) {
-                testQueryBtn.addEventListener("click", testGeneratedQuery);
-              }
+              // Test Query button removed from UI
             }
           })();
 
@@ -1747,140 +1733,7 @@
             }
           }
 
-          async function testGeneratedQuery() {
-            const previewContent = document.getElementById(
-              "query-preview-content"
-            );
-            const testResults = document.getElementById("query-test-results");
-
-            const query = previewContent.textContent.trim();
-
-            if (!query) {
-              showToast("No query to test", "error");
-              return;
-            }
-
-            // Extract table name from query
-            let table = null;
-            // Try to extract from query (simple heuristic)
-            const fromMatch = query.match(/FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)/i);
-            if (fromMatch) {
-              table = fromMatch[1];
-            }
-
-            if (!table) {
-              showToast(
-                "Could not extract table name from query. Please ensure the query has a FROM clause.",
-                "error"
-              );
-              return;
-            }
-
-            try {
-              testResults.innerHTML =
-                '<div style="color: #657786;">⏳ Executing query...</div>';
-
-              const response = await fetch(`/${table}`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ prompt: query }),
-                timeout: 30000,
-              });
-
-              if (!response.ok) {
-                throw new Error(
-                  `Query execution failed: ${response.status} ${response.statusText}`
-                );
-              }
-
-              const result = await response.json();
-
-              if (!result.data || !Array.isArray(result.data)) {
-                testResults.innerHTML = `
-                  <div style="padding: 10px; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
-                    <strong style="color: #28a745;">✓ Query executed successfully</strong><br>
-                    <code style="color: #657786;">${
-                      result.executedQuery || result.query || query
-                    }</code><br><br>
-                    No rows returned.
-                  </div>
-                `;
-                return;
-              }
-
-              const data = result.data;
-              const columns = Object.keys(data[0] || {});
-
-              let html = `
-                <div style="padding: 10px; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
-                  <strong style="color: #28a745;">✓ Query executed successfully</strong><br>
-                  <code style="color: #657786;">${result.executedQuery || result.query || query}</code>
-                </div>
-                <div style="margin-top: 10px; max-height: 300px; overflow: auto; background: white; border-radius: 6px; border: 1px solid #e1e8ed;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
-                    <thead>
-                      <tr style="background: #f8f9fa;">
-                        ${columns
-                          .map(
-                            (col) =>
-                              `<th style="padding: 8px; text-align: left; border-bottom: 2px solid #e1e8ed;">${col}</th>`
-                          )
-                          .join("")}
-                      </tr>
-                    </thead>
-                    <tbody>
-              `;
-
-              data.slice(0, 100).forEach((row) => {
-                html += "<tr>";
-                columns.forEach((col) => {
-                  html += `<td style="padding: 8px; border-bottom: 1px solid #eef2f7;">${
-                    row[col] !== null
-                      ? row[col]
-                      : "<em style='color: #999;'>NULL</em>"
-                  }</td>`;
-                });
-                html += "</tr>";
-              });
-
-              html += "</tbody></table></div>";
-
-              if (data.length > 100) {
-                html += `<p style="margin-top: 8px; color: #657786; font-size: 0.85rem;">Showing first 100 rows of ${data.length} total rows.</p>`;
-              }
-
-              testResults.innerHTML = html;
-              showToast("Query test successful!", "success");
-              try {
-                const examples = normalizeSqlResult(result);
-                if (typeof currentAction !== 'undefined' && currentAction) {
-                  currentAction.variableMappings = currentAction.variableMappings || {};
-                  currentAction.variableMappings._exampleOutputs = examples;
-                  // persist executed SQL separately; do not overwrite the authored template
-                  currentAction.variableMappings.executedQuery = result.executedQuery || query || currentAction.variableMappings.executedQuery || null;
-                }
-                if (selectedNode && selectedNode.type === 'action') {
-                  selectedNode.data = selectedNode.data || {};
-                  selectedNode.data.variableMappings = selectedNode.data.variableMappings || {};
-                  selectedNode.data.variableMappings._exampleOutputs = examples;
-                  selectedNode.data.variableMappings.executedQuery = result.executedQuery || query || selectedNode.data.variableMappings.executedQuery || null;
-                }
-                try { pendingChanges = true; } catch(e) {}
-                try { document.getElementById("action-status").textContent = "Pending changes..."; } catch(e) {}
-              } catch (e) { console.warn('persist example outputs failed', e); }
-            } catch (error) {
-              console.error("Test query error:", error);
-              testResults.innerHTML = `
-                <div style="padding: 10px; background: #fff3cd; border-radius: 6px; border: 1px solid #ffc107; color: #856404;">
-                  <strong>⚠ Query Execution Failed</strong><br>
-                  ${error.message}
-                </div>
-              `;
-              showToast(`Query test failed: ${error.message}`, "error");
-            }
-          }
+          // testGeneratedQuery removed — left-column test behavior deprecated
 
           // ====== EVENT BINDING & PAYLOAD MAPPING SYSTEM (NEW MODAL SYSTEM) ======
 
@@ -1900,6 +1753,59 @@
             }
             // render initial list
             try { renderDbAttributesList(); } catch(e){}
+          }
+
+          // Render the selected DB attributes as draggable pills in the editor
+          function renderDbAttributesList() {
+            try {
+              const container = document.getElementById('db-attributes-list');
+              if (!container) return;
+              const attrs = (variableMappings && Array.isArray(variableMappings.dbAttributes)) ? variableMappings.dbAttributes : [];
+              container.innerHTML = '';
+              if (!attrs || attrs.length === 0) {
+                container.innerHTML = `
+                  <div style="color: #8899a6; font-size: 0.85rem; text-align: center; padding: 12px;">
+                    No DB attributes selected. Click "Add DB Attribute" to pick table columns to persist as mappings.
+                  </div>`;
+                return;
+              }
+
+              attrs.forEach((a, idx) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px;border:1px solid #e6eef6;border-radius:6px;background:white;margin-bottom:6px;';
+
+                const pill = document.createElement('div');
+                pill.draggable = true;
+                pill.style.cssText = 'background:#eef6ff;color:#0b3a66;padding:6px 10px;border-radius:999px;display:inline-flex;align-items:center;gap:8px;cursor:grab;';
+                const display = a.path || `{{db.${a.table}.${a.column}}}`;
+                const txt = document.createElement('span');
+                txt.style.fontFamily = 'monospace';
+                txt.textContent = display;
+                pill.appendChild(txt);
+
+                // drag to insert variable into SQL/description
+                pill.addEventListener('dragstart', (e) => {
+                  try { e.dataTransfer.setData('application/json', JSON.stringify({ table: a.table, column: a.column, path: display })); e.dataTransfer.effectAllowed = 'copy'; } catch (err) {}
+                });
+
+                pill.addEventListener('click', () => {
+                  try { const qta = document.getElementById('action-query'); if (qta && typeof globalThis.insertAtCursor === 'function') globalThis.insertAtCursor(qta, display); else if (qta) { insertAtCursor(qta, display); } detectSQLParameters(); } catch (e) { console.warn(e); }
+                });
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'btn btn-sm';
+                removeBtn.style.cssText = 'padding:4px 8px;margin-left:auto';
+                removeBtn.textContent = 'Remove';
+                removeBtn.addEventListener('click', (ev) => {
+                  ev.stopPropagation();
+                  try { variableMappings.dbAttributes.splice(idx, 1); pendingChanges = true; document.getElementById('action-status').textContent = 'Pending changes...'; renderDbAttributesList(); } catch (e) { console.warn(e); }
+                });
+
+                row.appendChild(pill);
+                row.appendChild(removeBtn);
+                container.appendChild(row);
+              });
+            } catch (e) { console.warn('renderDbAttributesList failed', e); }
           }
 
           async function showDbPickerModal() {
@@ -1930,108 +1836,6 @@
               renderDbAttributesList();
               
               showToast(`${selected.length} DB columns selected`, 'success');
-            // Event selector removed — event binding flow deprecated in favor of Connect inputs
-              const eventsData = await eventsRes.json();
-              const registry =
-                eventsData && eventsData.registry ? eventsData.registry : {};
-
-              // Parse registry into a deduplicated flat list of events
-              const eventsMap = new Map();
-              const rawKeys = Object.keys(registry || {});
-
-              for (const k of rawKeys) {
-                if (!k) continue;
-                // Skip special keys
-                if (typeof k === "string" && (k.startsWith("evt:") || k.startsWith("dlq:"))) continue;
-
-                const val = registry[k];
-
-                // If value looks like a module (has .events), extract all events
-                if (val && typeof val === "object" && val.events) {
-                  Object.keys(val.events).forEach((eventName) => {
-                    const id = eventName;
-                    const cnt = Number(val.events[eventName]) || 1;
-                    if (!eventsMap.has(id)) {
-                      eventsMap.set(id, { id, name: id, module: k, count: cnt });
-                    } else {
-                      const existing = eventsMap.get(id);
-                      existing.count = (existing.count || 0) + cnt;
-                    }
-                  });
-                } else {
-                  // Otherwise treat key as an event name
-                  const eventName = k;
-                  const moduleName = typeof eventName === "string" && eventName.includes(":") ? String(eventName).split(":")[0] : "misc";
-
-                  let cnt = 0;
-                  if (val && typeof val === "object" && (val.total || val.count)) cnt = val.total || val.count;
-                  else if (typeof val === "number") cnt = val;
-                  else cnt = 1;
-
-                  if (!eventsMap.has(eventName)) {
-                    eventsMap.set(eventName, { id: eventName, name: eventName, module: moduleName, count: cnt });
-                  } else {
-                    const existing = eventsMap.get(eventName);
-                    existing.count = (existing.count || 0) + cnt;
-                  }
-                }
-              }
-
-              // Convert map to sorted array (most frequent first)
-              const eventsList = Array.from(eventsMap.values()).sort((a, b) => (b.count || 0) - (a.count || 0));
-
-              if (eventsList.length === 0) {
-                showToast(
-                  "No events available. Trigger some events first.",
-                  "info"
-                );
-                return;
-              }
-
-              // Build event selector modal
-              const modal = document.createElement("div");
-              modal.style.cssText = "max-height: 400px; overflow-y: auto;";
-
-              eventsList.forEach((event) => {
-                const eventItem = document.createElement("div");
-                eventItem.style.cssText =
-                  "padding: 12px; margin: 8px 0; border: 1px solid #e1e8ed; border-radius: 6px; cursor: pointer; transition: all 0.2s;";
-                eventItem.innerHTML = `
-                  <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                      <div style="font-weight: 600; color: #2c3e50;">${event.name}</div>
-                      <div style="font-size: 0.75rem; color: #8899a6; margin-top: 2px;">Module: ${event.module}</div>
-                    </div>
-                    <div style="font-size: 0.75rem; color: #657786; background: #f0f3f5; padding: 4px 8px; border-radius: 12px;">
-                      ${event.count} fired
-                    </div>
-                  </div>
-                `;
-
-                eventItem.addEventListener("mouseenter", () => {
-                  eventItem.style.background = "#f8f9fa";
-                  eventItem.style.borderColor = "#667eea";
-                });
-
-                eventItem.addEventListener("mouseleave", () => {
-                  eventItem.style.background = "white";
-                  eventItem.style.borderColor = "#e1e8ed";
-                });
-
-                eventItem.addEventListener("click", () => {
-                  addEventBinding(event);
-                  document.querySelector(".modal-overlay").remove();
-                });
-
-                modal.appendChild(eventItem);
-              });
-
-              await _createModal({
-                title: "Select Event to Bind",
-                bodyEl: modal,
-                showCancel: true,
-                confirmText: "Cancel",
-              });
             } catch (error) {
               console.error("Error showing event selector:", error);
               showToast("Error loading events: " + error.message, "error");
@@ -2755,7 +2559,7 @@
               const queryTextarea = document.getElementById('action-query');
               if (!queryTextarea) return;
               const placeholder = `{{connect_${connectNodeId}.${path}}}`;
-              insertAtCursor(queryTextarea, placeholder);
+              if (globalThis && typeof globalThis.insertAtCursor === 'function') globalThis.insertAtCursor(queryTextarea, placeholder);
               // re-detect parameters
               setTimeout(() => detectSQLParameters(), 80);
               showToast('Inserted connect input placeholder', 'success');
@@ -3037,13 +2841,8 @@
           // Make detectSQLParameters global for drag-drop
           globalThis.detectSQLParameters = detectSQLParameters;
 
-          // Resolve variables in query using bound event schemas and payload values.
-          // Supports {{FULL_EVENT_NAME.field.path}} where field.path may include dots (e.g. actor.user or detail.email)
-          function resolveQueryWithBindings(query, payload, binding) {
-            // Event-binding based query resolution has been deprecated.
-            // Connect placeholders ({{connect_<nodeId>.<path>}}) are resolved server-side.
-            return query;
-          }
+          // resolveQueryWithBindings removed: event-binding based resolution deprecated.
+          // Connect placeholders ({{connect_<nodeId>.<path>}}) are resolved server-side.
 
           function getValueFromPayload(payload, fieldPath) {
             if (!payload) return undefined;
@@ -3560,42 +3359,11 @@
 
           
 
-          function insertAtCursor(input, text) {
-            try {
-              const start = input.selectionStart || 0;
-              const end = input.selectionEnd || 0;
-              const v = input.value || "";
-              input.value = v.slice(0, start) + text + v.slice(end);
-              input.selectionStart = input.selectionEnd = start + text.length;
-              input.focus();
-              triggerAutosave();
-            } catch (e) {
-              input.value += text;
-              triggerAutosave();
-            }
-          }
+          /* insertAtCursor is provided on globalThis earlier to ensure a single canonical implementation. */
 
           
 
-          function insertTextAtCursor(el, text) {
-            // For textarea/input elements
-            if (typeof el.selectionStart === 'number') {
-              const start = el.selectionStart;
-              const end = el.selectionEnd;
-              const val = el.value;
-              el.value = val.slice(0, start) + text + val.slice(end);
-              // restore cursor after inserted text
-              const pos = start + text.length;
-              el.selectionStart = el.selectionEnd = pos;
-              el.focus();
-              // trigger input events if frameworks listen
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              return;
-            }
-            // fallback: append
-            el.value = (el.value || '') + text;
-            try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
-          }
+          // insertTextAtCursor removed: use globalThis.insertAtCursor or insertAtCursor helper instead.
 
           function collectEditor() {
             const name = (
@@ -5132,13 +4900,21 @@
               }
               showToast('Inserted connect input placeholder', 'success');
             } else {
-              // format DB payload into input value
+              // format DB payload into input value or insert variable placeholder
               if (payload.table && payload.column) {
-                input.value = payload.table + "." + payload.column;
+                const placeholder = payload.path || `{{db.${payload.table}.${payload.column}}}`;
+                if (typeof globalThis.insertAtCursor === 'function') globalThis.insertAtCursor(input, placeholder);
+                else input.value = placeholder;
+                // re-detect parameters if it's the query textarea
+                if (input.id === 'action-query') {
+                  setTimeout(() => { try { globalThis.detectSQLParameters(); if (globalThis.renderSQLPreview) globalThis.renderSQLPreview(); } catch (e){} }, 80);
+                } else {
+                  setTimeout(() => { try { if (globalThis.renderSQLPreview) globalThis.renderSQLPreview(); } catch (e){} }, 80);
+                }
               } else if (payload.table) {
                 input.value = payload.table;
+                input.dispatchEvent(new Event("change", { bubbles: true }));
               }
-              input.dispatchEvent(new Event("change", { bubbles: true }));
             }
             input.classList.remove("drag-over");
             e.preventDefault();

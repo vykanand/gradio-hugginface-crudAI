@@ -414,12 +414,16 @@ globalThis.DbPickerModal = (() => {
       pill.style.transform = "scale(1)";
     };
 
-    // Drag events
-    pill.addEventListener("dragstart", (e) => {
-      e.dataTransfer.setData("text/plain", displayText);
-      e.dataTransfer.effectAllowed = "copy";
-      pill.style.opacity = "0.5";
-    });
+      pill.addEventListener("dragstart", function (ev) {
+        const payload = { table: table, column: column, path: displayText };
+        try {
+          ev.dataTransfer.setData("application/json", JSON.stringify(payload));
+        } catch (e) {
+          ev.dataTransfer.setData("text/plain", displayText);
+        }
+        ev.dataTransfer.effectAllowed = "copy";
+        pill.style.opacity = "0.5";
+      });
 
     pill.addEventListener("dragend", () => {
       pill.style.opacity = "1";
