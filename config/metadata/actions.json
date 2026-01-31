@@ -5,7 +5,7 @@
     "description": "using {{connect_node_2.phone_number}} select all matching records in extract contact data {{db.extract_contact.phoneNumbers_value}}",
     "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{connect_node_2.phone_number}}",
     "variableMappings": {
-      "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = '768790'",
+      "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{connect_node_2.phone_number}}",
       "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = '768790'",
       "dbAttributes": [
         {

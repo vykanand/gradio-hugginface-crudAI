@@ -1141,7 +1141,7 @@
                       Test Query
                     </button>
                   </div>
-                  <div id="test-results" style="margin-top: 12px"></div>
+                  <div id="query-test-results" style="margin-top: 12px"></div>
                 </div>
               </div>
             </div>
@@ -1179,6 +1179,8 @@
                   <div style="font-size:0.78rem;color:#2c3e50;margin-bottom:6px;font-weight:600;">SQL Preview (live)</div>
                   <pre id="sql-preview-area" style="white-space:pre-wrap;word-break:break-word;margin:0;font-family: 'Courier New', monospace;color:#0b2545;">-- SQL preview will appear here</pre>
                 </div>
+                <!-- Action-specific test results (shows when testing from SQL/Test Run) -->
+                <div id="action-test-results" style="margin-top:12px"></div>
                 <div id="variable-mapping-area" style="margin-top:10px;">
                   <div style="color:#8899a6;font-size:0.85rem;text-align:center;padding:8px;">Click Connect input fields below to insert variables. Detected variables will appear here.</div>
                 </div>
@@ -1399,6 +1401,20 @@
               // Setup preview/test handlers
               setupPreviewHandlers();
 
+              // Ensure preview updates even when the action-query textarea is re-rendered
+              // (some UI flows replace the textarea node, detaching direct listeners).
+              try {
+                document.addEventListener('input', (e) => {
+                  try {
+                    const t = e && e.target ? e.target : null;
+                    if (!t) return;
+                    if (t.id === 'action-query' || t.id === 'action-desc') {
+                      if (globalThis.renderSQLPreview) globalThis.renderSQLPreview();
+                    }
+                  } catch (ie) { /* ignore */ }
+                });
+              } catch (e) { /* ignore */ }
+
               // Setup Generate Query button
               const generateBtn = document.getElementById("generate-query-btn");
               if (generateBtn) {
@@ -1426,7 +1442,114 @@
                   );
                   const queryTextarea = document.getElementById("action-query");
                   if (previewContent && queryTextarea) {
-                    queryTextarea.value = previewContent.textContent;
+                    // Before copying, attempt to convert literal sample values back into
+                    // connect placeholders so the stored action keeps variable parameters.
+                    try {
+                      const actionId = (currentAction && currentAction.id) ? currentAction.id : null;
+                      let sql = previewContent.textContent || '';
+                      // collect connect sample replacements for this action
+                      function collectConnectSampleReplacements(actionId) {
+                        const out = [];
+                        try {
+                          // find action nodes referencing this action id
+                          const actionNodes = (nodes || []).filter(n => n.type === 'action' && n.data && (String(n.data.action) === String(actionId) || String(n.data.action) === String((currentAction && currentAction.name) || '')));
+                          const connectNodes = new Map();
+                          function collectUpstream(startId) {
+                            const q = [String(startId)];
+                            const seen = new Set();
+                            while (q.length) {
+                              const nid = q.shift();
+                              connections.forEach(c => {
+                                if (String(c.to) === String(nid)) {
+                                  const from = (nodes || []).find(n => String(n.id) === String(c.from));
+                                  if (!from) return;
+                                  if (from.type === 'connect') connectNodes.set(from.id, from);
+                                  else if (!seen.has(from.id)) { seen.add(from.id); q.push(from.id); }
+                                }
+                              });
+                            }
+                          }
+                          actionNodes.forEach(n => collectUpstream(n.id));
+                          connectNodes.forEach((cn) => {
+                            const mapping = (cn.data && (cn.data.mapping || {}));
+                            const keys = Object.keys(mapping).length ? Object.keys(mapping) : [];
+                            // gather preview sources
+                            let preview = {};
+                            if (cn.data && cn.data.variableMappings && Array.isArray(cn.data.variableMappings._exampleOutputs) && cn.data.variableMappings._exampleOutputs.length > 0) preview = cn.data.variableMappings._exampleOutputs[0] || {};
+                            else if (cn.data && cn.data.mappingPreview && Object.keys(cn.data.mappingPreview || {}).length > 0) preview = cn.data.mappingPreview || {};
+                            else if (cn.data && cn.data.examplePayload && Object.keys(cn.data.examplePayload || {}).length > 0) preview = cn.data.examplePayload || {};
+                            keys.forEach(k => {
+                              const mappedPath = mapping && mapping[k] ? mapping[k] : k;
+                              // resolve sample value using same heuristics
+                              function tryResolveFrom(obj) {
+                                if (!obj) return undefined;
+                                if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
+                                if (mapping && mapping[k] && Object.prototype.hasOwnProperty.call(obj, mapping[k])) return obj[mapping[k]];
+                                if (mapping && mapping[k]) {
+                                  const parts = String(mapping[k]).split('.');
+                                  let cur = obj;
+                                  for (const p of parts) { if (cur && Object.prototype.hasOwnProperty.call(cur, p)) cur = cur[p]; else { cur = undefined; break; } }
+                                  if (cur !== undefined) return cur;
+                                }
+                                const parts2 = String(k).split('.');
+                                let cur2 = obj;
+                                for (const p of parts2) { if (cur2 && Object.prototype.hasOwnProperty.call(cur2, p)) cur2 = cur2[p]; else { cur2 = undefined; break; } }
+                                if (cur2 !== undefined) return cur2;
+                                return undefined;
+                              }
+                              let sampleVal = undefined;
+                              try { sampleVal = tryResolveFrom(preview); } catch (e) { sampleVal = undefined; }
+                              if (sampleVal === undefined && cn.data && cn.data.variableMappings && Array.isArray(cn.data.variableMappings._exampleOutputs) && cn.data.variableMappings._exampleOutputs.length > 0) {
+                                try { sampleVal = tryResolveFrom(cn.data.variableMappings._exampleOutputs[0]); } catch(e){}
+                              }
+                              if (sampleVal !== undefined) {
+                                const placeholder = `{{connect_${cn.id}.${mappedPath}}}`;
+                                const variants = [];
+                                if (sampleVal === null) {
+                                  variants.push(/NULL/g);
+                                } else if (typeof sampleVal === 'number') {
+                                  variants.push(new RegExp(String(sampleVal), 'g'));
+                                } else {
+                                  const s = String(sampleVal);
+                                  // match quoted and unquoted occurrences; escape for regex
+                                  const esc = s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&');
+                                  variants.push(new RegExp("'" + esc + "'", 'g'));
+                                  variants.push(new RegExp('\\b' + esc + '\\b', 'g'));
+                                }
+                                out.push({ placeholder, variants, sampleVal: sampleVal, connectId: cn.id, mappedPath });
+                              }
+                            });
+                          });
+                        } catch (e) { /* ignore */ }
+                        // sort by sample length desc to replace longer matches first
+                        out.sort((a,b) => String(b.sampleVal || '').length - String(a.sampleVal || '').length);
+                        return out;
+                      }
+
+                      const repls = collectConnectSampleReplacements(currentAction && currentAction.id ? currentAction.id : null);
+                      if (repls && repls.length) {
+                        repls.forEach(r => {
+                          try {
+                            r.variants.forEach(v => { sql = sql.replace(v, r.placeholder); });
+                          } catch (e) {}
+                        });
+                      }
+                      queryTextarea.value = sql;
+                    } catch (e) {
+                      // fallback: copy raw SQL
+                      queryTextarea.value = previewContent.textContent;
+                    }
+                    // Trigger existing handlers to update detected parameters and live preview
+                    try {
+                      // small timeout to allow DOM updates if textarea was re-rendered
+                      setTimeout(() => {
+                        try {
+                          if (typeof detectSQLParameters === 'function') detectSQLParameters();
+                        } catch(e){}
+                        try { if (globalThis.renderSQLPreview) globalThis.renderSQLPreview(); } catch(e){}
+                        try { queryTextarea.dispatchEvent(new Event('input', { bubbles: true })); } catch(e){}
+                      }, 40);
+                    } catch (e) {}
                     showToast("Query copied to SQL field", "success");
                   }
                 });
@@ -1628,7 +1751,7 @@
             const previewContent = document.getElementById(
               "query-preview-content"
             );
-            const testResults = document.getElementById("test-results");
+            const testResults = document.getElementById("query-test-results");
 
             const query = previewContent.textContent.trim();
 
@@ -1735,13 +1858,14 @@
                 if (typeof currentAction !== 'undefined' && currentAction) {
                   currentAction.variableMappings = currentAction.variableMappings || {};
                   currentAction.variableMappings._exampleOutputs = examples;
-                  currentAction.variableMappings.template = result.executedQuery || query;
+                  // persist executed SQL separately; do not overwrite the authored template
+                  currentAction.variableMappings.executedQuery = result.executedQuery || query || currentAction.variableMappings.executedQuery || null;
                 }
                 if (selectedNode && selectedNode.type === 'action') {
                   selectedNode.data = selectedNode.data || {};
                   selectedNode.data.variableMappings = selectedNode.data.variableMappings || {};
                   selectedNode.data.variableMappings._exampleOutputs = examples;
-                  selectedNode.data.variableMappings.template = result.executedQuery || query;
+                  selectedNode.data.variableMappings.executedQuery = result.executedQuery || query || selectedNode.data.variableMappings.executedQuery || null;
                 }
                 try { pendingChanges = true; } catch(e) {}
                 try { document.getElementById("action-status").textContent = "Pending changes..."; } catch(e) {}
@@ -2756,16 +2880,19 @@
                 payloads[key] = sample;
               }
 
-              // For now, use the first node's payload as the payload argument — executor resolves connect placeholders server-side
-              // Merge multiple payloads into one top-level object namespaced by node if needed by server; we will pass { connects: { <ns>: sample } }
-              const mergedPayload = { connects: {} };
-              Object.keys(payloads).forEach(k => { mergedPayload.connects[k] = payloads[k]; });
+              // For now, use the per-node payloads as top-level keys so the server resolver
+              // can match placeholders like {{connect_node_2.field}} directly to payload.connect_node_2
+              const mergedPayload = {};
+              Object.keys(payloads).forEach(k => { mergedPayload[k] = payloads[k]; });
 
-              const resultsArea = document.getElementById('test-results') || null;
+              const resultsArea = document.getElementById('action-test-results') || null;
               if (resultsArea) resultsArea.innerHTML = '<div style="color:#657786">⏳ Executing query using Connect samples...</div>';
 
               // Execute via server helper which understands connect placeholders
-              const exec = await executeSQLWithPayload(tpl, mergedPayload, null);
+              // Provide a synthetic binding.eventName matching the first placeholder
+              // so the server synthesizes a payloadSchema and can resolve fields.
+              const firstNs = placeholders.length > 0 ? placeholders[0].ns : null;
+              const exec = await executeSQLWithPayload(tpl, mergedPayload, firstNs ? { eventName: firstNs } : null);
               if (!exec || !exec.success) {
                 const msg = exec && exec.error ? exec.error : 'Execution failed';
                 if (resultsArea) resultsArea.innerHTML = `<div style="color:#c0392b">${escapeHtml(String(msg))}</div>`;
@@ -2779,13 +2906,13 @@
                 if (currentAction) {
                   currentAction.variableMappings = currentAction.variableMappings || {};
                   currentAction.variableMappings._exampleOutputs = examples;
-                  currentAction.variableMappings.template = exec.executedQuery || tpl;
+                  currentAction.variableMappings.executedQuery = exec.executedQuery || tpl || currentAction.variableMappings.executedQuery || null;
                 }
                 if (selectedNode && selectedNode.type === 'action') {
                   selectedNode.data = selectedNode.data || {};
                   selectedNode.data.variableMappings = selectedNode.data.variableMappings || {};
                   selectedNode.data.variableMappings._exampleOutputs = examples;
-                  selectedNode.data.variableMappings.template = exec.executedQuery || tpl;
+                  selectedNode.data.variableMappings.executedQuery = exec.executedQuery || tpl || selectedNode.data.variableMappings.executedQuery || null;
                 }
                 try { pendingChanges = true; } catch(e) {}
                 try { document.getElementById('action-status').textContent = 'Pending changes...'; } catch(e) {}
@@ -2825,7 +2952,18 @@
                 return { success: false, error: 'Missing or empty query', result: null, executedQuery: null };
               }
 
-              const eventName = binding && binding.eventName ? binding.eventName : null;
+              let eventName = binding && binding.eventName ? binding.eventName : null;
+
+              // If no binding provided, infer eventName from payload top-level keys
+              // (we pass connect samples as top-level keys like 'connect_node_2').
+              try {
+                if (!eventName && payload && typeof payload === 'object') {
+                  const keys = Object.keys(payload || {});
+                  for (const k of keys) {
+                    if (/^connect[_\-]?/i.test(k)) { eventName = k; break; }
+                  }
+                }
+              } catch (e) { /* ignore */ }
 
               try {
                 console.log('event execute -> sending to /api/event/execute', {
@@ -2835,10 +2973,14 @@
                 });
               } catch (dbg) {}
 
+              // Only include eventName when explicitly provided; avoid sending a default
+              // eventName which may be interpreted as an actual binding name by the server.
+              const bodyObj = { query: query, payload: payload };
+              if (eventName) bodyObj.eventName = eventName;
               const resp = await fetch('/api/event/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: query, eventName: eventName, payload: payload }),
+                body: JSON.stringify(bodyObj),
                 timeout: 60000
               });
 
@@ -3237,6 +3379,95 @@
 
           // ====== END EVENT BINDING SYSTEM ======
 
+          // Collect connect sample replacements for a given actionId
+          function collectConnectSampleReplacementsForAction(actionId) {
+            const out = [];
+            try {
+              const actionNodes = (nodes || []).filter(n => n.type === 'action' && n.data && (String(n.data.action) === String(actionId) || String(n.data.action) === String((currentAction && currentAction.name) || '')));
+              const connectNodes = new Map();
+              function collectUpstream(startId) {
+                const q = [String(startId)];
+                const seen = new Set();
+                while (q.length) {
+                  const nid = q.shift();
+                  connections.forEach(c => {
+                    if (String(c.to) === String(nid)) {
+                      const from = (nodes || []).find(n => String(n.id) === String(c.from));
+                      if (!from) return;
+                      if (from.type === 'connect') connectNodes.set(from.id, from);
+                      else if (!seen.has(from.id)) { seen.add(from.id); q.push(from.id); }
+                    }
+                  });
+                }
+              }
+              actionNodes.forEach(n => collectUpstream(n.id));
+              connectNodes.forEach((cn) => {
+                const mapping = (cn.data && (cn.data.mapping || {}));
+                const keys = Object.keys(mapping).length ? Object.keys(mapping) : [];
+                let preview = {};
+                if (cn.data && cn.data.variableMappings && Array.isArray(cn.data.variableMappings._exampleOutputs) && cn.data.variableMappings._exampleOutputs.length > 0) preview = cn.data.variableMappings._exampleOutputs[0] || {};
+                else if (cn.data && cn.data.mappingPreview && Object.keys(cn.data.mappingPreview || {}).length > 0) preview = cn.data.mappingPreview || {};
+                else if (cn.data && cn.data.examplePayload && Object.keys(cn.data.examplePayload || {}).length > 0) preview = cn.data.examplePayload || {};
+
+                keys.forEach(k => {
+                  const mappedPath = mapping && mapping[k] ? mapping[k] : k;
+                  function tryResolveFrom(obj) {
+                    if (!obj) return undefined;
+                    if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
+                    if (mapping && mapping[k] && Object.prototype.hasOwnProperty.call(obj, mapping[k])) return obj[mapping[k]];
+                    if (mapping && mapping[k]) {
+                      const parts = String(mapping[k]).split('.');
+                      let cur = obj;
+                      for (const p of parts) { if (cur && Object.prototype.hasOwnProperty.call(cur, p)) cur = cur[p]; else { cur = undefined; break; } }
+                      if (cur !== undefined) return cur;
+                    }
+                    const parts2 = String(k).split('.');
+                    let cur2 = obj;
+                    for (const p of parts2) { if (cur2 && Object.prototype.hasOwnProperty.call(cur2, p)) cur2 = cur2[p]; else { cur2 = undefined; break; } }
+                    if (cur2 !== undefined) return cur2;
+                    return undefined;
+                  }
+
+                  let sampleVal = undefined;
+                  try { sampleVal = tryResolveFrom(preview); } catch (e) { sampleVal = undefined; }
+                  if (sampleVal === undefined && cn.data && cn.data.variableMappings && Array.isArray(cn.data.variableMappings._exampleOutputs) && cn.data.variableMappings._exampleOutputs.length > 0) {
+                    try { sampleVal = tryResolveFrom(cn.data.variableMappings._exampleOutputs[0]); } catch(e){}
+                  }
+                  if (sampleVal !== undefined) {
+                    const placeholder = `{{connect_${cn.id}.${mappedPath}}}`;
+                    const variants = [];
+                    if (sampleVal === null) {
+                      variants.push(/NULL/g);
+                    } else if (typeof sampleVal === 'number') {
+                      variants.push(new RegExp(String(sampleVal), 'g'));
+                    } else {
+                      const s = String(sampleVal);
+                      const esc = s.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+                      variants.push(new RegExp("'" + esc + "'", 'g'));
+                      variants.push(new RegExp('\\b' + esc + '\\b', 'g'));
+                    }
+                    out.push({ placeholder, variants, sampleVal: sampleVal, connectId: cn.id, mappedPath });
+                  }
+                });
+              });
+            } catch (e) { /* ignore */ }
+            out.sort((a,b) => String(b.sampleVal || '').length - String(a.sampleVal || '').length);
+            return out;
+          }
+
+          function normalizeQueryToTemplate(sql, actionId) {
+            if (!sql || !sql.trim()) return sql;
+            try {
+              const repls = collectConnectSampleReplacementsForAction(actionId);
+              if (!repls || !repls.length) return sql;
+              let result = String(sql);
+              repls.forEach(r => {
+                try { r.variants.forEach(v => { result = result.replace(v, r.placeholder); }); } catch (e) {}
+              });
+              return result;
+            } catch (e) { return sql; }
+          }
+
           async function fetchActions() {
             const el = document.getElementById("actions-panel-list");
             el.innerHTML = '<div class="muted">Loading...</div>';
@@ -3492,26 +3723,56 @@
               if (!data.variableMappings) data.variableMappings = {};
               if (variableMappings) {
                 data.variableMappings = Object.assign({}, variableMappings);
-                // Keep the original template in metadata to preserve the {{...}} form
-                if (!data.variableMappings.template) data.variableMappings.template = data.query || null;
+                // Do NOT auto-copy the current `data.query` into `variableMappings.template`.
+                // If an authored template already exists on the currentAction, preserve it.
+                if (!data.variableMappings.template) {
+                  if (currentAction && currentAction.variableMappings && currentAction.variableMappings.template) {
+                    data.variableMappings.template = currentAction.variableMappings.template;
+                  } else {
+                    data.variableMappings.template = null;
+                  }
+                }
               }
             } catch (e) {
               console.warn('Failed to attach variableMappings to save payload', e);
             }
             try {
               status.textContent = now ? "Saving..." : "Auto-saving...";
+              // Preserve original editor SQL to detect explicit placeholders typed by user
+              const originalQuery = (data.query || '').toString();
+              // Detect if the editor already contains connect placeholders — if so, keep them verbatim
+              const placeholderRegex = /\{\{\s*connect_[\w-]+\.[^\}\s]+\s*\}\}/g;
+              const hasPlaceholdersInEditor = placeholderRegex.test(originalQuery);
+              // Normalize query to preserve placeholders: if editor contains placeholders, use it as canonical.
+              try {
+                const existingTemplate = (currentAction && currentAction.variableMappings && currentAction.variableMappings.template) ? currentAction.variableMappings.template : null;
+                let normalized;
+                if (hasPlaceholdersInEditor) normalized = originalQuery;
+                else if (existingTemplate) normalized = existingTemplate;
+                else normalized = normalizeQueryToTemplate(originalQuery, data.id) || originalQuery;
+                data.variableMappings = data.variableMappings || {};
+                data.variableMappings.template = normalized;
+                data.query = normalized;
+              } catch (e) { console.warn('saveAction: normalization failed', e); }
+              // Debug: log the payload we are about to send
+              try { console.debug('saveAction: outgoing payload', JSON.parse(JSON.stringify(data))); } catch(e) { try { console.debug('saveAction: outgoing payload (stringified)', String(data)); } catch(e){} }
               const method =
                 currentAction && currentAction.id === data.id ? "PUT" : "POST";
               const url =
                 method === "POST"
                   ? "/api/actions"
                   : `/api/actions/${encodeURIComponent(data.id)}`;
+              // Debug: show what we're sending (trim long bodies)
+              try { const bodyStr = JSON.stringify(data); console.debug('saveAction: fetch', { method, url, bodyLength: bodyStr.length, bodyPreview: bodyStr.substring(0, 200) }); } catch(e) {}
               const r = await fetch(url, {
                 method,
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data),
               });
-              const d = await r.json();
+              let d = null;
+              try { d = await r.json(); } catch(e) { console.warn('saveAction: failed to parse response JSON', e); d = null; }
+              // Debug: log server response
+              try { console.debug('saveAction: server response', { status: r.status, ok: r.ok, body: d }); } catch(e) {}
               if (d && d.ok) {
                 currentAction = data;
                 try { pendingChanges = false; } catch(e) {}
@@ -3519,30 +3780,69 @@
                 fetchActions();
                 status.textContent = "Saved";
                 setTimeout(() => (status.textContent = "Idle"), 1200);
-                // After saving the action, execute it to produce example outputs and persist them back to the action resource
+                // After saving the action, attempt to execute it to produce example outputs and persist them back to the action resource
                 try {
                   const execQuery = (data.query || (data.variableMappings && data.variableMappings.template) || "").toString();
                   if (execQuery && execQuery.trim()) {
-                    const exec = await executeSQLWithPayload(execQuery, {}, null);
-                    if (exec && exec.success) {
-                      const examples = normalizeSqlResult(exec.result);
-                      // attach into payload and update action on server
-                      try {
-                        const updatePayload = Object.assign({}, data);
-                        updatePayload.variableMappings = updatePayload.variableMappings || {};
-                        updatePayload.variableMappings._exampleOutputs = examples;
-                        updatePayload.variableMappings.template = exec.executedQuery || updatePayload.variableMappings.template || data.query;
-                        await fetch(`/api/actions/${encodeURIComponent(data.id)}`, {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify(updatePayload)
-                        });
-                        // reflect in currentAction
-                        try { currentAction.variableMappings = currentAction.variableMappings || {}; currentAction.variableMappings._exampleOutputs = examples; } catch(e){}
-                      } catch (e) { console.warn('persisting action examples failed', e); }
+                    // Detect connect placeholders and synthesize a payload where possible
+                    const placeholderRegex = /\{\{([^\.\}\s]+)\.([^\}\s]+)\}\}/g;
+                    const placeholders = [];
+                    let m;
+                    while ((m = placeholderRegex.exec(execQuery)) !== null) placeholders.push({ ns: m[1], path: m[2], full: m[0] });
+
+                    let execPayload = {};
+                    if (placeholders.length > 0) {
+                      placeholders.forEach(p => {
+                        const ns = p.ns;
+                        const nodeMatch = ns.match(/connect[_\-]?(?:node[_\-])?(.*)/i);
+                        let nodeId = null;
+                        if (nodeMatch && nodeMatch[1]) nodeId = 'node_' + nodeMatch[1].replace(/^node[_\-]?/, '');
+                        if (!nodeId) nodeId = ns;
+                        const nd = (nodes || []).find(n => String(n.id) === String(nodeId) || String(n.id) === String(ns));
+                        let sample = {};
+                        if (nd && nd.data && nd.data.variableMappings && Array.isArray(nd.data.variableMappings._exampleOutputs) && nd.data.variableMappings._exampleOutputs.length > 0) {
+                          sample = nd.data.variableMappings._exampleOutputs[0];
+                        } else if (nd && nd.data && nd.data.mappingPreview) {
+                          sample = nd.data.mappingPreview;
+                        } else if (nd && nd.data && nd.data.examplePayload) {
+                          sample = nd.data.examplePayload;
+                        } else {
+                          sample = {};
+                        }
+                        execPayload[ns] = sample;
+                      });
                     }
-                  } else {
-                    // No executable SQL available; skip execution step
+
+                    // Only execute if there are no connect placeholders or we could synthesize sample payloads
+                    if (placeholders.length === 0 || Object.keys(execPayload).length > 0) {
+                      const exec = await executeSQLWithPayload(execQuery, execPayload, null);
+                      if (exec && exec.success) {
+                        const examples = normalizeSqlResult(exec.result);
+                        try {
+                          const updatePayload = Object.assign({}, data);
+                          updatePayload.variableMappings = updatePayload.variableMappings || {};
+                          updatePayload.variableMappings._exampleOutputs = examples;
+                          updatePayload.variableMappings.executedQuery = exec.executedQuery || updatePayload.variableMappings.executedQuery || null;
+                          // Ensure the authored template (placeholders) is preserved as the canonical saved SQL
+                          const authoredTemplate = (currentAction && currentAction.variableMappings && currentAction.variableMappings.template)
+                            ? currentAction.variableMappings.template
+                            : (hasPlaceholdersInEditor ? originalQuery : (data.variableMappings && data.variableMappings.template ? data.variableMappings.template : (data.query || null)));
+                          updatePayload.variableMappings.template = authoredTemplate;
+                          updatePayload.query = authoredTemplate;
+                          // Debug: log updatePayload and perform update
+                          try { const upStr = JSON.stringify(updatePayload); console.debug('saveAction: updating action with examples', { url: `/api/actions/${encodeURIComponent(data.id)}`, bodyLength: upStr.length, bodyPreview: upStr.substring(0,200) }); } catch(e) {}
+                          const updateResp = await fetch(`/api/actions/${encodeURIComponent(data.id)}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(updatePayload)
+                          });
+                          try { const ur = await updateResp.json(); console.debug('saveAction: update response', { status: updateResp.status, ok: updateResp.ok, body: ur }); } catch(e) { console.warn('saveAction: failed to parse update response', e); }
+                          try { currentAction.variableMappings = currentAction.variableMappings || {}; currentAction.variableMappings._exampleOutputs = examples; currentAction.variableMappings.template = authoredTemplate; } catch(e){}
+                        } catch (e) { console.warn('persisting action examples failed', e); }
+                      }
+                    } else {
+                      // couldn't synthesize sample payloads for connect placeholders; skip execution
+                    }
                   }
                 } catch (e) { console.warn('execute after save failed', e); }
               } else {
