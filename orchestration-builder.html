@@ -150,9 +150,11 @@
       .canvas-container {
         flex: 1 1 auto;
         position: relative;
-        overflow: auto;
+        overflow-x: auto;
+        overflow-y: hidden;
         background: #fafbfc;
         min-height: 0;
+        min-width: 100vw;
       }
 
       .canvas {
@@ -595,6 +597,7 @@
         position: absolute;
         top: 0;
         left: 0;
+        min-width: 40000px;
         width: 100%;
         height: 100%;
         z-index: 2;
@@ -697,8 +700,8 @@
           <option value="">Select Workflow...</option>
         </select>
       </div>
-      <div class="main">
-        <div class="sidebar">
+      <div class="main" style="display: flex; flex-direction: row; height: 100%; min-height: 0;">
+        <div class="sidebar" style="width: 260px; min-width: 180px; max-width: 340px; background: #f5f7fa; border-right: 1px solid #e0e4ea; display: flex; flex-direction: column;">
           <h3>Workflow Nodes</h3>
           <div class="node-type" draggable="true" data-node-type="action">
             <div class="node-icon" style="background: #e3f2fd; color: #0d47a1">
@@ -772,13 +775,13 @@
             </div>
           </div>
         </div>
-        <div class="canvas-container">
-          <div class="canvas" id="workflow-canvas">
+        <div class="canvas-container" style="flex: 1 1 0%; min-width: 0; position: relative; overflow-x: auto; overflow-y: hidden; background: #fafbfc;">
+          <div class="canvas" id="workflow-canvas" style="width: 100%; height: 100%; min-width: 2000px; position: relative;">
             <svg class="svg-connections" id="svg-connections"></svg>
-            <div class="workflow-nodes-container" id="workflow-nodes"></div>
+            <div class="workflow-nodes-container" id="workflow-nodes" style="width: 100%; min-width: 2000px; position: absolute; top: 0; left: 0; height: 100%;"></div>
           </div>
         </div>
-        <div class="properties-panel" id="properties-panel">
+        <div class="properties-panel" id="properties-panel" style="width: 320px; min-width: 220px; max-width: 420px; background: #fff; border-left: 1px solid #e0e4ea; display: flex; flex-direction: column;">
           <div class="empty-state">
             <div class="empty-state-icon">📋</div>
             <div class="empty-state-text">No node selected</div>
@@ -1155,7 +1158,7 @@
                 <textarea
                   id="action-query"
                   class="form-textarea droppable-input"
-                  placeholder="INSERT INTO users (id, email) VALUES ({{connect_node_1.email}}, {{connect_node_1.id}}) -- Click Connect inputs below to insert"
+                  placeholder="INSERT INTO users (id, email) VALUES ({{event_parser_node_1.email}}, {{event_parser_node_1.id}}) -- Click Event Parser fields below to insert"
                   disabled
                   style="font-family: 'Courier New', monospace"
                 ></textarea>
@@ -1164,7 +1167,7 @@
                 >
                   💡 Tip: Click the Connect input fields below to insert
                   variables into your SQL. Placeholders use the format
-                  <code style="font-family:monospace">{{connect_&lt;nodeId&gt;.&lt;path&gt;}}</code>.
+                  <code style="font-family:monospace">{{event_parser_&lt;nodeId&gt;.&lt;path&gt;}}</code>.
                 </div>
                 <!-- Live SQL Preview: shows query with placeholders resolved to sample values -->
                 <div id="sql-preview-container" style="margin-top:10px; border:1px solid #e6eef8; background:#fbfdff; padding:10px; border-radius:6px; display:none;">
@@ -1174,7 +1177,7 @@
                 <!-- Action-specific test results (shows when testing from SQL/Test Run) -->
                 <div id="action-test-results" style="margin-top:12px"></div>
                 <div id="variable-mapping-area" style="margin-top:10px;">
-                  <div style="color:#8899a6;font-size:0.85rem;text-align:center;padding:8px;">Click Connect input fields below to insert variables. Detected variables will appear here.</div>
+                  <div style="color:#8899a6;font-size:0.85rem;text-align:center;padding:8px;">Click Event Parser fields below to insert variables. Detected variables will appear here.</div>
                 </div>
               </div>
 
@@ -1495,7 +1498,7 @@
                                 try { sampleVal = tryResolveFrom(cn.data.variableMappings._exampleOutputs[0]); } catch(e){}
                               }
                               if (sampleVal !== undefined) {
-                                const placeholder = `{{connect_${cn.id}.${mappedPath}}}`;
+                                const placeholder = `{{event_parser_${cn.id}.${mappedPath}}}`;
                                 const variants = [];
                                 if (sampleVal === null) {
                                   variants.push(/NULL/g);
@@ -2114,8 +2117,8 @@
                 previewContainer.style.display = 'none';
                 return;
               }
-              // replace {{connect_nodeId.path}} placeholders with sample values
-              const replaced = q.replace(/\{\{\s*connect_([\w-]+)\.([^\}]+)\s*\}\}/g, function (m, nodeId, path) {
+              // replace {{event_parser_nodeId.path}} and {{action_nodeId.path}} placeholders with sample values
+              let replaced = q.replace(/\{\{\s*event_parser_([\w-]+)\.([^\}]+)\s*\}\}/g, function (m, nodeId, path) {
                 try {
                   const nd = (nodes || []).find(n => String(n.id) === String(nodeId));
                   if (!nd) return m;
@@ -2128,6 +2131,26 @@
                   for (const s of trySources) {
                     if (!s) continue;
                     // try exact path then try stored parser-friendly path
+                    val = safeGetGlobal(s, path);
+                    if (val !== undefined) break;
+                  }
+                  if (val === undefined) return 'NULL';
+                  return escapeForSQL(val);
+                } catch (e) { return m; }
+              });
+
+              // replace action placeholders
+              replaced = replaced.replace(/\{\{\s*action_([\w-]+)\.([^\}]+)\s*\}\}/g, function (m, nodeId, path) {
+                try {
+                  const nd = (nodes || []).find(n => String(n.id) === String(nodeId));
+                  if (!nd) return m;
+                  const trySources = [];
+                  if (nd.data && nd.data.variableMappings && Array.isArray(nd.data.variableMappings._exampleOutputs) && nd.data.variableMappings._exampleOutputs.length > 0) trySources.push(nd.data.variableMappings._exampleOutputs[0]);
+                  if (nd.data && nd.data.mappingPreview) trySources.push(nd.data.mappingPreview);
+                  if (nd.data && nd.data.examplePayload) trySources.push(nd.data.examplePayload);
+                  let val;
+                  for (const s of trySources) {
+                    if (!s) continue;
                     val = safeGetGlobal(s, path);
                     if (val !== undefined) break;
                   }
@@ -2162,13 +2185,13 @@
 
             if (params.length === 0) {
               container.innerHTML =
-                '<div style="color: #8899a6; font-size: 0.85rem; text-align: center; padding: 8px;">Click Connect input fields below to insert variables. Variables will appear here.</div>';
+                '<div style="color: #8899a6; font-size: 0.85rem; text-align: center; padding: 8px;">Click Event Parser fields below to insert variables. Variables will appear here.</div>';
 
               // Even if there are no placeholders in SQL yet, still show available Connect inputs.
               try { renderDbAttributesList(); } catch (e) {}
               try {
                 if (typeof renderConnectInputPills === 'function' && typeof currentAction !== 'undefined' && currentAction && (currentAction.id || currentAction.name)) {
-                  try { renderConnectInputPills(currentAction.id || currentAction.name); } catch (e) { console.warn('renderConnectInputPills call failed', e); }
+                  try { renderEventParserInputPills(currentAction.id || currentAction.name); } catch (e) { console.warn('renderEventParserInputPills call failed', e); }
                 }
               } catch (e) { /* ignore */ }
               return;
@@ -2248,16 +2271,16 @@
 
             // Ensure Connect input pills are rendered after variable mappings UI is produced
             try {
-              if (typeof renderConnectInputPills === 'function' && typeof currentAction !== 'undefined' && currentAction && (currentAction.id || currentAction.name)) {
-                try { renderConnectInputPills(currentAction.id || currentAction.name); } catch (e) { console.warn('renderConnectInputPills call failed', e); }
+              if (typeof renderEventParserInputPills === 'function' && typeof currentAction !== 'undefined' && currentAction && (currentAction.id || currentAction.name)) {
+                try { renderEventParserInputPills(currentAction.id || currentAction.name); } catch (e) { console.warn('renderEventParserInputPills call failed', e); }
               }
             } catch (e) { /* ignore */ }
           }
 
-          // Render clickable pills for Connect node inputs that are upstream of an action
-          function renderConnectInputPills(actionId) {
+          // Render clickable pills for Event Parser node inputs that are upstream of an action
+          function renderEventParserInputPills(actionId) {
             try {
-              console.debug('renderConnectInputPills: actionId=', actionId, 'nodes=', nodes && nodes.length, 'connections=', connections && connections.length);
+              console.debug('renderEventParserInputPills: actionId=', actionId, 'nodes=', nodes && nodes.length, 'connections=', connections && connections.length);
               const pillContainer = document.getElementById('connect-input-pills-area') || document.getElementById('variable-mapping-area');
               if (!pillContainer) return;
 
@@ -2295,21 +2318,21 @@
               pillContainer.innerHTML = '';
 
               if (connectNodes.size === 0) {
-                console.debug('renderConnectInputPills: no connect nodes found upstream');
+                console.debug('renderEventParserInputPills: no event parser nodes found upstream');
                 const empty = document.createElement('div');
                 empty.style.color = '#8899a6';
                 empty.style.fontSize = '0.85rem';
                 empty.style.textAlign = 'center';
                 empty.style.padding = '8px';
-                empty.textContent = 'No Connect inputs detected for this workflow/action.';
+                empty.textContent = 'No Event Parser inputs detected for this workflow/action.';
                 pillContainer.appendChild(empty);
                 return;
               }
 
               const header = document.createElement('div');
               header.style.marginBottom = '8px';
-              const headerStrong = document.createElement('strong');
-              headerStrong.textContent = 'Connect Inputs (from workflow)';
+                const headerStrong = document.createElement('strong');
+                headerStrong.textContent = 'Event Parser Inputs (from workflow)';
               header.appendChild(headerStrong);
               pillContainer.appendChild(header);
 
@@ -2330,7 +2353,7 @@
                 } catch (e) { preview = {}; }
                 const title = cn.name || cn.id;
                 const keys = Object.keys(mapping).length ? Object.keys(mapping) : (Object.keys(preview).length ? Object.keys(preview) : []);
-                console.debug('renderConnectInputPills: connect node', cn.id, 'mappingKeys=', keys);
+                console.debug('renderEventParserInputPills: event parser node', cn.id, 'mappingKeys=', keys);
                 const row = document.createElement('div');
                 row.style.display = 'flex';
                 row.style.flexWrap = 'wrap';
@@ -2399,7 +2422,7 @@
                     }
 
                     // For debugging, log what we tried
-                    console.debug('renderConnectInputPills: resolve', { connectId: cn.id, key: k, mappedPath: mappedPath, sampleValRaw: sampleVal, previewSourceKeys: Object.keys(preview || {}) });
+                    console.debug('renderEventParserInputPills: resolve', { eventParserId: cn.id, key: k, mappedPath: mappedPath, sampleValRaw: sampleVal, previewSourceKeys: Object.keys(preview || {}) });
 
                     let sampleText = '';
                     if (sampleVal === undefined) {
@@ -2416,12 +2439,12 @@
                     btn.className = 'btn btn-sm btn-secondary connect-pill';
                     btn.type = 'button';
                     btn.draggable = true;
-                    btn.title = `Drag to insert {{connect_${cn.id}.${mappedPath}}} into SQL or Description`;
+                    btn.title = `Drag to insert {{event_parser_${cn.id}.${mappedPath}}} into SQL or Description`;
                     btn.textContent = k;
                     // Add drag functionality
                     btn.addEventListener('dragstart', function (e) {
                       try {
-                        const payload = { connectNodeId: cn.id, path: mappedPath, key: k };
+                        const payload = { eventParserNodeId: cn.id, path: mappedPath, key: k, parserType: 'event_parser' };
                         e.dataTransfer.setData('application/json', JSON.stringify(payload));
                         e.dataTransfer.effectAllowed = 'copy';
                       } catch (err) {
@@ -2459,7 +2482,7 @@
                     // attach safe event listener
                     btn.addEventListener('click', function () {
                       try {
-                        insertConnectField(cn.id, mappedPath);
+                        insertEventParserField(cn.id, mappedPath);
                       } catch (e) { console.warn(e); }
                     });
                     row.appendChild(btn);
@@ -2469,10 +2492,107 @@
                 pillContainer.appendChild(row);
               });
 
-              // Ensure editor state reflects Connect presence
+              // Also include upstream Action (DB) nodes as possible sources for placeholders
+              try {
+                const actionHeader = document.createElement('div');
+                actionHeader.style.margin = '10px 0 8px';
+                const actionStrong = document.createElement('strong');
+                actionStrong.textContent = 'Action Outputs (DB)';
+                actionHeader.appendChild(actionStrong);
+                pillContainer.appendChild(actionHeader);
+
+                // Collect upstream action nodes reachable to the current actionNodes
+                const actionNodesUp = new Map();
+                function collectActionUpstream(startId) {
+                  const q = [String(startId)];
+                  const seen = new Set();
+                  while (q.length) {
+                    const nid = q.shift();
+                    connections.forEach(c => {
+                      if (String(c.to) === String(nid)) {
+                        const from = (nodes || []).find(n => String(n.id) === String(c.from));
+                        if (!from) return;
+                        if (from.type === 'action') {
+                          actionNodesUp.set(from.id, from);
+                        } else if (!seen.has(from.id)) {
+                          seen.add(from.id);
+                          q.push(from.id);
+                        }
+                      }
+                    });
+                  }
+                }
+                actionNodes.forEach(n => collectActionUpstream(n.id));
+
+                if (actionNodesUp.size === 0) {
+                  const note = document.createElement('div');
+                  note.style.color = '#8899a6';
+                  note.style.fontSize = '0.85rem';
+                  note.style.padding = '6px 0';
+                  note.textContent = 'No upstream actions detected.';
+                  pillContainer.appendChild(note);
+                } else {
+                  actionNodesUp.forEach((an) => {
+                    // derive example rows from node variableMappings
+                    let examples = [];
+                    try {
+                      if (an.data && an.data.variableMappings && Array.isArray(an.data.variableMappings._exampleOutputs) && an.data.variableMappings._exampleOutputs.length > 0) {
+                        examples = an.data.variableMappings._exampleOutputs;
+                      } else if (an.data && an.data.examplePayload) {
+                        // examplePayload may be single object; normalize to array
+                        examples = [an.data.examplePayload];
+                      }
+                    } catch (e) { examples = []; }
+
+                    const title = an.name || an.id;
+                    const keys = (examples && examples.length && typeof examples[0] === 'object') ? Object.keys(examples[0]) : [];
+
+                    const ar = document.createElement('div');
+                    ar.style.display = 'flex';
+                    ar.style.flexWrap = 'wrap';
+                    ar.style.gap = '8px';
+                    ar.style.marginBottom = '8px';
+
+                    const nameDiv = document.createElement('div');
+                    nameDiv.style.fontWeight = '600';
+                    nameDiv.style.marginRight = '8px';
+                    nameDiv.textContent = title;
+                    ar.appendChild(nameDiv);
+
+                    if (!keys.length) {
+                      const note = document.createElement('div');
+                      note.style.marginBottom = '6px';
+                      note.style.color = '#657786';
+                      note.textContent = `${title} — no example output available`;
+                      ar.appendChild(note);
+                    } else {
+                      keys.forEach(k => {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn btn-sm btn-secondary connect-pill';
+                        btn.type = 'button';
+                        btn.draggable = true;
+                        btn.title = `Drag to insert {{action_${an.id}.${k}}} into SQL or Description`;
+                        btn.textContent = k;
+                        btn.addEventListener('dragstart', function (e) {
+                          try {
+                              const payload = { actionId: an.id, path: k, key: k, parserType: 'action' };
+                              e.dataTransfer.setData('application/json', JSON.stringify(payload));
+                            e.dataTransfer.effectAllowed = 'copy';
+                          } catch (err) { console.warn('action pill dragstart failed', err); }
+                        });
+                        btn.addEventListener('click', function () { try { insertActionField(an.id, k); } catch (e) { console.warn(e); } });
+                        ar.appendChild(btn);
+                      });
+                    }
+                    pillContainer.appendChild(ar);
+                  });
+                }
+              } catch (e) { console.warn('render action pills failed', e); }
+
+              // Ensure editor state reflects Event Parser presence
               try { setActionsEditState(); } catch (e) {}
             } catch (e) {
-              console.warn('renderConnectInputPills failed', e);
+              console.warn('renderEventParserInputPills failed', e);
             }
           }
 
@@ -2499,7 +2619,7 @@
 
                   // If currentAction references this connect placeholder, remove related inputMapping entries
                   try {
-                    const placeholder = `{{connect_${connectNodeId}.${path}}}`;
+                    const placeholder = `{{event_parser_${connectNodeId}.${path}}}`;
                     if (currentAction && currentAction.variableMappings && currentAction.variableMappings.inputMapping) {
                       Object.keys(currentAction.variableMappings.inputMapping).forEach(k => {
                         const v = currentAction.variableMappings.inputMapping[k];
@@ -2524,7 +2644,7 @@
                   try { document.getElementById('action-status').textContent = 'Pending changes...'; } catch (e) {}
                   try { setActionsEditState(); } catch (e) {}
 
-                  showToast('Connect mapping deleted', 'success');
+                  showToast('Event Parser mapping deleted', 'success');
                 } catch (e) {
                   console.warn('deleteConnectMapping failed', e);
                   showToast('Failed to delete mapping', 'error');
@@ -2549,24 +2669,38 @@
                 return false;
               } catch (e) {
                 console.warn('ensureBindingsOrConnectPresent failed', e);
-                showToast('Missing Connect mapping', 'info');
+                showToast('Missing Event Parser mapping', 'info');
                 return false;
               }
             }
 
-          function insertConnectField(connectNodeId, path) {
+          function insertEventParserField(connectNodeId, path) {
             try {
               const queryTextarea = document.getElementById('action-query');
               if (!queryTextarea) return;
-              const placeholder = `{{connect_${connectNodeId}.${path}}}`;
+              const placeholder = `{{event_parser_${connectNodeId}.${path}}}`;
               if (globalThis && typeof globalThis.insertAtCursor === 'function') globalThis.insertAtCursor(queryTextarea, placeholder);
               // re-detect parameters
               setTimeout(() => detectSQLParameters(), 80);
-              showToast('Inserted connect input placeholder', 'success');
+              showToast('Inserted Event Parser placeholder', 'success');
             } catch (e) {
-              console.warn('insertConnectField failed', e);
+              console.warn('insertEventParserField failed', e);
             }
           }
+
+            function insertActionField(actionId, path) {
+              try {
+                const queryTextarea = document.getElementById('action-query');
+                if (!queryTextarea) return;
+                const placeholder = `{{action_${actionId}.${path}}}`;
+                if (globalThis && typeof globalThis.insertAtCursor === 'function') globalThis.insertAtCursor(queryTextarea, placeholder);
+                // re-detect parameters
+                setTimeout(() => detectSQLParameters(), 80);
+                showToast('Inserted action output placeholder', 'success');
+              } catch (e) {
+                console.warn('insertActionField failed', e);
+              }
+            }
 
           // Disable/enable DB Actions editing controls depending on whether any Connect inputs exist
           function setActionsEditState() {
@@ -2628,7 +2762,7 @@
               const tpl = queryEl && queryEl.value ? queryEl.value.trim() : (selectedNode && selectedNode.data && (selectedNode.data.query || (selectedNode.data.variableMappings && selectedNode.data.variableMappings.template))) || '';
               if (!tpl) return showToast('No SQL template available to test', 'error');
 
-              // Collect connect placeholders from the query: matches like {{connect_node_2.phone_number}}
+              // Collect Event Parser placeholders from the query: matches like {{event_parser_node_2.phone_number}}
               const placeholderRegex = /\{\{([^\.\}\s]+)\.([^\}\s]+)\}\}/g;
               const placeholders = [];
               let m;
@@ -2641,15 +2775,15 @@
                 return;
               }
 
-              // Group by connect node id (expect ns like 'connect_node_2' or 'connect_node_1')
+              // Group by event parser node id (expect ns like 'event_parser_node_2' or 'event_parser_node_1')
               const byNode = {};
               placeholders.forEach(p => {
                 const ns = p.ns;
                 let nodeId = ns;
-                // support both forms: 'connect_node_2' or 'connect-node-2' (best-effort)
-                if (ns.startsWith('connect_')) nodeId = ns.replace('connect_', 'node_');
+                // support both forms: 'event_parser_node_2' or 'event-parser-node-2' (best-effort)
+                if (ns.startsWith('event_parser_')) nodeId = ns.replace('event_parser_', 'node_');
                 // fallback: if string contains 'node_' use that; else leave ns
-                byNode[ns] = byNode[ns] || { ns, nodeId: ns.replace('connect_', ''), paths: new Set() };
+                byNode[ns] = byNode[ns] || { ns, nodeId: ns.replace('event_parser_', ''), paths: new Set() };
                 byNode[ns].paths.add(p.path);
               });
 
@@ -2657,7 +2791,7 @@
               const payloads = {};
               for (const key of Object.keys(byNode)) {
                 const info = byNode[key];
-                // Extract node id from namespace: expect 'connect_node_<id>' or 'connectnode'<id>
+                // Extract node id from namespace: expect 'event_parser_node_<id>' or 'eventparser<id>'
                 let nodeId = null;
                 const ns = info.ns;
                 const nodeMatch = ns.match(/connect[_\-]?(?:node[_\-])?(.*)/i);
@@ -2685,9 +2819,40 @@
               }
 
               // For now, use the per-node payloads as top-level keys so the server resolver
-              // can match placeholders like {{connect_node_2.field}} directly to payload.connect_node_2
+              // can match placeholders like {{event_parser_node_2.field}} directly to payload.event_parser_node_2
               const mergedPayload = {};
               Object.keys(payloads).forEach(k => { mergedPayload[k] = payloads[k]; });
+
+              // Also merge in any upstream Action (DB) node example outputs so downstream
+              // queries can reference them via placeholders like {{action_<id>.<col>}}
+              try {
+                // collect upstream action nodes for the currently edited action node
+                const actionNodesUp = new Map();
+                function collectActionUp(startId) {
+                  const q = [String(startId)];
+                  const seen = new Set();
+                  while (q.length) {
+                    const nid = q.shift();
+                    connections.forEach(c => {
+                      if (String(c.to) === String(nid)) {
+                        const from = (nodes || []).find(n => String(n.id) === String(c.from));
+                        if (!from) return;
+                        if (from.type === 'action') actionNodesUp.set(from.id, from);
+                        else if (!seen.has(from.id)) { seen.add(from.id); q.push(from.id); }
+                      }
+                    });
+                  }
+                }
+                actionNodes.forEach(n => collectActionUp(n.id));
+                actionNodesUp.forEach((an) => {
+                  try {
+                    if (an && an.data && an.data.variableMappings && Array.isArray(an.data.variableMappings._exampleOutputs) && an.data.variableMappings._exampleOutputs.length > 0) {
+                      // expose as top-level key `action_<id>` (array of rows)
+                      mergedPayload[`action_${an.id}`] = an.data.variableMappings._exampleOutputs;
+                    }
+                  } catch (e) { /* ignore */ }
+                });
+              } catch (e) { console.warn('merge upstream action examples failed', e); }
 
               const resultsArea = document.getElementById('action-test-results') || null;
               if (resultsArea) resultsArea.innerHTML = '<div style="color:#657786">⏳ Executing query using Connect samples...</div>';
@@ -2759,12 +2924,12 @@
               let eventName = binding && binding.eventName ? binding.eventName : null;
 
               // If no binding provided, infer eventName from payload top-level keys
-              // (we pass connect samples as top-level keys like 'connect_node_2').
+              // (we pass event parser samples as top-level keys like 'event_parser_node_2').
               try {
                 if (!eventName && payload && typeof payload === 'object') {
                   const keys = Object.keys(payload || {});
                   for (const k of keys) {
-                    if (/^connect[_\-]?/i.test(k)) { eventName = k; break; }
+                    if (/^event_parser[_\-]?/i.test(k)) { eventName = k; break; }
                   }
                 }
               } catch (e) { /* ignore */ }
@@ -2842,7 +3007,7 @@
           globalThis.detectSQLParameters = detectSQLParameters;
 
           // resolveQueryWithBindings removed: event-binding based resolution deprecated.
-          // Connect placeholders ({{connect_<nodeId>.<path>}}) are resolved server-side.
+          // Event Parser placeholders ({{event_parser_<nodeId>.<path>}}) are resolved server-side.
 
           function getValueFromPayload(payload, fieldPath) {
             if (!payload) return undefined;
@@ -3071,14 +3236,14 @@
                     sampleVal = JSON.stringify(sample[path]);
                     type = typeof sample[path];
                   }
-                  context += `  - {{connect_${cn.id}.${path}}} => ${key} — sample: ${sampleVal}, type: ${type}\n`;
+                  context += `  - {{event_parser_${cn.id}.${path}}} => ${key} — sample: ${sampleVal}, type: ${type}\n`;
                 });
                 context += '\n';
               });
 
               // append business use case and prompt instructions
               context += '\nBusiness Use Case: ' + description + '\n\n';
-              context += 'Generate a SQL query that ONLY uses the variables listed above. Use the exact template syntax shown (e.g. {{connect_nodeId.path}}). Do NOT invent or assume any other fields or paths. Return only the SQL query, no explanation, no markdown code fences.';
+              context += 'Generate a SQL query that ONLY uses the variables listed above. Use the exact template syntax shown (e.g. {{event_parser_nodeId.path}}). Do NOT invent or assume any other fields or paths. Return only the SQL query, no explanation, no markdown code fences.';
 
               try {
                 const aiTarget =
@@ -3159,7 +3324,7 @@
                 const aid = currentAction.id || currentAction.name;
                 if (aid && typeof renderConnectInputPills === 'function') {
                   setTimeout(() => {
-                    try { renderConnectInputPills(aid); } catch (e) { console.warn('renderConnectInputPills after openForEdit failed', e); }
+                    try { renderEventParserInputPills(aid); } catch (e) { console.warn('renderEventParserInputPills after openForEdit failed', e); }
                   }, 0);
                 }
               } catch (e) { /* ignore */ }
@@ -3233,7 +3398,7 @@
                     try { sampleVal = tryResolveFrom(cn.data.variableMappings._exampleOutputs[0]); } catch(e){}
                   }
                   if (sampleVal !== undefined) {
-                    const placeholder = `{{connect_${cn.id}.${mappedPath}}}`;
+                    const placeholder = `{{event_parser_${cn.id}.${mappedPath}}}`;
                     const variants = [];
                     if (sampleVal === null) {
                       variants.push(/NULL/g);
@@ -3508,8 +3673,8 @@
               status.textContent = now ? "Saving..." : "Auto-saving...";
               // Preserve original editor SQL to detect explicit placeholders typed by user
               const originalQuery = (data.query || '').toString();
-              // Detect if the editor already contains connect placeholders — if so, keep them verbatim
-              const placeholderRegex = /\{\{\s*connect_[\w-]+\.[^\}\s]+\s*\}\}/g;
+              // Detect if the editor already contains event parser placeholders — if so, keep them verbatim
+              const placeholderRegex = /\{\{\s*event_parser_[\w-]+\.[^\}\s]+\s*\}\}/g;
               const hasPlaceholdersInEditor = placeholderRegex.test(originalQuery);
               // Normalize query to preserve placeholders: if editor contains placeholders, use it as canonical.
               try {
@@ -3553,7 +3718,7 @@
                   const execQuery = (data.query || (data.variableMappings && data.variableMappings.template) || "").toString();
                   if (execQuery && execQuery.trim()) {
                     // Detect connect placeholders and synthesize a payload where possible
-                    const placeholderRegex = /\{\{([^\.\}\s]+)\.([^\}\s]+)\}\}/g;
+                    const placeholderRegex = /\{\{([^\.\}\s]+)\.([^\}]+)\}\}/g;
                     const placeholders = [];
                     let m;
                     while ((m = placeholderRegex.exec(execQuery)) !== null) placeholders.push({ ns: m[1], path: m[2], full: m[0] });
@@ -3562,11 +3727,23 @@
                     if (placeholders.length > 0) {
                       placeholders.forEach(p => {
                         const ns = p.ns;
-                        const nodeMatch = ns.match(/connect[_\-]?(?:node[_\-])?(.*)/i);
+                        // Determine parserType by namespace: support event_parser_<id>, action_<id>, db (db.table.col), or legacy connect
+                        let parserType = 'event_parser';
+                        if (/^event_parser_/i.test(ns) || /^connect[_\-]?/i.test(ns)) parserType = 'event_parser';
+                        else if (/^action_/i.test(ns)) parserType = 'action';
+                        else if (/^db$/i.test(ns) || /^db[_\-]?/i.test(ns)) parserType = 'db_parser';
+
+                        // Resolve node id for event_parser/connect or action namespaces
                         let nodeId = null;
-                        if (nodeMatch && nodeMatch[1]) nodeId = 'node_' + nodeMatch[1].replace(/^node[_\-]?/, '');
-                        if (!nodeId) nodeId = ns;
-                        const nd = (nodes || []).find(n => String(n.id) === String(nodeId) || String(n.id) === String(ns));
+                        if (parserType === 'event_parser') {
+                          const nodeMatch = ns.match(/(?:event_parser_|connect[_\-]?(?:node[_\-])?)(.*)/i);
+                          if (nodeMatch && nodeMatch[1]) nodeId = 'node_' + nodeMatch[1].replace(/^node[_\-]?/, '');
+                        } else if (parserType === 'action') {
+                          const am = ns.match(/action[_\-]?(.*)/i);
+                          if (am && am[1]) nodeId = am[1];
+                        }
+
+                        const nd = nodeId ? (nodes || []).find(n => String(n.id) === String(nodeId) || String(n.id) === String(ns)) : null;
                         let sample = {};
                         if (nd && nd.data && nd.data.variableMappings && Array.isArray(nd.data.variableMappings._exampleOutputs) && nd.data.variableMappings._exampleOutputs.length > 0) {
                           sample = nd.data.variableMappings._exampleOutputs[0];
@@ -3577,6 +3754,8 @@
                         } else {
                           sample = {};
                         }
+
+                        // For db placeholders the path contains table.column; leave as-is and synthesize empty sample if needed
                         execPayload[ns] = sample;
                       });
                     }
@@ -3725,7 +3904,7 @@
               // Render connect input pills based on workflow connections
               try {
                 if (currentAction && currentAction.id) {
-                  try { renderConnectInputPills(currentAction.id); } catch (e) { console.warn('renderConnectInputPills failed', e); }
+                  try { renderEventParserInputPills(currentAction.id); } catch (e) { console.warn('renderEventParserInputPills failed', e); }
                 }
               } catch (e) { /* ignore */ }
             } catch (e) {
@@ -3861,6 +4040,94 @@
       let nodes = [];
       let connections = [];
       let nextNodeId = 1;
+
+      function _parseNodeNumericSuffix(nodeId) {
+        const m = /^node_(\d+)$/.exec(String(nodeId || ''));
+        if (!m) return null;
+        const n = Number(m[1]);
+        return Number.isFinite(n) ? n : null;
+      }
+
+      function recomputeNextNodeIdFromNodes() {
+        try {
+          const ids = Array.isArray(nodes) ? nodes.map((n) => _parseNodeNumericSuffix(n && n.id)) : [];
+          const nums = ids.filter((n) => typeof n === 'number' && Number.isFinite(n));
+          const max = nums.length ? Math.max(...nums) : 0;
+          nextNodeId = Math.max(1, max + 1);
+        } catch (e) {
+          nextNodeId = Math.max(1, Number(nextNodeId) || 1);
+        }
+      }
+
+      function ensureUniqueNodeIdsInMemory(reason) {
+        try {
+          if (!Array.isArray(nodes) || nodes.length === 0) {
+            recomputeNextNodeIdFromNodes();
+            return;
+          }
+          const seen = new Set();
+          const dupes = [];
+          for (const n of nodes) {
+            const id = String(n && n.id ? n.id : '');
+            if (!id) {
+              dupes.push(n);
+              continue;
+            }
+            if (seen.has(id)) dupes.push(n);
+            else seen.add(id);
+          }
+          if (!dupes.length) {
+            recomputeNextNodeIdFromNodes();
+            return;
+          }
+
+          // Important: if duplicates exist, the workflow is already ambiguous.
+          // We repair the in-memory node IDs to avoid DOM/id collisions that
+          // break hit-testing (e.g., always snapping to node_1).
+          recomputeNextNodeIdFromNodes();
+          const used = new Set(nodes.map((n) => String(n && n.id ? n.id : '')));
+          for (const n of dupes) {
+            let newId = '';
+            let guard = 0;
+            do {
+              newId = 'node_' + String(nextNodeId++);
+              guard++;
+              if (guard > 100000) throw new Error('node id repair overflow');
+            } while (used.has(newId));
+            used.add(newId);
+            const oldId = String(n && n.id ? n.id : '');
+            n.id = newId;
+            if (n.data && typeof n.data === 'object') n.data.id = newId;
+            console.warn('Repaired duplicate node id', { reason: reason || 'unknown', oldId, newId });
+          }
+          showToast('Detected duplicate node IDs; repaired in editor. Please verify connections.', 'info', 6000);
+          recomputeNextNodeIdFromNodes();
+        } catch (e) {
+          console.warn('ensureUniqueNodeIdsInMemory failed', e);
+        }
+      }
+
+      function allocateUniqueNodeId() {
+        // Ensure nextNodeId is aligned with existing nodes, then allocate.
+        try {
+          const used = new Set((Array.isArray(nodes) ? nodes : []).map((n) => String(n && n.id ? n.id : '')));
+          // If nextNodeId would collide, recompute from current nodes first.
+          if (used.has('node_' + String(nextNodeId))) recomputeNextNodeIdFromNodes();
+          let candidate = '';
+          let guard = 0;
+          do {
+            candidate = 'node_' + String(nextNodeId++);
+            guard++;
+            if (guard > 100000) throw new Error('node id allocation overflow');
+          } while (used.has(candidate));
+          return candidate;
+        } catch (e) {
+          // last resort fallback
+          const fallback = 'node_' + String(Date.now());
+          nextNodeId = Math.max(nextNodeId, 1);
+          return fallback;
+        }
+      }
       // persistent group collapse/expand state across renders
       globalThis.__taxonomyGroupStates = globalThis.__taxonomyGroupStates || {};
 
@@ -4886,10 +5153,10 @@
           const input = el.closest && el.closest(".droppable-input");
           if (input) {
             console.debug("[DBDragDrop] dropped on input", input, payload);
-            // Check if this is a connect field drop
-            if (payload.connectNodeId && payload.path) {
-              // Insert connect field placeholder
-              const placeholder = `{{connect_${payload.connectNodeId}.${payload.path}}}`;
+            // Check if this is an Event Parser field drop
+            if (payload.eventParserNodeId && payload.path) {
+              // Insert Event Parser field placeholder
+              const placeholder = `{{event_parser_${payload.eventParserNodeId}.${payload.path}}}`;
               globalThis.insertAtCursor(input, placeholder);
               // re-detect parameters if it's the query textarea
               if (input.id === 'action-query') {
@@ -4898,7 +5165,17 @@
                 // also trigger preview update for description textarea
                 setTimeout(() => { try { if (globalThis.renderSQLPreview) globalThis.renderSQLPreview(); } catch (e){} }, 80);
               }
-              showToast('Inserted connect input placeholder', 'success');
+              showToast('Inserted Event Parser placeholder', 'success');
+            } else if (payload.actionId && payload.path) {
+              // Insert action output placeholder
+              const placeholder = `{{action_${payload.actionId}.${payload.path}}}`;
+              if (typeof globalThis.insertAtCursor === 'function') globalThis.insertAtCursor(input, placeholder);
+              if (input.id === 'action-query') {
+                setTimeout(() => { try { globalThis.detectSQLParameters(); if (globalThis.renderSQLPreview) globalThis.renderSQLPreview(); } catch (e){} }, 80);
+              } else {
+                setTimeout(() => { try { if (globalThis.renderSQLPreview) globalThis.renderSQLPreview(); } catch (e){} }, 80);
+              }
+              showToast('Inserted action output placeholder', 'success');
             } else {
               // format DB payload into input value or insert variable placeholder
               if (payload.table && payload.column) {
@@ -5801,6 +6078,15 @@
               ? workflow.connections.slice()
               : [];
           }
+
+          // Critical: prevent node ID collisions (DOM ids + hit-testing depend on uniqueness).
+          // Also recompute nextNodeId so newly created nodes don't reuse existing ids.
+          try {
+            ensureUniqueNodeIdsInMemory('loadWorkflowById');
+          } catch (e) {
+            console.warn('post-load id normalization failed', e);
+          }
+
           renderCanvas();
           try {
             const el = document.getElementById('workflow-name-input');
@@ -6059,7 +6345,7 @@
       }
 
       function addNode(type, x, y, payload) {
-        const nodeId = "node_" + nextNodeId++;
+        const nodeId = allocateUniqueNodeId();
         const node = {
           id: nodeId,
           type,
@@ -6109,6 +6395,8 @@
             if (payload.mappingPreview) nd.data.mappingPreview = payload.mappingPreview;
             else if (payload.examplePayload) nd.data.mappingPreview = payload.examplePayload;
             else if (payload.mapping) nd.data.mapping = payload.mapping;
+            // set parserType hint for this connect node (allow payload to override)
+            nd.data.parserType = payload.parserType || (payload.module === 'db' || payload.connectorName === 'db' ? 'db_parser' : 'event_parser');
             // reflect immediately in UI
             renderCanvas();
           }
@@ -7134,8 +7422,9 @@
         if (!table && toNode && toNode.data && toNode.data.db && toNode.data.db.table) table = toNode.data.db.table;
 
         const cols = Object.keys(mapping || {});
-        // Build placeholders using a canonical connect binding name
-        const bindingName = fromNode && fromNode.id ? `connect_${fromNode.id}` : 'connect';
+        // Build placeholders using a canonical event parser binding name
+        const parserType = (fromNode && fromNode.data && fromNode.data.parserType) ? fromNode.data.parserType : 'event_parser';
+        const bindingName = (parserType === 'db_parser') ? `db_parser_${fromNode.id}` : (fromNode && fromNode.id ? `event_parser_${fromNode.id}` : 'event_parser');
 
         // detect array groups to produce per-item templates if needed
         const hasArray = cols.some(k => (mapping[k] || '').indexOf('.0.') !== -1);
@@ -7344,6 +7633,23 @@
       }
 
       let connectionState = { connecting: false, fromId: null, tempLine: null };
+      let selectedConnectionId = null;
+
+      function deleteConnection(connId) {
+        if (!connId) return;
+        connections = connections.filter((cc) => cc.id !== connId);
+        if (selectedConnectionId === connId) selectedConnectionId = null;
+        renderConnections();
+      }
+
+      // Delete key support for selected connection
+      document.addEventListener('keydown', (ev) => {
+        if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedConnectionId) {
+          try {
+            showConfirm('Delete selected connection?').then(ok => { if (ok) deleteConnection(selectedConnectionId); });
+          } catch (e) { deleteConnection(selectedConnectionId); }
+        }
+      });
 
       function renderConnections() {
         const svg = document.getElementById("svg-connections");
@@ -7428,14 +7734,23 @@
               path.setAttribute("marker-end", "url(#arrow)");
               path.style.cursor = "pointer";
               path.style.pointerEvents = "auto";
+              // visually indicate selected connection
+              if (selectedConnectionId === c.id) {
+                path.classList.add('conn-selected');
+                path.setAttribute('stroke', '#e53e3e');
+                path.setAttribute('stroke-width', '6');
+              }
               path.addEventListener("click", (ev) => {
-                showConfirm("Delete connection?").then((ok) => {
-                  if (ok) {
-                    connections = connections.filter((cc) => cc.id !== c.id);
-                    renderConnections();
-                  }
-                });
                 ev.stopPropagation();
+                // toggle selection; second click prompts delete
+                if (selectedConnectionId === c.id) {
+                  showConfirm("Delete connection?").then((ok) => {
+                    if (ok) deleteConnection(c.id);
+                  });
+                } else {
+                  selectedConnectionId = c.id;
+                  renderConnections();
+                }
               });
               svg.appendChild(path);
             });
@@ -7518,32 +7833,189 @@
           if (!connectionState.connecting) return;
           // clear any live snap highlight immediately
           clearSnapHighlights();
-          // Robust completion: always do a proximity search for the nearest
-          // input connection-point and pick it if it's within threshold. This
-          // avoids relying solely on elementFromPoint which can be flaky with
-          // small targets, nested elements, or during scrolling.
+          // Prefer the exact element under the cursor first (more predictable
+          // when the user is aiming at a small input point). Fall back to a
+          // proximity search when elementFromPoint doesn't find a connection
+          // point (for example due to overlays or scrolling). This prevents
+          // accidental snapping to the wrong nearby node.
           const mx = e.clientX;
           const my = e.clientY;
-          const inputs = Array.from(
-            document.querySelectorAll(".connection-point.input")
-          );
           let closest = null;
           let minDist = Infinity;
-          for (const inp of inputs) {
-            const r = inp.getBoundingClientRect();
-            const cx = r.left + r.width / 2;
-            const cy = r.top + r.height / 2;
-            const dx = cx - mx;
-            const dy = cy - my;
-            const dist = Math.hypot(dx, dy);
-            if (dist < minDist) {
-              minDist = dist;
-              closest = inp;
+          try {
+            // Use elementsFromPoint (returns stacked elements) and choose
+            // the first connection-point.input encountered. This is more
+            // reliable when SVG temp lines or overlays exist above the DOM.
+            const elems = (document.elementsFromPoint && document.elementsFromPoint(mx, my)) || [];
+            for (const el of elems) {
+              if (!el) continue;
+              try {
+                const hitInp = el.closest && el.closest('.connection-point.input');
+                if (hitInp) {
+                  closest = hitInp;
+                  const r = closest.getBoundingClientRect();
+                  const cx = r.left + r.width / 2;
+                  const cy = r.top + r.height / 2;
+                  minDist = Math.hypot(cx - mx, cy - my);
+                  break;
+                }
+              } catch (ie) {
+                /* ignore */
+              }
+            }
+          } catch (e) {
+            // elementsFromPoint may not exist in all environments; fall back
+            // to scanning all inputs by proximity
+            const inputs = Array.from(document.querySelectorAll('.connection-point.input'));
+            for (const inp of inputs) {
+              try {
+                const r = inp.getBoundingClientRect();
+                const cx = r.left + r.width / 2;
+                const cy = r.top + r.height / 2;
+                const dx = cx - mx;
+                const dy = cy - my;
+                const dist = Math.hypot(dx, dy);
+                if (dist < minDist) {
+                  minDist = dist;
+                  closest = inp;
+                }
+              } catch (err) {
+                /* ignore invalid element */
+              }
             }
           }
 
-          const RADIUS_PX = 40; // chosen to be forgiving but conservative
-          if (closest && minDist <= RADIUS_PX) {
+          // Simplified rule: only connect when the cursor is directly over a
+          // target node's input (via elementsFromPoint/elementFromPoint). Do
+          // not perform node-type preference or broad proximity scanning —
+          // keep connection behavior deterministic and based on explicit
+          // drop location (the user's intended box).
+          try {
+            // prefer elementsFromPoint when available to handle stacked elements
+            const elems = (document.elementsFromPoint && document.elementsFromPoint(mx, my)) || [document.elementFromPoint(mx, my)];
+            for (const el of elems) {
+              if (!el) continue;
+              try {
+                const hitInp = el.closest && el.closest('.connection-point.input');
+                if (hitInp) {
+                  closest = hitInp;
+                  const r = closest.getBoundingClientRect();
+                  const cx = r.left + r.width / 2;
+                  const cy = r.top + r.height / 2;
+                  minDist = Math.hypot(cx - mx, cy - my);
+                  break;
+                }
+              } catch (ie) { /* ignore */ }
+            }
+          } catch (err) {
+            closest = null; minDist = Infinity;
+          }
+          // require a very close match (cursor over the node); avoid fallback
+          const effectiveRadius = 18; // px
+
+          // QUICK PATH: if the user dropped anywhere inside a node box, use
+          // that node as the connection target — this prioritizes explicit
+          // box drops over proximity heuristics which caused mis-snaps.
+          try {
+            let dropNodeEl = null;
+            // First try the topmost element under cursor
+            try {
+              const elems2 = (document.elementsFromPoint && document.elementsFromPoint(mx, my)) || [document.elementFromPoint(mx, my)];
+              for (const el of elems2) {
+                if (!el) continue;
+                try {
+                  const nb = el.closest && el.closest('.workflow-node');
+                  if (nb) { dropNodeEl = nb; break; }
+                } catch (ie) { /* ignore */ }
+              }
+            } catch (ie) { /* ignore */ }
+            // Fallback: find any workflow-node whose box contains the point,
+            // then pick the one with highest z-index or last-in-DOM as tie-breaker
+            if (!dropNodeEl) {
+              try {
+                const candidates = Array.from(document.querySelectorAll('.workflow-node')).filter(n => {
+                  try {
+                    const r = n.getBoundingClientRect();
+                    return mx >= r.left && mx <= r.right && my >= r.top && my <= r.bottom;
+                  } catch (e) { return false; }
+                });
+                if (candidates.length === 1) dropNodeEl = candidates[0];
+                else if (candidates.length > 1) {
+                  // choose by computed z-index
+                  let best = candidates[0];
+                  let bestZ = (function(el){ const z = window.getComputedStyle(el).zIndex; return isNaN(parseInt(z)) ? 0 : parseInt(z); })(best);
+                  for (let i=1;i<candidates.length;i++) {
+                    const c = candidates[i];
+                    const z = (function(el){ const v = window.getComputedStyle(el).zIndex; return isNaN(parseInt(v)) ? 0 : parseInt(v); })(c);
+                    if (z > bestZ) { best = c; bestZ = z; }
+                    else if (z === bestZ) {
+                      // prefer the one that appears later in the DOM (likely on top)
+                      try {
+                        if ((best.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_PRECEDING) !== 0) {
+                          best = c;
+                        }
+                      } catch (e) { /* ignore */ }
+                    }
+                  }
+                  dropNodeEl = best;
+                }
+              } catch (e) { /* ignore */ }
+            }
+            if (dropNodeEl) {
+              const idAttr = dropNodeEl.id || '';
+              const m = idAttr.match(/^wfnode-(.+)$/);
+              if (m && m[1]) {
+                const toNodeIdBox = m[1];
+                if (toNodeIdBox && connectionState.fromId && String(toNodeIdBox) !== String(connectionState.fromId)) {
+                  const newConn = {
+                    from: String(connectionState.fromId),
+                    to: String(toNodeIdBox),
+                    id: 'c_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+                  };
+                  const existsBox = connections.some(c => String(c.from) === newConn.from && String(c.to) === newConn.to);
+                  if (!existsBox) {
+                    connections.push(newConn);
+                    console.debug('created connection (box-drop)', newConn);
+                    try {
+                      // propagate mapping if appropriate (preserve previous behavior)
+                      const fromNode = nodes.find(n => String(n.id) === String(newConn.from));
+                      const toNode = nodes.find(n => String(n.id) === String(newConn.to));
+                      if (fromNode && toNode && fromNode.type === 'connect' && toNode.type === 'action') {
+                        const mapping = fromNode.data && fromNode.data.mapping ? fromNode.data.mapping : null;
+                        const preview = fromNode.data && fromNode.data.mappingPreview ? fromNode.data.mappingPreview : null;
+                        const parserType = (fromNode.data && fromNode.data.parserType) ? fromNode.data.parserType : 'event_parser';
+                        if (mapping) {
+                          toNode.data = toNode.data || {};
+                          toNode.data.variableMappings = toNode.data.variableMappings || {};
+                          toNode.data.variableMappings.inputMapping = mapping;
+                          if (preview) toNode.data.variableMappings._exampleOutputs = [ preview ];
+                          toNode.data.inputSource = { type: parserType, nodeId: fromNode.id };
+                          try {
+                            const tpl = generateSQLTemplate(mapping, fromNode, toNode);
+                            toNode.data.variableMappings.template = tpl;
+                            toNode.data.query = tpl;
+                          } catch (e) { console.warn('template generation failed', e); }
+                          if (selectedNode && selectedNode.id === toNode.id) showNodeProperties(toNode);
+                          showToast('Mapping propagated to action node and template injected', 'success');
+                        }
+                      }
+                    } catch (e) { console.warn('Auto-propagate mapping failed', e); }
+                  } else {
+                    console.debug('skipping duplicate connection (box-drop)', newConn);
+                  }
+                }
+              }
+              // cleanup and finish early
+              if (connectionState.tempLine && connectionState.tempLine.parentNode) connectionState.tempLine.parentNode.removeChild(connectionState.tempLine);
+              connectionState.tempLine = null; connectionState.connecting = false; connectionState.fromId = null;
+              renderConnections();
+              if (connectionState.moveHandler) document.removeEventListener('mousemove', connectionState.moveHandler);
+              document.removeEventListener('mouseup', connectionState.upHandler || onUp);
+              connectionState.moveHandler = null; connectionState.upHandler = null;
+              return;
+            }
+          } catch (err) { /* non-fatal */ }
+          if (closest && minDist <= effectiveRadius) {
             const toNodeId =
               closest.dataset.nodeId || closest.getAttribute("data-node-id");
             console.debug(
@@ -7552,8 +8024,27 @@
               "dist=",
               Math.round(minDist)
             );
+            // Require the mouse to be dropped inside the visual node box
+            // (rather than merely near the connection point). This prevents
+            // accidental snaps to nodes that are visually not the drop target.
+            try {
+              const nodeEl = document.getElementById('wfnode-' + toNodeId);
+              if (nodeEl) {
+                const rect = nodeEl.getBoundingClientRect();
+                const PADDING = 6; // allow tiny margin
+                const inside = (mx >= rect.left - PADDING && mx <= rect.right + PADDING && my >= rect.top - PADDING && my <= rect.bottom + PADDING);
+                if (!inside) {
+                  console.debug('onUp: cursor not inside target node box — aborting', { toNodeId, mx, my, rect });
+                  // abort connection
+                  closest = null;
+                }
+              }
+            } catch (err) {
+              /* ignore and proceed */
+            }
+
             if (
-              toNodeId &&
+              closest && toNodeId &&
               connectionState.fromId &&
               String(toNodeId) !== String(connectionState.fromId)
             ) {
@@ -7578,6 +8069,7 @@
                     // Ensure we have a mapping on the connect node
                     const mapping = fromNode.data && fromNode.data.mapping ? fromNode.data.mapping : null;
                     const preview = fromNode.data && fromNode.data.mappingPreview ? fromNode.data.mappingPreview : null;
+                    const parserType = (fromNode.data && fromNode.data.parserType) ? fromNode.data.parserType : 'event_parser';
                     if (mapping) {
                       toNode.data = toNode.data || {};
                       // preserve any existing variableMappings
@@ -7585,8 +8077,8 @@
                       // store inputMapping and example outputs for the action node to consume
                       toNode.data.variableMappings.inputMapping = mapping;
                       if (preview) toNode.data.variableMappings._exampleOutputs = [ preview ];
-                      // mark source so executor/editor can trace inputs
-                      toNode.data.inputSource = { type: 'connect', nodeId: fromNode.id };
+                      // mark source so executor/editor can trace inputs (propagate parserType)
+                      toNode.data.inputSource = { type: parserType, nodeId: fromNode.id };
                         // Generate a SQL template and inject into the action node's variableMappings and node data
                         try {
                           const tpl = generateSQLTemplate(mapping, fromNode, toNode);
@@ -7695,6 +8187,9 @@
         connectionState.upHandler = onUp;
         document.addEventListener("mousemove", connectionState.moveHandler);
         document.addEventListener("mouseup", connectionState.upHandler);
+        // clicking anywhere else clears selected connection
+        const clearSel = (ev) => { if (selectedConnectionId) { selectedConnectionId = null; renderConnections(); } };
+        document.addEventListener('click', clearSel, { once: true });
       }
 
       // Rules Functions

@@ -318,7 +318,7 @@
           "id": "node_3",
           "type": "action",
           "name": "Action 4",
-          "next": null,
+          "next": "node_4",
           "x": 630,
           "y": 211,
           "variableMappings": {
@@ -338,6 +338,36 @@
           },
           "query": "-- Mapping template (no table detected)\n-- {\n  \"phone_number\": \"phone_number\"\n}\nphone_number => {{connect_node_2.phone_number}}",
           "action": "Appsthink crm to extract_contact matching",
+          "outgoing": [
+            "node_4"
+          ]
+        },
+        {
+          "id": "node_4",
+          "type": "connect",
+          "name": "Connect 5",
+          "next": null,
+          "x": 978,
+          "y": 212,
+          "mapping": {
+            "phoneNumbers_value": "phoneNumbers_value"
+          },
+          "mappingPaths": {
+            "phoneNumbers_value": "phoneNumbers_value"
+          },
+          "mappingPreview": {
+            "phoneNumbers_value": "768790"
+          },
+          "variableMappings": {
+            "_exampleOutputs": [
+              {
+                "phoneNumbers_value": "768790",
+                "__parsers": {
+                  "phoneNumbers_value": "phoneNumbers_value"
+                }
+              }
+            ]
+          },
           "outgoing": []
         }
       ],
@@ -353,6 +383,11 @@
           "from": "node_2",
           "to": "node_3",
           "id": "c_1769809365762_4517"
+        },
+        {
+          "from": "node_3",
+          "to": "node_4",
+          "id": "c_1769898134253_3304"
         }
       ]
     }

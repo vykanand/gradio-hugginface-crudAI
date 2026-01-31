@@ -415,7 +415,7 @@ globalThis.DbPickerModal = (() => {
     };
 
       pill.addEventListener("dragstart", function (ev) {
-        const payload = { table: table, column: column, path: displayText };
+        const payload = { table: table, column: column, path: displayText, parserType: 'db_parser' };
         try {
           ev.dataTransfer.setData("application/json", JSON.stringify(payload));
         } catch (e) {

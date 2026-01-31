@@ -2,10 +2,10 @@
   "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63": {
     "id": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63",
     "name": "Appsthink crm to extract_contact matching",
-    "description": "using {{connect_node_2.phone_number}} select all matching records in extract contact data {{db.extract_contact.phoneNumbers_value}}",
-    "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{connect_node_2.phone_number}}",
+    "description": "using {{event_parser_node_2.phone_number}} select all matching records in extract contact data {{db.extract_contact.phoneNumbers_value}}",
+    "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{event_parser_node_2.phone_number}}",
     "variableMappings": {
-      "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{connect_node_2.phone_number}}",
+      "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{event_parser_node_2.phone_number}}",
       "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = '768790'",
       "dbAttributes": [
         {

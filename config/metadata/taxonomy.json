@@ -64,24 +64,17 @@
         {
           "id": "Draft",
           "name": "Draft",
-          "allowedTransitions": [
-            "Submitted"
-          ]
+          "allowedTransitions": ["Submitted"]
         },
         {
           "id": "Submitted",
           "name": "Submitted",
-          "allowedTransitions": [
-            "Approved",
-            "Rejected"
-          ]
+          "allowedTransitions": ["Approved", "Rejected"]
         },
         {
           "id": "Approved",
           "name": "Approved",
-          "allowedTransitions": [
-            "Paid"
-          ]
+          "allowedTransitions": ["Paid"]
         },
         {
           "id": "Paid",
@@ -95,11 +88,7 @@
         "InvoiceApproved",
         "InvoicePaid"
       ],
-      "relatedActions": [
-        "SubmitInvoice",
-        "ApproveInvoice",
-        "PayInvoice"
-      ]
+      "relatedActions": ["SubmitInvoice", "ApproveInvoice", "PayInvoice"]
     },
     "PurchaseOrder": {
       "id": "PurchaseOrder",
@@ -114,17 +103,12 @@
         {
           "id": "Created",
           "name": "Created",
-          "allowedTransitions": [
-            "Approved",
-            "Cancelled"
-          ]
+          "allowedTransitions": ["Approved", "Cancelled"]
         },
         {
           "id": "Approved",
           "name": "Approved",
-          "allowedTransitions": [
-            "Fulfilled"
-          ]
+          "allowedTransitions": ["Fulfilled"]
         },
         {
           "id": "Cancelled",
@@ -132,15 +116,8 @@
           "allowedTransitions": []
         }
       ],
-      "relatedEvents": [
-        "PurchaseOrderCreated",
-        "PurchaseOrderApproved"
-      ],
-      "relatedActions": [
-        "CreatePO",
-        "ApprovePO",
-        "CancelPO"
-      ]
+      "relatedEvents": ["PurchaseOrderCreated", "PurchaseOrderApproved"],
+      "relatedActions": ["CreatePO", "ApprovePO", "CancelPO"]
     },
     "InventoryItem": {
       "id": "InventoryItem",
@@ -204,18 +181,12 @@
         {
           "id": "InStock",
           "name": "In Stock",
-          "allowedTransitions": [
-            "Reserved",
-            "OutOfStock"
-          ]
+          "allowedTransitions": ["Reserved", "OutOfStock"]
         },
         {
           "id": "Reserved",
           "name": "Reserved",
-          "allowedTransitions": [
-            "Picked",
-            "Returned"
-          ]
+          "allowedTransitions": ["Picked", "Returned"]
         },
         {
           "id": "OutOfStock",
@@ -223,14 +194,8 @@
           "allowedTransitions": []
         }
       ],
-      "relatedEvents": [
-        "InventoryAdjusted",
-        "InventoryReceived"
-      ],
-      "relatedActions": [
-        "AdjustInventory",
-        "TransferInventory"
-      ]
+      "relatedEvents": ["InventoryAdjusted", "InventoryReceived"],
+      "relatedActions": ["AdjustInventory", "TransferInventory"]
     }
   },
   "events": {},
@@ -240,13 +205,8 @@
       "name": "Submit Invoice",
       "concept": "Invoice",
       "description": "Submit an invoice (Draft -> Submitted)",
-      "parameters": [
-        "invoiceId",
-        "submittedBy"
-      ],
-      "allowedStates": [
-        "Draft"
-      ],
+      "parameters": ["invoiceId", "submittedBy"],
+      "allowedStates": ["Draft"],
       "workerCapability": "InvoiceSubmission"
     },
     "ApproveInvoice": {
@@ -254,13 +214,8 @@
       "name": "Approve Invoice",
       "concept": "Invoice",
       "description": "Approve invoice for payment",
-      "parameters": [
-        "invoiceId",
-        "approverId"
-      ],
-      "allowedStates": [
-        "Submitted"
-      ],
+      "parameters": ["invoiceId", "approverId"],
+      "allowedStates": ["Submitted"],
       "workerCapability": "ApprovalManagement"
     },
     "PayInvoice": {
@@ -268,13 +223,8 @@
       "name": "Pay Invoice",
       "concept": "Invoice",
       "description": "Pay an approved invoice",
-      "parameters": [
-        "invoiceId",
-        "paymentMethod"
-      ],
-      "allowedStates": [
-        "Approved"
-      ],
+      "parameters": ["invoiceId", "paymentMethod"],
+      "allowedStates": ["Approved"],
       "workerCapability": "Payments"
     },
     "AdjustInventory": {
@@ -282,24 +232,17 @@
       "name": "Adjust Inventory",
       "concept": "InventoryItem",
       "description": "Adjust inventory quantity",
-      "parameters": [
-        "sku",
-        "quantityDelta",
-        "reason"
-      ],
-      "allowedStates": [
-        "InStock",
-        "Reserved"
-      ],
+      "parameters": ["sku", "quantityDelta", "reason"],
+      "allowedStates": ["InStock", "Reserved"],
       "workerCapability": "InventoryManagement"
     },
     "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63": {
       "id": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63",
       "name": "Appsthink crm to extract_contact matching",
-      "description": "using {{connect_node_2.phone_number}} select all matching records in extract contact data {{db.extract_contact.phoneNumbers_value}}",
-      "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{connect_node_2.phone_number}}",
+      "description": "using {{event_parser_node_2.phone_number}} select all matching records in extract contact data {{db.extract_contact.phoneNumbers_value}}",
+      "query": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{event_parser_node_2.phone_number}}",
       "variableMappings": {
-        "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{connect_node_2.phone_number}}",
+        "template": "SELECT * FROM extract_contact WHERE phoneNumbers_value = {{event_parser_node_2.phone_number}}",
         "executedQuery": "SELECT * FROM extract_contact WHERE phoneNumbers_value = '768790'",
         "dbAttributes": [
           {
@@ -704,29 +647,19 @@
       "id": "VendorManagement",
       "name": "Vendor Management",
       "description": "Manage vendor relationships and transactions",
-      "actions": [
-        "ReconcileInvoice",
-        "ApproveInvoice"
-      ]
+      "actions": ["ReconcileInvoice", "ApproveInvoice"]
     },
     "InventoryManagement": {
       "id": "InventoryManagement",
       "name": "Inventory Management",
       "description": "Manage inventory levels and movements",
-      "actions": [
-        "AdjustInventory",
-        "TransferInventory"
-      ]
+      "actions": ["AdjustInventory", "TransferInventory"]
     },
     "ApprovalManagement": {
       "id": "ApprovalManagement",
       "name": "Approval Management",
       "description": "Manage approval workflows and decisions",
-      "actions": [
-        "ApproveInvoice",
-        "ApprovePO",
-        "RejectInvoice"
-      ]
+      "actions": ["ApproveInvoice", "ApprovePO", "RejectInvoice"]
     }
   }
 }
