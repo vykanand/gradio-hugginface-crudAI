@@ -4040,6 +4040,71 @@
       let nodes = [];
       let connections = [];
       let nextNodeId = 1;
+      // Undo/redo history
+      let __historyStack = [];
+      let __historyIndex = -1;
+      const __HISTORY_MAX = 200;
+
+      function snapshotState() {
+        return {
+          nodes: JSON.parse(JSON.stringify(nodes || [])),
+          connections: JSON.parse(JSON.stringify(connections || [])),
+          selectedNodeId: selectedNode ? selectedNode.id : null,
+          selectedConnectionId: selectedConnectionId || null,
+        };
+      }
+
+      function applySnapshot(snap) {
+        try {
+          nodes = Array.isArray(snap.nodes) ? JSON.parse(JSON.stringify(snap.nodes)) : [];
+          connections = Array.isArray(snap.connections) ? JSON.parse(JSON.stringify(snap.connections)) : [];
+          // repair ids and sequencing
+          ensureUniqueNodeIdsInMemory('applySnapshot');
+          recomputeNextNodeIdFromNodes();
+          selectedNode = null; selectedConnectionId = null;
+          if (snap.selectedNodeId) selectedNode = nodes.find(n => String(n.id) === String(snap.selectedNodeId)) || null;
+          if (snap.selectedConnectionId) selectedConnectionId = snap.selectedConnectionId;
+          renderCanvas(); renderConnections();
+        } catch (e) {
+          console.warn('applySnapshot failed', e);
+        }
+      }
+
+      function pushHistory(label) {
+        try {
+          // Trim any future redo states
+          if (__historyIndex < __historyStack.length - 1) {
+            __historyStack = __historyStack.slice(0, __historyIndex + 1);
+          }
+          __historyStack.push(snapshotState());
+          __historyIndex = __historyStack.length - 1;
+          // cap history
+          if (__historyStack.length > __HISTORY_MAX) {
+            __historyStack.shift();
+            __historyIndex = __historyStack.length - 1;
+          }
+        } catch (e) { console.warn('pushHistory failed', e); }
+      }
+
+      function undo() {
+        try {
+          if (__historyIndex <= 0) { showToast('Nothing to undo', 'info'); return; }
+          __historyIndex -= 1;
+          const snap = __historyStack[__historyIndex];
+          applySnapshot(snap);
+          showToast('Undo', 'info');
+        } catch (e) { console.warn('undo failed', e); }
+      }
+
+      function redo() {
+        try {
+          if (__historyIndex >= __historyStack.length - 1) { showToast('Nothing to redo', 'info'); return; }
+          __historyIndex += 1;
+          const snap = __historyStack[__historyIndex];
+          applySnapshot(snap);
+          showToast('Redo', 'info');
+        } catch (e) { console.warn('redo failed', e); }
+      }
 
       function _parseNodeNumericSuffix(nodeId) {
         const m = /^node_(\d+)$/.exec(String(nodeId || ''));
@@ -5997,6 +6062,8 @@
         nodes = [];
         connections = [];
         nextNodeId = 1;
+        // reset history for the new workflow
+        try { __historyStack = []; __historyIndex = -1; pushHistory('newWorkflow'); } catch(e) {}
         renderCanvas();
         try {
           const el = document.getElementById('workflow-name-input');
@@ -6088,6 +6155,7 @@
           }
 
           renderCanvas();
+          try { pushHistory('load'); } catch(e) { /* ignore */ }
           try {
             const el = document.getElementById('workflow-name-input');
             if (el) el.value = currentWorkflow.name || '';
@@ -6387,6 +6455,7 @@
         renderCanvas();
         // gently nudge new node if it overlaps others (minimal and non-invasive)
         setTimeout(() => nudgeNode(node.id), 0);
+        try { pushHistory('addNode'); } catch(e) {}
         // If payload contains connector or example mapping information, apply it
         try {
           if (payload && type === 'connect') {
@@ -6943,10 +7012,7 @@
           pasteBtn.textContent = 'Paste JSON';
           controls.appendChild(pasteBtn);
 
-          const prettyBtn = document.createElement('button');
-          prettyBtn.className = 'btn btn-secondary';
-          prettyBtn.textContent = 'Pretty Print';
-          controls.appendChild(prettyBtn);
+          // NOTE: Removed Pretty Print button per request; keep only Load and Paste
 
           root.appendChild(controls);
 
@@ -6968,8 +7034,8 @@
           previewWrap.style.marginTop = '8px';
           root.appendChild(previewWrap);
 
-          // attempt to load sample from upstream node if present
-              loadUpBtn.addEventListener('click', async () => {
+              // helper to attempt loading sample from upstream node
+              async function loadFromUpstreamAndPopulate() {
                 try {
                   // find upstream connection(s) and try to infer a best sample
                   const upstream = connections.find((c) => String(c.to) === String(nodeId));
@@ -7065,7 +7131,23 @@
                   console.error(e);
                   showToast('Failed to load upstream sample', 'error');
                 }
+              }
+
+              // wire load button to helper
+              loadUpBtn.addEventListener('click', async () => {
+                await loadFromUpstreamAndPopulate();
               });
+
+              // Immediately attempt to auto-load from upstream when opening the mapper.
+              // If no upstream connection exists, show a friendly message in the modal.
+              (async function immediateAutoLoad() {
+                const upstreamExists = connections.some((c) => String(c.to) === String(nodeId));
+                if (upstreamExists) {
+                  await loadFromUpstreamAndPopulate();
+                } else {
+                  previewWrap.innerHTML = '<div style="color:#6c757d">No upstream node connected. Connect an upstream node to auto-load mapping samples, or paste JSON below.</div>';
+                }
+              })();
 
           pasteBtn.addEventListener('click', async () => {
             try {
@@ -7082,17 +7164,7 @@
             }
           });
 
-          prettyBtn.addEventListener('click', () => {
-            try {
-              const v = textarea.value.trim();
-              if (!v) return;
-              const obj = JSON.parse(v);
-              textarea.value = JSON.stringify(obj, null, 2);
-              buildTreeFromTextarea();
-            } catch (e) {
-              showToast('Invalid JSON to pretty-print', 'error');
-            }
-          });
+          // Pretty print removed
 
           function createCheckbox(path, label, value) {
             const row = document.createElement('div');
@@ -7595,6 +7667,7 @@
           selectedNode[prop] = value;
           selectedNode.data[prop] = value;
           renderCanvas();
+          try { pushHistory('updateNodeProperty'); } catch(e) {}
         }
       }
 
@@ -7614,6 +7687,7 @@
             selectedNode.data[prop] = value;
           }
           renderCanvas();
+          try { pushHistory('updateNodeData'); } catch(e) {}
         }
       }
 
@@ -7629,6 +7703,7 @@
                         <div class="empty-state-hint">Click a node to edit its properties</div>
                     </div>
                 `;
+          try { pushHistory('deleteNode'); } catch(e) {}
         }
       }
 
@@ -7640,15 +7715,34 @@
         connections = connections.filter((cc) => cc.id !== connId);
         if (selectedConnectionId === connId) selectedConnectionId = null;
         renderConnections();
+        try { pushHistory('deleteConnection'); } catch(e) {}
       }
 
-      // Delete key support for selected connection
+      // Keyboard shortcuts: Undo/Redo and Delete selected node/connection
       document.addEventListener('keydown', (ev) => {
-        if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedConnectionId) {
-          try {
-            showConfirm('Delete selected connection?').then(ok => { if (ok) deleteConnection(selectedConnectionId); });
-          } catch (e) { deleteConnection(selectedConnectionId); }
-        }
+        try {
+          // Undo (Ctrl/Cmd+Z)
+          if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && String(ev.key).toLowerCase() === 'z') {
+            ev.preventDefault(); undo(); return;
+          }
+          // Redo (Ctrl+Y or Ctrl/Cmd+Shift+Z)
+          if ((ev.ctrlKey || ev.metaKey) && (String(ev.key).toLowerCase() === 'y' || (ev.shiftKey && String(ev.key).toLowerCase() === 'z'))) {
+            ev.preventDefault(); redo(); return;
+          }
+          // Delete selected connection or node
+          if (ev.key === 'Delete' || ev.key === 'Backspace') {
+            if (selectedConnectionId) {
+              try { showConfirm('Delete selected connection?').then(ok => { if (ok) { deleteConnection(selectedConnectionId); } }); }
+              catch (e) { deleteConnection(selectedConnectionId); }
+              return;
+            }
+            if (selectedNode) {
+              try { showConfirm('Delete selected node?').then(ok => { if (ok) { deleteSelectedNode(); } }); }
+              catch (e) { deleteSelectedNode(); }
+              return;
+            }
+          }
+        } catch (e) { console.warn('keydown handler error', e); }
       });
 
       function renderConnections() {
@@ -8009,6 +8103,7 @@
               if (connectionState.tempLine && connectionState.tempLine.parentNode) connectionState.tempLine.parentNode.removeChild(connectionState.tempLine);
               connectionState.tempLine = null; connectionState.connecting = false; connectionState.fromId = null;
               renderConnections();
+              try { pushHistory('createConnection-box-drop'); } catch(e) {}
               if (connectionState.moveHandler) document.removeEventListener('mousemove', connectionState.moveHandler);
               document.removeEventListener('mouseup', connectionState.upHandler || onUp);
               connectionState.moveHandler = null; connectionState.upHandler = null;
@@ -8091,6 +8186,7 @@
                         // update UI if action node is selected
                         if (selectedNode && selectedNode.id === toNode.id) showNodeProperties(toNode);
                         showToast('Mapping propagated to action node and template injected', 'success');
+                        try { pushHistory('createConnection-propagate'); } catch(e) {}
                     }
                   }
                 } catch (e) {
