@@ -426,10 +426,14 @@ No inputs defined</pre
       if (globalThis.currentWorkflow && globalThis.currentWorkflow.id) {
         await loadWorkflowLogics(globalThis.currentWorkflow.id);
       } else {
+        // No workflow selected — show global custom logics if available
+        await loadCustomLogics();
+        // If still empty, show the hint to select a workflow
         const container = document.getElementById("custom-logic-list");
-        if (container)
+        if ((!customLogics || customLogics.length === 0) && container) {
           container.innerHTML =
             '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">Select a workflow in the Workflows toolbar to view its custom logic.</div>';
+        }
       }
       await loadAvailableEvents();
       await loadAvailableActions();
@@ -443,6 +447,7 @@ No inputs defined</pre
       // Keep a cached list available for internal use, but do not render a selector here.
       const res = await fetch("/api/unified-workflows");
       const data = await res.json();
+      console.debug("custom-logic: components response", res.status, data);
       if (data && data.ok)
         globalThis.__availableWorkflows = data.workflows || [];
     } catch (e) {
@@ -464,12 +469,33 @@ No inputs defined</pre
         `/api/unified-workflows/${encodeURIComponent(workflowId)}/components`,
       );
       const data = await res.json();
-      if (!data || !data.ok) {
-        container.innerHTML =
-          '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">Failed to load components</div>';
-        return;
+      // If components endpoint missing or empty, try falling back to global custom-logic endpoint
+      let logics = [];
+      if (data && data.ok) {
+        logics = Object.values(data.logics || {});
       }
-      const logics = Object.values(data.logics || {});
+
+      if (!logics || logics.length === 0) {
+        try {
+          const fb = await fetch("/api/custom-logic");
+          if (fb.ok) {
+            const fbData = await fb.json();
+            console.debug(
+              "custom-logic: fallback /api/custom-logic response",
+              fb.status,
+              fbData,
+            );
+            if (fbData && fbData.ok) logics = fbData.logics || [];
+          }
+        } catch (e) {
+          // ignore fallback error
+        }
+      }
+      console.debug(
+        "custom-logic: resolved logics count",
+        (logics && logics.length) || 0,
+      );
+
       if (!logics.length) {
         container.innerHTML =
           '<div style="padding: 12px; color: #657786; font-size: 0.85rem;">No Custom Logic defined for this workflow. Add Custom Logic nodes to the workflow canvas to create them.</div>';

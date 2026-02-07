@@ -729,6 +729,14 @@
             </div>
           </div>
 
+          <div class="node-type" draggable="true" data-node-type="custom-logic">
+            <div class="node-icon" style="background: #fff7e6; color: #8a5600">⚙️</div>
+            <div class="node-info">
+              <div class="node-name">Custom Logic</div>
+              <div class="node-desc">Attach custom JavaScript logic</div>
+            </div>
+          </div>
+
           <div class="node-type" draggable="true" data-node-type="decision">
             <div class="node-icon" style="background: #fff3e0; color: #bf360c">
               🔀
@@ -2595,6 +2603,341 @@
               console.warn('renderEventParserInputPills failed', e);
             }
           }
+
+          // Render clickable pills for Event Parser / Connect node inputs upstream of a custom-logic node
+          function renderCustomLogicInputPills(logicId) {
+            try {
+              const pillContainer = document.getElementById('custom-logic-connect-pills');
+              if (!pillContainer) return;
+
+              // find custom-logic nodes in the current workflow that reference this logic id
+              const targetNodes = (nodes || []).filter(n => n.type === 'custom-logic' && n.data && (String(n.data.logicId) === String(logicId) || String(n.data.logic) === String(logicId) || String(n.id) === String(logicId)));
+
+              // collect upstream connect nodes by BFS
+              const connectNodes = new Map();
+              function collectUpstream(startId) {
+                const q = [String(startId)];
+                const seen = new Set();
+                while (q.length) {
+                  const nid = q.shift();
+                  connections.forEach(c => {
+                    if (String(c.to) === String(nid)) {
+                      const from = (nodes || []).find(n => String(n.id) === String(c.from));
+                      if (!from) return;
+                      if (from.type === 'connect') {
+                        connectNodes.set(from.id, from);
+                      } else if (!seen.has(from.id)) {
+                        seen.add(from.id);
+                        q.push(from.id);
+                      }
+                    }
+                  });
+                }
+              }
+
+              targetNodes.forEach(n => collectUpstream(n.id));
+
+              // Clear pill container
+              pillContainer.innerHTML = '';
+
+              if (connectNodes.size === 0) {
+                const empty = document.createElement('div');
+                empty.style.color = '#8899a6';
+                empty.style.fontSize = '0.85rem';
+                empty.style.textAlign = 'center';
+                empty.style.padding = '8px';
+                empty.textContent = 'No connector inputs detected for this custom logic.';
+                pillContainer.appendChild(empty);
+                return;
+              }
+
+              const header = document.createElement('div');
+              header.style.marginBottom = '8px';
+              const headerStrong = document.createElement('strong');
+              headerStrong.textContent = 'Connector Inputs (from workflow)';
+              header.appendChild(headerStrong);
+              pillContainer.appendChild(header);
+
+              connectNodes.forEach((cn) => {
+                const mapping = (cn.data && (cn.data.mapping || {}));
+                let preview = {};
+                try {
+                  if (cn.data && cn.data.variableMappings && Array.isArray(cn.data.variableMappings._exampleOutputs) && cn.data.variableMappings._exampleOutputs.length > 0) {
+                    preview = cn.data.variableMappings._exampleOutputs[0] || {};
+                  } else if (cn.data && cn.data.mappingPreview && Object.keys(cn.data.mappingPreview || {}).length > 0) {
+                    preview = cn.data.mappingPreview || {};
+                  } else if (cn.data && cn.data.examplePayload && Object.keys(cn.data.examplePayload || {}).length > 0) {
+                    preview = cn.data.examplePayload || {};
+                  } else {
+                    preview = {};
+                  }
+                } catch (e) { preview = {}; }
+
+                const keys = Object.keys(mapping).length ? Object.keys(mapping) : (Object.keys(preview).length ? Object.keys(preview) : []);
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.flexWrap = 'wrap';
+                row.style.gap = '8px';
+                row.style.marginBottom = '8px';
+                row.style.alignItems = 'center';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.style.fontWeight = '600';
+                nameDiv.style.marginRight = '8px';
+                nameDiv.textContent = cn.name || cn.id;
+                row.appendChild(nameDiv);
+
+                if (!keys.length) {
+                  const note = document.createElement('div');
+                  note.style.marginBottom = '6px';
+                  note.style.color = '#657786';
+                  note.textContent = `${cn.name || cn.id} — no mapping defined`;
+                  row.appendChild(note);
+                } else {
+                  keys.forEach(k => {
+                    const mappedPath = mapping && mapping[k] ? mapping[k] : k;
+                    let sampleVal = undefined;
+                    try {
+                      function tryResolveFrom(obj) {
+                        if (!obj) return undefined;
+                        if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
+                        if (mapping && mapping[k] && Object.prototype.hasOwnProperty.call(obj, mapping[k])) return obj[mapping[k]];
+                        if (mapping && mapping[k]) {
+                          const v = getByPath(obj, mapping[k]);
+                          if (v !== undefined) return v;
+                        }
+                        const v2 = getByPath(obj, k);
+                        if (v2 !== undefined) return v2;
+                        return undefined;
+                      }
+                      if (cn.data && cn.data.variableMappings && Array.isArray(cn.data.variableMappings._exampleOutputs) && cn.data.variableMappings._exampleOutputs.length > 0) {
+                        sampleVal = tryResolveFrom(cn.data.variableMappings._exampleOutputs[0]);
+                      }
+                      if (sampleVal === undefined && cn.data && cn.data.mappingPreview && Object.keys(cn.data.mappingPreview || {}).length > 0) {
+                        sampleVal = tryResolveFrom(cn.data.mappingPreview);
+                      }
+                      if (sampleVal === undefined && cn.data && cn.data.examplePayload && Object.keys(cn.data.examplePayload || {}).length > 0) {
+                        sampleVal = tryResolveFrom(cn.data.examplePayload);
+                      }
+                      if (sampleVal === undefined && preview && Object.keys(preview).length > 0) {
+                        sampleVal = tryResolveFrom(preview);
+                      }
+                    } catch (e) { /* ignore */ }
+
+                    let sampleText = '';
+                    if (sampleVal === undefined) sampleText = '';
+                    else if (sampleVal === null) sampleText = '<NULL>';
+                    else if (typeof sampleVal === 'object') {
+                      try { sampleText = JSON.stringify(sampleVal); } catch (e) { sampleText = String(sampleVal); }
+                    } else sampleText = String(sampleVal);
+
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-sm btn-secondary connect-pill';
+                    btn.type = 'button';
+                    btn.draggable = true;
+                    btn.title = `Drag to insert {{event_parser_${cn.id}.${mappedPath}}} into code`;
+                    btn.textContent = k;
+                    btn.addEventListener('dragstart', function (e) {
+                      try {
+                        const payload = { eventParserNodeId: cn.id, path: mappedPath, key: k, parserType: 'event_parser' };
+                        e.dataTransfer.setData('application/json', JSON.stringify(payload));
+                        e.dataTransfer.effectAllowed = 'copy';
+                      } catch (err) { console.warn('dragstart failed', err); }
+                    });
+                    if (sampleText) {
+                      const span = document.createElement('span');
+                      span.style.color = '#8899a6';
+                      span.style.fontSize = '0.75rem';
+                      span.style.marginLeft = '6px';
+                      span.style.fontStyle = (sampleText === '<NULL>') ? 'italic' : 'normal';
+                      span.textContent = sampleText.substring(0, 40);
+                      btn.appendChild(span);
+                    } else {
+                      const meta = document.createElement('span');
+                      meta.style.color = '#a0a6ad';
+                      meta.style.fontSize = '0.75rem';
+                      meta.style.marginLeft = '6px';
+                      meta.textContent = `(mapped: ${mappedPath})`;
+                      btn.appendChild(meta);
+                    }
+                    btn.addEventListener('click', function () {
+                      try { insertEventParserField(cn.id, mappedPath); } catch (e) { console.warn(e); }
+                    });
+                    row.appendChild(btn);
+                  });
+                }
+                pillContainer.appendChild(row);
+              });
+
+              // Include upstream actions as possible sources (same as actions UI)
+              try {
+                const actionHeader = document.createElement('div');
+                actionHeader.style.margin = '10px 0 8px';
+                const actionStrong = document.createElement('strong');
+                actionStrong.textContent = 'Action Outputs (DB)';
+                actionHeader.appendChild(actionStrong);
+                pillContainer.appendChild(actionHeader);
+
+                const actionNodesUp = new Map();
+                function collectActionUpstream(startId) {
+                  const q = [String(startId)];
+                  const seen = new Set();
+                  while (q.length) {
+                    const nid = q.shift();
+                    connections.forEach(c => {
+                      if (String(c.to) === String(nid)) {
+                        const from = (nodes || []).find(n => String(n.id) === String(c.from));
+                        if (!from) return;
+                        if (from.type === 'action') actionNodesUp.set(from.id, from);
+                        else if (!seen.has(from.id)) { seen.add(from.id); q.push(from.id); }
+                      }
+                    });
+                  }
+                }
+                targetNodes.forEach(n => collectActionUpstream(n.id));
+
+                if (actionNodesUp.size === 0) {
+                  const note = document.createElement('div');
+                  note.style.color = '#8899a6';
+                  note.style.fontSize = '0.85rem';
+                  note.style.padding = '6px 0';
+                  note.textContent = 'No upstream actions detected.';
+                  pillContainer.appendChild(note);
+                } else {
+                  actionNodesUp.forEach((an) => {
+                    let examples = [];
+                    try {
+                      if (an.data && an.data.variableMappings && Array.isArray(an.data.variableMappings._exampleOutputs) && an.data.variableMappings._exampleOutputs.length > 0) {
+                        examples = an.data.variableMappings._exampleOutputs;
+                      } else if (an.data && an.data.examplePayload) {
+                        examples = [an.data.examplePayload];
+                      }
+                    } catch (e) { examples = []; }
+
+                    const keys = (examples && examples.length && typeof examples[0] === 'object') ? Object.keys(examples[0]) : [];
+                    const ar = document.createElement('div');
+                    ar.style.display = 'flex';
+                    ar.style.flexWrap = 'wrap';
+                    ar.style.gap = '8px';
+                    ar.style.marginBottom = '8px';
+
+                    const nameDiv = document.createElement('div');
+                    nameDiv.style.fontWeight = '600';
+                    nameDiv.style.marginRight = '8px';
+                    nameDiv.textContent = an.name || an.id;
+                    ar.appendChild(nameDiv);
+
+                    if (!keys.length) {
+                      const note = document.createElement('div');
+                      note.style.marginBottom = '6px';
+                      note.style.color = '#657786';
+                      note.textContent = `${an.name || an.id} — no example output available`;
+                      ar.appendChild(note);
+                    } else {
+                      keys.forEach(k => {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn btn-sm btn-secondary connect-pill';
+                        btn.type = 'button';
+                        btn.draggable = true;
+                        btn.title = `Drag to insert {{action_${an.id}.${k}}}`;
+                        btn.textContent = k;
+                        btn.addEventListener('dragstart', function (e) {
+                          try { const payload = { actionId: an.id, path: k, key: k, parserType: 'action' }; e.dataTransfer.setData('application/json', JSON.stringify(payload)); e.dataTransfer.effectAllowed = 'copy'; } catch (err) { console.warn('action pill dragstart failed', err); }
+                        });
+                        btn.addEventListener('click', function () { try { insertActionField(an.id, k); } catch (e) { console.warn(e); } });
+                        ar.appendChild(btn);
+                      });
+                    }
+                    pillContainer.appendChild(ar);
+                  });
+                }
+              } catch (e) { console.warn('render action pills failed', e); }
+
+            } catch (e) {
+              console.warn('renderCustomLogicInputPills failed', e);
+            }
+          }
+
+          // Return a canonical list of connected inputs for a logic id
+          window.getConnectedInputsForLogic = function (logicId) {
+            try {
+              const inputs = [];
+              // find custom-logic nodes that reference this logic id
+              const targetNodes = (nodes || []).filter(n => n.type === 'custom-logic' && n.data && (String(n.data.logicId) === String(logicId) || String(n.data.logic) === String(logicId) || String(n.id) === String(logicId)));
+              if (!targetNodes || !targetNodes.length) return inputs;
+
+              // collect upstream connect nodes by BFS
+              const connectNodes = new Map();
+              function collectUpstream(startId) {
+                const q = [String(startId)];
+                const seen = new Set();
+                while (q.length) {
+                  const nid = q.shift();
+                  connections.forEach(c => {
+                    if (String(c.to) === String(nid)) {
+                      const from = (nodes || []).find(n => String(n.id) === String(c.from));
+                      if (!from) return;
+                      if (from.type === 'connect') {
+                        connectNodes.set(from.id, from);
+                      } else if (!seen.has(from.id)) {
+                        seen.add(from.id);
+                        q.push(from.id);
+                      }
+                    }
+                  });
+                }
+              }
+              targetNodes.forEach(n => collectUpstream(n.id));
+
+              connectNodes.forEach((cn) => {
+                const mapping = (cn.data && (cn.data.mapping || {}));
+                const preview = (cn.data && (cn.data.mappingPreview || cn.data.examplePayload || {})) || {};
+                const keys = Object.keys(mapping).length ? Object.keys(mapping) : (Object.keys(preview).length ? Object.keys(preview) : []);
+                keys.forEach(k => {
+                  const mappedPath = mapping && mapping[k] ? mapping[k] : k;
+                  inputs.push({ type: 'event', eventId: cn.id, eventName: cn.name || cn.id, field: null, parserPath: mappedPath, parserVarName: k });
+                });
+              });
+
+              // Include upstream actions
+              const actionNodesUp = new Map();
+              function collectActionUpstream(startId) {
+                const q = [String(startId)];
+                const seen = new Set();
+                while (q.length) {
+                  const nid = q.shift();
+                  connections.forEach(c => {
+                    if (String(c.to) === String(nid)) {
+                      const from = (nodes || []).find(n => String(n.id) === String(c.from));
+                      if (!from) return;
+                      if (from.type === 'action') actionNodesUp.set(from.id, from);
+                      else if (!seen.has(from.id)) { seen.add(from.id); q.push(from.id); }
+                    }
+                  });
+                }
+              }
+              targetNodes.forEach(n => collectActionUpstream(n.id));
+              actionNodesUp.forEach((an) => {
+                let examples = [];
+                try {
+                  if (an.data && an.data.variableMappings && Array.isArray(an.data.variableMappings._exampleOutputs) && an.data.variableMappings._exampleOutputs.length > 0) {
+                    examples = an.data.variableMappings._exampleOutputs;
+                  } else if (an.data && an.data.examplePayload) {
+                    examples = [an.data.examplePayload];
+                  }
+                } catch (e) { examples = []; }
+                const keys = (examples && examples.length && typeof examples[0] === 'object') ? Object.keys(examples[0]) : [];
+                keys.forEach(k => {
+                  inputs.push({ type: 'action', actionId: an.id, actionName: an.name || an.id, field: k });
+                });
+              });
+
+              return inputs;
+            } catch (e) {
+              console.warn('getConnectedInputsForLogic failed', e);
+              return [];
+            }
+          };
 
           
 
@@ -6182,26 +6525,13 @@
               try { globalThis.initActionsTab(); } catch (e) { /* ignore */ }
             }
 
-            // Inform Custom Logic tab about the active workflow (if selector exists)
+            // Inform Custom Logic tab about the active workflow; always scope to current workflow
             try {
-              const logicSelector = document.getElementById('logic-workflow-selector');
-              if (logicSelector && currentWorkflow && currentWorkflow.id) {
-                logicSelector.value = currentWorkflow.id;
-                if (typeof loadWorkflowLogics === 'function') {
-                  try { loadWorkflowLogics(currentWorkflow.id); } catch (e) { /* ignore */ }
-                }
-              } else if (globalThis.initCustomLogicTab && typeof globalThis.initCustomLogicTab === 'function') {
-                try {
-                  await globalThis.initCustomLogicTab();
-                  // after init, try to set selector and load logics for the active workflow
-                  const sel = document.getElementById('logic-workflow-selector');
-                  if (sel && currentWorkflow && currentWorkflow.id) {
-                    sel.value = currentWorkflow.id;
-                    if (typeof loadWorkflowLogics === 'function') {
-                      try { loadWorkflowLogics(currentWorkflow.id); } catch (e) { /* ignore */ }
-                    }
-                  }
-                } catch (e) { /* ignore */ }
+              if (globalThis.initCustomLogicTab && typeof globalThis.initCustomLogicTab === 'function') {
+                try { await globalThis.initCustomLogicTab(); } catch (e) { /* ignore */ }
+              }
+              if (currentWorkflow && currentWorkflow.id && typeof loadWorkflowLogics === 'function') {
+                try { loadWorkflowLogics(currentWorkflow.id); } catch (e) { /* ignore */ }
               }
             } catch (e) { /* ignore */ }
           } catch (e) {
@@ -6719,6 +7049,23 @@
                     : ""
                 }
                 ${
+                  node.type === 'custom-logic'
+                    ? `
+                    <div class="form-group">
+                        <label class="form-label">Logic</label>
+                        <select id="node-logic-${node.id}" class="form-select" onchange="updateNodeData('logicId', this.value)">
+                          <option value="">Loading logics...</option>
+                        </select>
+                    </div>
+                    ${
+                      node.data && node.data.variableMappings && node.data.variableMappings.inputMapping
+                        ? `<div class="form-group"><label class="form-label">Input Mapping (from connector)</label><div style="background:#f8f9fa;padding:8px;border-radius:6px;border:1px solid #e1e8ed;font-size:0.85rem;color:#223">${Object.keys(node.data.variableMappings.inputMapping).map(k => `${k}: ${node.data.variableMappings.inputMapping[k]}`).join('<br>')}</div></div>`
+                        : ''
+                    }
+                `
+                    : ''
+                }
+                ${
                   node.type === "decision"
                     ? `
                     <div class="form-group">
@@ -6751,6 +7098,12 @@
                                 .join('<br>')
                             : ''
                         }</div>
+                        <div style="margin-top:8px;">
+                          <label class="form-label">Attached Logic</label>
+                          <select id="node-logic-attach-${node.id}" class="form-select" onchange="updateNodeData('logicId', this.value)">
+                            <option value="">(none)</option>
+                          </select>
+                        </div>
                         <div style="margin-top:8px;color:#657786;font-size:0.8rem">Multiple outputs allowed — connect this node to any number of downstream nodes.</div>
                     </div>
                 `
@@ -6776,24 +7129,7 @@
                 `
                     : ""
                 }
-                ${node.type !== 'action' && node.type !== 'connect' && node.type !== 'event' ? `
-                <div class="form-group">
-                    <label class="form-label">DB Target</label>
-                    <div style="display:flex;gap:8px;align-items:center;">
-                      <input type="text" id="node-db-target-${
-                        node.id
-                      }" class="form-input" value="${
-          node.data.db
-            ? node.data.db.table +
-              (node.data.db.columns ? "." + node.data.db.columns.join(",") : "")
-            : ""
-        }" onchange="updateNodeDB('${node.id}', this.value)">
-                      <button class="btn btn-secondary" onclick="chooseDBForNode('${
-                        node.id
-                      }')">Choose from DB</button>
-                    </div>
-                </div>
-                ` : ''}
+                
                 <div style="display:flex;gap:8px;margin-top:12px;">
                   <button class="btn btn-primary" style="flex:1;padding:8px 12px;border-radius:8px;font-weight:600;" onclick="saveCurrentWorkflow()">Save Workflow</button>
                   <button class="btn btn-danger" style="flex:1;padding:8px 12px;border-radius:8px;font-weight:600;" onclick="deleteSelectedNode()">Delete Node</button>
@@ -6823,6 +7159,74 @@
               });
             } catch (e) {
               console.warn('populate actions failed', e);
+            }
+          })();
+        }
+
+        // Populate custom logic dropdown for custom-logic nodes
+        if (node.type === 'custom-logic') {
+          (async () => {
+            try {
+              const sel = document.getElementById(`node-logic-${node.id}`);
+              if (!sel) return;
+              let arr = [];
+              try {
+                const r = await fetch('/api/custom-logic');
+                if (r.ok) {
+                  const d = await r.json();
+                  arr = d.logics || d.items || d || [];
+                }
+              } catch (e) { /* ignore */ }
+              if (!arr || !arr.length) {
+                try {
+                  const r2 = await fetch('/config/metadata/custom-logic.json');
+                  if (r2.ok) arr = await r2.json();
+                } catch (e) { /* ignore */ }
+              }
+              sel.innerHTML = '<option value="">Select logic...</option>';
+              (arr || []).forEach((l) => {
+                const opt = document.createElement('option');
+                opt.value = l.id || l.name || l;
+                opt.textContent = l.name || l.id || l;
+                if (node.data && node.data.logicId && (node.data.logicId === l.id || node.data.logicId === l.name)) opt.selected = true;
+                sel.appendChild(opt);
+              });
+            } catch (e) {
+              console.warn('populate logics failed', e);
+            }
+          })();
+        }
+
+        // Populate attached logic dropdown for connect nodes
+        if (node.type === 'connect') {
+          (async () => {
+            try {
+              const sel = document.getElementById(`node-logic-attach-${node.id}`);
+              if (!sel) return;
+              let arr = [];
+              try {
+                const r = await fetch('/api/custom-logic');
+                if (r.ok) {
+                  const d = await r.json();
+                  arr = d.logics || d.items || d || [];
+                }
+              } catch (e) { /* ignore */ }
+              if (!arr || !arr.length) {
+                try {
+                  const r2 = await fetch('/config/metadata/custom-logic.json');
+                  if (r2.ok) arr = await r2.json();
+                } catch (e) { /* ignore */ }
+              }
+              sel.innerHTML = '<option value="">(none)</option>';
+              (arr || []).forEach((l) => {
+                const opt = document.createElement('option');
+                opt.value = l.id || l.name || l;
+                opt.textContent = l.name || l.id || l;
+                if (node.data && node.data.logicId && (node.data.logicId === l.id || node.data.logicId === l.name)) opt.selected = true;
+                sel.appendChild(opt);
+              });
+            } catch (e) {
+              console.warn('populate attach logics failed', e);
             }
           })();
         }

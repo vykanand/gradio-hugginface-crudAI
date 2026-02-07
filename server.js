@@ -2590,6 +2590,33 @@ app.get('/api/unified-workflows/:id', async (req, res) => {
   }
 });
 
+// Backwards-compatible endpoint: expose workflow components/logics
+app.get('/api/unified-workflows/:id/components', async (req, res) => {
+  try {
+    const wf = await unifiedWorkflowEngine.getWorkflow(req.params.id);
+    if (!wf) return res.status(404).json({ ok: false, error: 'Workflow not found' });
+
+    // Components may be stored under different property names depending on version
+    const components = wf.components || wf.logics || wf.nodes || [];
+
+    // Normalize to an object map keyed by id (frontend expects a map-like shape)
+    let map = {};
+    if (Array.isArray(components)) {
+      map = components.reduce((acc, c) => {
+        const key = c && (c.id || c.name) ? (c.id || c.name) : JSON.stringify(c);
+        acc[key] = c;
+        return acc;
+      }, {});
+    } else if (components && typeof components === 'object') {
+      map = components;
+    }
+
+    res.json({ ok: true, logics: map });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.post('/api/unified-workflows', async (req, res) => {
   try {
     const created = await unifiedWorkflowEngine.addWorkflow(req.body || {});

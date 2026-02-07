@@ -346,7 +346,7 @@
           "id": "node_4",
           "type": "connect",
           "name": "Connect 5",
-          "next": null,
+          "next": "node_5",
           "x": 978,
           "y": 212,
           "mapping": {
@@ -368,6 +368,50 @@
               }
             ]
           },
+          "outgoing": [
+            "node_5",
+            "node_6"
+          ]
+        },
+        {
+          "id": "node_6",
+          "type": "connect",
+          "name": "Connect 7",
+          "next": "node_7",
+          "x": 1317,
+          "y": 195,
+          "logicId": "logic_example_test_action_one",
+          "mapping": {
+            "phoneNumbers_value": "phoneNumbers_value"
+          },
+          "mappingPaths": {
+            "phoneNumbers_value": "phoneNumbers_value"
+          },
+          "mappingPreview": {
+            "phoneNumbers_value": "768790"
+          },
+          "variableMappings": {
+            "_exampleOutputs": [
+              {
+                "phoneNumbers_value": "768790",
+                "__parsers": {
+                  "phoneNumbers_value": "phoneNumbers_value"
+                }
+              }
+            ]
+          },
+          "outgoing": [
+            "node_7"
+          ]
+        },
+        {
+          "id": "node_7",
+          "type": "custom-logic",
+          "name": "Custom-logic 8",
+          "next": null,
+          "x": 1592,
+          "y": 211,
+          "logicId": "logic_example_test_action_one",
           "outgoing": []
         }
       ],
@@ -388,6 +432,21 @@
           "from": "node_3",
           "to": "node_4",
           "id": "c_1769898134253_3304"
+        },
+        {
+          "from": "node_4",
+          "to": "node_5",
+          "id": "c_1770066976603_7624"
+        },
+        {
+          "from": "node_4",
+          "to": "node_6",
+          "id": "c_1770068283579_6224"
+        },
+        {
+          "from": "node_6",
+          "to": "node_7",
+          "id": "c_1770068286057_700"
         }
       ]
     }
