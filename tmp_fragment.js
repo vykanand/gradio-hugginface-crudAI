@@ -1,136 +1,4 @@
-<div id="custom-logic-panel" class="tab-panel">
-  <div class="toolbar">
-    <button class="btn btn-secondary" onclick="loadCustomLogics()">
-      🔄 Refresh
-    </button>
-    <button class="btn btn-secondary" onclick="clearLogicEditor()">
-      ➕ New Logic
-    </button>
-    <div
-      style="margin-left: 16px; display: inline-block; vertical-align: middle"
-    >
-      <strong style="font-size: 0.95rem">Active Workflow:</strong>
-      <span
-        id="custom-logic-active-workflow"
-        style="margin-left: 8px; color: #333"
-        >(none)</span
-      >
-    </div>
-  </div>
-  <div class="main" style="display: flex; gap: 16px">
-    <div class="sidebar" style="width: 300px">
-      <h3 style="margin-top: 0">Custom Logic</h3>
-      <div style="margin-bottom: 8px; font-size: 0.95rem; color: #444">
-        Custom Logic
-      </div>
-      <div id="custom-logic-list"></div>
-      <div
-        id="custom-logic-empty-state"
-        style="display: none; color: #666; padding: 8px"
-      >
-        No custom logic defined
-      </div>
-    </div>
-    <div class="content-area" style="flex: 1">
-      <div id="custom-logic-editor" style="display: none">
-        <input
-          id="logic-name"
-          placeholder="Name"
-          style="width: 100%; margin-bottom: 8px; padding: 8px"
-        />
-        <input
-          id="logic-description"
-          placeholder="Short description"
-          style="width: 100%; margin-bottom: 8px; padding: 8px"
-        />
-        <div style="display: flex; gap: 8px; margin-bottom: 8px">
-          <button class="btn btn-primary" onclick="saveCustomLogic()">
-            Save
-          </button>
-          <button class="btn btn-secondary" onclick="deleteCurrentLogic()">
-            Delete
-          </button>
-          <!-- Connect inputs area (rendered by shared connect-inputs module) -->
-          <div id="custom-logic-connect-inputs" style="margin-top: 8px"></div>
-        </div>
-        <div style="margin-bottom: 8px">
-          <label style="font-weight: 600">Function code</label>
-          <textarea
-            id="logic-function"
-            style="
-              width: 100%;
-              height: 240px;
-              font-family: monospace;
-              margin-top: 4px;
-            "
-          ></textarea>
-        </div>
-        <div style="display: flex; gap: 12px; align-items: flex-start">
-          <div style="flex: 1">
-            <label style="font-weight: 600">Test Data</label>
-            <textarea
-              id="logic-test-data"
-              style="
-                width: 100%;
-                height: 160px;
-                font-family: monospace;
-                margin-top: 4px;
-              "
-            ></textarea>
-            <div
-              id="logic-test-result"
-              style="
-                display: none;
-                margin-top: 8px;
-                padding: 8px;
-                border-radius: 6px;
-              "
-            ></div>
-            <div style="margin-top: 8px">
-              <button class="btn btn-secondary" onclick="testCustomLogic()">
-                Run Test
-              </button>
-            </div>
-          </div>
-          <div style="width: 320px">
-            <label style="font-weight: 600">Variables Preview</label>
-            <div
-              id="variable-preview-list"
-              style="
-                background: #fff;
-                border: 1px solid #e6eef3;
-                padding: 8px;
-                min-height: 100px;
-                margin-top: 4px;
-              "
-            ></div>
-            <label style="font-weight: 600; margin-top: 8px; display: block"
-              >Input Shape</label
-            >
-            <pre
-              id="input-shape-schema"
-              style="
-                background: #f8f9fa;
-                border: 1px solid #e6eef3;
-                padding: 8px;
-                height: 160px;
-                overflow: auto;
-              "
-            ></pre>
-            <div
-              id="input-validation-status"
-              style="display: none; margin-top: 6px"
-            >
-              <span id="validation-icon"></span
-              ><span id="validation-message"></span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-<script>
+
   // Load reusable explorer (if available)
   (function ensureExplorerLoaded() {
     if (!window.createExplorer) {
@@ -169,7 +37,7 @@
                   const exists = logicInputs.some(
                     (li) =>
                       (li.actionId && li.actionId === entry.actionId) ||
-                      (li.actionName && li.actionName === entry.actionName),
+                      (li.actionName && li.actionName === entry.actionName)
                   );
                   if (!exists) logicInputs.push(entry);
                   renderInputsList();
@@ -199,6 +67,20 @@
     }
   }
 
+  // Global attach handler so other renderers can call into the custom logic editor
+  try {
+    window.onAttachConnectInputForLogic = function (entry, node) {
+      try {
+        if (!currentLogic) { showToast && showToast('No logic selected', 'info'); return; }
+        const exists = logicInputs.some(li => (li.actionId && li.actionId === entry.actionId) || (li.actionName && li.actionName === entry.actionName));
+        if (!exists) logicInputs.push(entry);
+        try { renderInputsList(); } catch(e){}
+        try { refreshInputShapePreview(); } catch(e){}
+        showToast && showToast('Attached input to logic', 'success');
+      } catch (e) { console.warn('onAttachConnectInputForLogic failed', e); }
+    };
+  } catch (e) { /* ignore */ }
+
   async function testCustomLogic() {
     try {
       const functionCode =
@@ -223,6 +105,12 @@
 
       // Execute user code with parsed inputs
       const result = await executeCustomLogic(functionCode, testData);
+
+      // persist last test result in-memory so user can save it with the logic
+      try {
+        window._lastCustomLogicTestResult = result;
+        if (currentLogic) currentLogic._lastTestResult = result;
+      } catch (e) {}
 
       const resultEl = document.getElementById("logic-test-result");
       resultEl.style.display = "block";
@@ -511,6 +399,15 @@
       functionCode,
       updatedAt: new Date().toISOString(),
     };
+
+    // Include the last test result as an example output for this logic (persist similar to actions)
+    try {
+      if (window._lastCustomLogicTestResult !== undefined) {
+        logic.exampleResult = window._lastCustomLogicTestResult;
+      } else if (currentLogic && currentLogic._lastTestResult !== undefined) {
+        logic.exampleResult = currentLogic._lastTestResult;
+      }
+    } catch (e) { /* ignore */ }
 
     // Persist the current test payload so it can be re-used when selecting this logic later
     try {
@@ -1901,14 +1798,11 @@
               );
             } catch (e) {}
           }
+          try { initCustomLogicConnectInputs && initCustomLogicConnectInputs(); } catch(e){}
+          try { if (typeof window.refreshCustomLogicConnectInputs === 'function') window.refreshCustomLogicConnectInputs(); } catch(e){}
           renderInputsList();
           refreshInputShapePreview();
-          try {
-            window.refreshCustomLogicConnectInputs &&
-              window.refreshCustomLogicConnectInputs();
-          } catch (e) {}
-        },
-      });
+        });
     } catch (e) {
       console.error("loadCustomLogics error", e);
       document.getElementById("custom-logic-empty-state").style.display =
@@ -2014,4 +1908,3 @@
     renderInputsList();
     refreshInputShapePreview();
   }
-</script>

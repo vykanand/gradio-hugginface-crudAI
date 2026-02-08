@@ -1261,9 +1261,12 @@
             const cfg = await res.json();
             globalThis.RUNTIME_CONFIG = cfg;
             return cfg;
-          } catch (err) {
-            console.warn('ensureRuntimeConfig failed', err);
-            return null;
+          } catch (e) {
+            console.warn("Could not load runtime config, using defaults", e);
+            globalThis.RUNTIME_CONFIG = {
+              ai: { mode: "proxy", directUrl: "/large" },
+            };
+            return globalThis.RUNTIME_CONFIG;
           }
         }
 
@@ -3029,7 +3032,7 @@
 
                   // Mark as changed and refresh UI
                   try { pendingChanges = true; } catch (e) {}
-                  try { const statusEl = document.getElementById('action-status'); if (statusEl) statusEl.textContent = 'Pending changes...'; } catch (e) {}
+                  try { document.getElementById('action-status').textContent = 'Pending changes...'; } catch (e) {}
                   try { setActionsEditState(); } catch (e) {}
 
                   showToast('Event Parser mapping deleted', 'success');
@@ -5831,78 +5834,33 @@
             if (res.ok) {
               const html = await res.text();
               // insert fragment at end of body
-              // Extract scripts from the raw HTML and execute them robustly.
-              // We remove scripts from the HTML before inserting it into the DOM to
-              // avoid the browser's HTML parser mangling script textContent.
+              const wrapper = document.createElement("div");
+              wrapper.innerHTML = html;
+              // Execute scripts found in the fragment so functions become available
               try {
-                const scriptRegex = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-                const scripts = [];
-                const cleanedHtml = html.replace(scriptRegex, function (m, attrs, code) {
-                  scripts.push({ attrs: attrs || '', code: code || '' });
-                  return '';
-                });
-
-                // Insert cleaned HTML (without script tags)
-                const template = document.createElement('template');
-                template.innerHTML = cleanedHtml;
-                wrapper = document.createElement('div');
-                wrapper.appendChild(template.content.cloneNode(true));
-
-                // Execute each extracted script in-order
-                let __inlineScriptAppendIndex = 0;
-                for (const s of scripts) {
-                  __inlineScriptAppendIndex++;
-                  try {
-                    // parse attributes by cloning into a dummy element
-                    const holder = document.createElement('div');
-                    holder.innerHTML = `<div ${s.attrs}></div>`;
-                    const el = holder.firstChild || {};
-                    const src = el.getAttribute && el.getAttribute('src');
-                    const type = (el.getAttribute && el.getAttribute('type')) || '';
-
-                    const code = s.code || '';
-                    console.error('INLINE_SCRIPT_EXTRACTED', __inlineScriptAppendIndex, { len: (code || '').length, src: src || null, type });
-
-                    if (src) {
-                      // external script: append and wait for load
-                      const newScript = document.createElement('script');
-                      newScript.src = src;
-                      if (type) newScript.type = type;
-                      newScript.async = false;
-                      document.head.appendChild(newScript);
-                      await new Promise((resolve) => { newScript.onload = resolve; newScript.onerror = resolve; });
-                      continue;
-                    }
-
-                    const isModule = /\bawait\b/.test(code) || /\bimport\b|\bexport\b/.test(code) || /type\s*=\s*['"]module['"]/i.test(type);
-
-                    if (!isModule) {
-                      // Non-module inline script: execute in global scope via Function
-                      try {
-                        new Function(code)();
-                        console.error('INLINE_SCRIPT_EXECUTED_FN', __inlineScriptAppendIndex);
-                      } catch (execErr) {
-                        console.error('INLINE_SCRIPT_EXEC_ERROR', execErr, code.slice(0, 2000));
-                      }
-                    } else {
-                      // Module script: execute via dynamic import of a Blob URL
-                      try {
-                        const blob = new Blob([code], { type: 'text/javascript' });
-                        const url = URL.createObjectURL(blob);
-                        try {
-                          await import(url + '');
-                          console.error('INLINE_MODULE_IMPORTED', __inlineScriptAppendIndex);
-                        } catch (impErr) {
-                          console.error('INLINE_MODULE_IMPORT_ERROR', impErr, code.slice(0, 2000));
-                        }
-                        try { URL.revokeObjectURL(url); } catch (revErr) {}
-                      } catch (modErr) {
-                        console.error('INLINE_MODULE_EXEC_ERROR', modErr);
-                      }
-                    }
-                  } catch (e) {
-                    console.warn('execute extracted script failed', e);
+                const scripts = wrapper.querySelectorAll("script");
+                for (const s of Array.from(scripts)) {
+                  const newScript = document.createElement("script");
+                  // copy attributes
+                  for (const attr of Array.from(s.attributes || [])) {
+                    newScript.setAttribute(attr.name, attr.value);
                   }
+                  if (s.src) {
+                    // external script: append and wait for load
+                    newScript.src = s.src;
+                    newScript.async = false;
+                    document.head.appendChild(newScript);
+                    await new Promise((resolve, reject) => {
+                      newScript.onload = resolve;
+                      newScript.onerror = () => resolve();
+                    });
+                  } else {
+                    // inline script: execute by textContent
+                    newScript.textContent = s.textContent;
+                    document.head.appendChild(newScript);
+                  }
+                  // remove original script node so it won't be moved as-is
+                  s.parentNode && s.parentNode.removeChild(s);
                 }
               } catch (e) {
                 console.warn('failed executing fragment scripts', e);
