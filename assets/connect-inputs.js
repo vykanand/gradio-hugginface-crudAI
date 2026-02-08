@@ -4,6 +4,9 @@
     try {
       const allNodes = window.nodes || [];
       const allConnections = window.connections || [];
+      try {
+        console.debug('collectUpstreamConnectNodesForTargets: called', { targetIds: targetIds, nodes: (allNodes || []).length, connections: (allConnections || []).length });
+      } catch (e) {}
       const connectNodes = new Map();
 
       const q = Array.isArray(targetIds) ? targetIds.map(String) : [String(targetIds)];
@@ -25,6 +28,9 @@
         });
       }
 
+      try {
+        console.debug('collectUpstreamConnectNodesForTargets: found connectNodes', Array.from(connectNodes.keys()));
+      } catch (e) {}
       return Array.from(connectNodes.values());
     } catch (e) {
       console.warn('collectUpstreamConnectNodesForTargets failed', e);
@@ -42,7 +48,7 @@
       const targetIds = opts.targetIds || opts.targetId || [];
       const targets = Array.isArray(targetIds) ? targetIds : [targetIds];
       const connectNodes = collectUpstreamConnectNodesForTargets(targets.filter(Boolean));
-
+      try { console.debug('renderConnectInputPills: targetIds=', targets, 'connectNodes.len=', (connectNodes||[]).length); } catch(e){}
       container.innerHTML = '';
       if (!connectNodes || connectNodes.length === 0) {
         const empty = document.createElement('div');
@@ -62,25 +68,43 @@
       header.appendChild(hstrong);
       container.appendChild(header);
 
+      // For each connect node render per-key draggable pills and an Attach action
       connectNodes.forEach((cn) => {
-        const row = document.createElement('div');
-        row.style.display = 'flex';
-        row.style.justifyContent = 'space-between';
-        row.style.alignItems = 'center';
-        row.style.padding = '6px 8px';
-        row.style.borderBottom = '1px solid #f0f0f0';
+        const mapping = (cn.data && (cn.data.mapping || {}));
+        // Determine preview source (prefer persisted example outputs)
+        let preview = {};
+        try {
+          if (cn.data && cn.data.variableMappings && Array.isArray(cn.data.variableMappings._exampleOutputs) && cn.data.variableMappings._exampleOutputs.length > 0) {
+            preview = cn.data.variableMappings._exampleOutputs[0] || {};
+          } else if (cn.data && cn.data.mappingPreview && Object.keys(cn.data.mappingPreview || {}).length > 0) {
+            preview = cn.data.mappingPreview || {};
+          } else if (cn.data && cn.data.examplePayload && Object.keys(cn.data.examplePayload || {}).length > 0) {
+            preview = cn.data.examplePayload || {};
+          } else {
+            preview = {};
+          }
+        } catch (e) { preview = {}; }
 
-        const left = document.createElement('div');
-        left.style.flex = '1';
-        left.textContent = cn.name || cn.id || '(connect)';
+        const title = cn.name || cn.id;
+        const keys = Object.keys(mapping).length ? Object.keys(mapping) : (Object.keys(preview).length ? Object.keys(preview) : []);
 
-        const right = document.createElement('div');
-        right.style.fontSize = '0.85rem';
-        right.style.color = '#555';
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-sm btn-secondary';
-        btn.textContent = 'Attach';
-        btn.onclick = () => {
+        const section = document.createElement('div');
+        section.style.marginBottom = '10px';
+
+        const titleRow = document.createElement('div');
+        titleRow.style.display = 'flex';
+        titleRow.style.justifyContent = 'space-between';
+        titleRow.style.alignItems = 'center';
+
+        const nameDiv = document.createElement('div');
+        nameDiv.style.fontWeight = '600';
+        nameDiv.textContent = title;
+        titleRow.appendChild(nameDiv);
+
+        const attachBtn = document.createElement('button');
+        attachBtn.className = 'btn btn-sm btn-secondary';
+        attachBtn.textContent = 'Attach';
+        attachBtn.onclick = () => {
           try {
             const cb = opts.onAttach;
             const entry = {
@@ -92,11 +116,95 @@
             if (typeof cb === 'function') cb(entry, cn);
           } catch (e) { console.warn('attach button failed', e); }
         };
-        right.appendChild(btn);
+        titleRow.appendChild(attachBtn);
+        section.appendChild(titleRow);
 
-        row.appendChild(left);
-        row.appendChild(right);
-        container.appendChild(row);
+        if (!keys || keys.length === 0) {
+          const note = document.createElement('div');
+          note.style.color = '#657786';
+          note.style.fontSize = '0.85rem';
+          note.style.marginTop = '6px';
+          note.textContent = `${title} — no mapping defined`;
+          section.appendChild(note);
+        } else {
+          const pillsRow = document.createElement('div');
+          pillsRow.style.display = 'flex';
+          pillsRow.style.flexWrap = 'wrap';
+          pillsRow.style.gap = '8px';
+          pillsRow.style.marginTop = '6px';
+
+          keys.forEach((k) => {
+            const mappedPath = mapping && mapping[k] ? mapping[k] : k;
+
+            // Resolve sample value for hint
+            let sampleVal = undefined;
+            function tryResolveFrom(obj) {
+              if (!obj) return undefined;
+              if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
+              if (mapping && mapping[k] && Object.prototype.hasOwnProperty.call(obj, mapping[k])) return obj[mapping[k]];
+              return undefined;
+            }
+            try {
+              if (cn.data && cn.data.variableMappings && Array.isArray(cn.data.variableMappings._exampleOutputs) && cn.data.variableMappings._exampleOutputs.length > 0) {
+                sampleVal = tryResolveFrom(cn.data.variableMappings._exampleOutputs[0]);
+              }
+              if (sampleVal === undefined && cn.data && cn.data.mappingPreview && Object.keys(cn.data.mappingPreview || {}).length > 0) {
+                sampleVal = tryResolveFrom(cn.data.mappingPreview);
+              }
+              if (sampleVal === undefined && cn.data && cn.data.examplePayload && Object.keys(cn.data.examplePayload || {}).length > 0) {
+                sampleVal = tryResolveFrom(cn.data.examplePayload);
+              }
+            } catch (e) { /* ignore */ }
+
+            const pill = document.createElement('button');
+            pill.className = 'btn btn-sm btn-secondary connect-pill';
+            pill.type = 'button';
+            pill.draggable = true;
+            pill.title = `Drag to insert {{event_parser_${cn.id}.${mappedPath}}}`;
+            pill.style.display = 'inline-flex';
+            pill.style.alignItems = 'center';
+            pill.style.gap = '6px';
+            pill.textContent = k;
+
+            if (sampleVal !== undefined) {
+              const span = document.createElement('span');
+              span.style.color = '#8899a6';
+              span.style.fontSize = '0.75rem';
+              span.style.marginLeft = '6px';
+              span.textContent = String(sampleVal).substring(0, 40);
+              pill.appendChild(span);
+            }
+
+            pill.addEventListener('dragstart', function (e) {
+              try {
+                const payload = { eventParserNodeId: cn.id, path: mappedPath, key: k, parserType: 'event_parser' };
+                e.dataTransfer.setData('application/json', JSON.stringify(payload));
+                const placeholder = `{{event_parser_${cn.id}.${mappedPath}}}`;
+                e.dataTransfer.setData('text/plain', placeholder);
+                e.dataTransfer.effectAllowed = 'copy';
+              } catch (err) { console.warn('connect-pill dragstart failed', err); }
+            });
+
+            pill.addEventListener('click', function () {
+              try {
+                // Default click inserts placeholder into any focused input via global insertAtCursor
+                const placeholder = `{{event_parser_${cn.id}.${mappedPath}}}`;
+                if (globalThis && typeof globalThis.insertAtCursor === 'function') {
+                  const active = document.activeElement;
+                  if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
+                    globalThis.insertAtCursor(active, placeholder);
+                  }
+                }
+              } catch (e) { console.warn(e); }
+            });
+
+            pillsRow.appendChild(pill);
+          });
+
+          section.appendChild(pillsRow);
+        }
+
+        container.appendChild(section);
       });
     } catch (e) {
       console.warn('renderConnectInputPills failed', e);

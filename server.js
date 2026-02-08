@@ -77,6 +77,19 @@ app.use('/builder-tabs', express.static(path.join(__dirname, 'builder-tabs')));
 // Serve config files so front-end can fetch `/config/database.json` and schema_store
 app.use('/config', express.static(path.join(__dirname, 'config')));
 
+// Provide a lightweight fallback favicon at /favicon.ico (SVG) so browsers
+// requesting the root favicon get a small icon even if no .ico file exists.
+app.get('/favicon.ico', (req, res) => {
+  try {
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">\n  <rect width="64" height="64" rx="10" fill="#2b6cb0"/>\n  <text x="50%" y="50%" font-size="32" text-anchor="middle" fill="#fff" dy="10">B</text>\n</svg>`;
+    res.type('image/svg+xml');
+    res.set('Cache-Control', 'public, max-age=86400');
+    return res.send(svg);
+  } catch (e) {
+    return res.status(500).end();
+  }
+});
+
 // Simple request logger to aid debugging (prints method + path)
 app.use((req, res, next) => {
   try {

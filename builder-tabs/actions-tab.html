@@ -10,6 +10,14 @@
     <button class="btn btn-secondary" onclick="loadActions()">
       🔄 Refresh
     </button>
+    <div
+      style="margin-left: 16px; display: inline-block; vertical-align: middle"
+    >
+      <strong style="font-size: 0.95rem">Active Workflow:</strong>
+      <span id="actions-active-workflow" style="margin-left: 8px; color: #333"
+        >(none)</span
+      >
+    </div>
   </div>
   <div class="main">
     <div class="content-area">
@@ -25,6 +33,26 @@
 <script>
   globalThis.initActionsTab = async function () {
     try {
+      // Show active workflow if available
+      try {
+        const wfEl = document.getElementById("actions-active-workflow");
+        if (wfEl && window.currentWorkflow)
+          wfEl.textContent =
+            window.currentWorkflow.name ||
+            window.currentWorkflow.id ||
+            "(none)";
+      } catch (e) {}
+      // expose updater for when active workflow changes
+      try {
+        window.onActiveWorkflowChanged = function (wf) {
+          try {
+            const el = document.getElementById("actions-active-workflow");
+            if (el)
+              el.textContent =
+                wf && (wf.name || wf.id) ? wf.name || wf.id : "(none)";
+          } catch (e) {}
+        };
+      } catch (e) {}
       if (typeof fetchActions === "function") await fetchActions();
       else if (typeof loadActions === "function") await loadActions();
     } catch (e) {

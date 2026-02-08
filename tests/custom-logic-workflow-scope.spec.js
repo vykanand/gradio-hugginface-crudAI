@@ -7,11 +7,10 @@ test.describe('Custom Logic explorer honors active workflow and loads metadata',
 
     page.on('console', (msg) => console.log('PAGE LOG:', msg.type(), msg.text()));
 
-    // Set active workflow that includes logic_example_test_action_one
-    await page.evaluate(() => {
-      window.currentWorkflow = { id: 'wf_1769809382007', name: 'wf_1769809382007' };
-      window.nodes = window.nodes || [];
-    });
+    // Set active workflow that includes logic_example_test_action_one via host API
+    await page.waitForFunction(() => typeof window.setCurrentWorkflow === 'function');
+    await page.evaluate(() => { window.nodes = window.nodes || []; });
+    await page.evaluate(() => window.setCurrentWorkflow({ id: 'wf_1769809382007', name: 'wf_1769809382007' }));
 
     // Open Custom Logic tab and initialize fragment if an init hook exists
     await page.click('button.tab:has-text("Custom Logic")');

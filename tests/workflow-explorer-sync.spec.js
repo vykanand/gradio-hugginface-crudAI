@@ -8,11 +8,10 @@ test.describe('Workflow-scoped explorers follow active workflow', () => {
     // Mirror page console to test output for debugging
     page.on('console', (msg) => console.log('PAGE LOG:', msg.type(), msg.text()));
 
-    // Seed active workflow to a known workflow id in config/metadata/workflows.json
-    await page.evaluate(() => {
-      window.currentWorkflow = { id: 'invoice-processing', name: 'Invoice Processing' };
-      window.nodes = window.nodes || [];
-    });
+    // Seed active workflow to a known workflow id in config/metadata/workflows.json via host API
+    await page.waitForFunction(() => typeof window.setCurrentWorkflow === 'function');
+    await page.evaluate(() => { window.nodes = window.nodes || []; });
+    await page.evaluate(() => window.setCurrentWorkflow({ id: 'invoice-processing', name: 'Invoice Processing' }));
 
     // Open Custom Logic tab and initialize fragment
     await page.click('button.tab:has-text("Custom Logic")');
