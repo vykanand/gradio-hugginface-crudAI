@@ -1261,12 +1261,9 @@
             const cfg = await res.json();
             globalThis.RUNTIME_CONFIG = cfg;
             return cfg;
-          } catch (e) {
-            console.warn("Could not load runtime config, using defaults", e);
-            globalThis.RUNTIME_CONFIG = {
-              ai: { mode: "proxy", directUrl: "/large" },
-            };
-            return globalThis.RUNTIME_CONFIG;
+          } catch (err) {
+            console.warn('ensureRuntimeConfig failed', err);
+            return null;
           }
         }
 
@@ -2285,6 +2282,18 @@
             } catch (e) { /* ignore */ }
           }
 
+          // Ensure shared connect-inputs module is available for pill rendering
+          (function ensureConnectInputsLoaded(){
+            try {
+              if (!window.renderConnectInputPills) {
+                const s = document.createElement('script');
+                s.src = '/assets/connect-inputs.js';
+                s.onload = () => { /* noop */ };
+                document.head.appendChild(s);
+              }
+            } catch(e) { /* ignore */ }
+          })();
+
           // Render clickable pills for Event Parser node inputs that are upstream of an action
           function renderEventParserInputPills(actionId) {
             try {
@@ -2320,6 +2329,27 @@
               actionNodes.forEach(n => collectUpstream(n.id));
 
               // Build pills UI using DOM nodes (safer than string concatenation)
+              // If shared renderer is available, delegate rendering to it (adds Attach buttons)
+              try {
+                if (window.renderConnectInputPills) {
+                  const tgtIds = actionNodes.map(n => n.id);
+                  window.renderConnectInputPills({
+                    containerId: pillContainer.id || 'connect-input-pills-area',
+                    targetIds: tgtIds,
+                    title: 'Event Parser Inputs (from workflow)',
+                    onAttach: (entry, node) => {
+                      try {
+                        if (typeof window.onAttachConnectInputForAction === 'function') {
+                          window.onAttachConnectInputForAction(entry, node);
+                        } else {
+                          showToast && showToast('Attach pressed for action: ' + entry.actionName, 'info');
+                        }
+                      } catch (e) { console.warn('onAttachConnectInputForAction failed', e); }
+                    }
+                  });
+                  return;
+                }
+              } catch (e) { /* fallthrough to legacy renderer */ }
               console.debug('renderConnectInputPills: actionNodes=', actionNodes.map(an => an.id));
               console.debug('renderConnectInputPills: connectNodes ids=', Array.from(connectNodes.keys()));
               // Clear pill container
@@ -2499,6 +2529,21 @@
 
                 pillContainer.appendChild(row);
               });
+              // expose attach handler fallback for action editor
+              try {
+                window.onAttachConnectInputForAction = function(entry, node) {
+                  try {
+                    if (!currentAction) { showToast && showToast('No action selected', 'info'); return; }
+                    currentAction.variableMappings = currentAction.variableMappings || {};
+                    currentAction.variableMappings._exampleOutputs = currentAction.variableMappings._exampleOutputs || [];
+                    const obj = {};
+                    obj[entry.actionId] = null;
+                    currentAction.variableMappings._exampleOutputs.push(obj);
+                    try { renderEventParserInputPills(currentAction.id); } catch(e){}
+                    showToast && showToast('Attached input to action', 'success');
+                  } catch (e) { console.warn('onAttachConnectInputForAction failed', e); }
+                };
+              } catch(e) { /* ignore */ }
 
               // Also include upstream Action (DB) nodes as possible sources for placeholders
               try {
@@ -2984,7 +3029,7 @@
 
                   // Mark as changed and refresh UI
                   try { pendingChanges = true; } catch (e) {}
-                  try { document.getElementById('action-status').textContent = 'Pending changes...'; } catch (e) {}
+                  try { const statusEl = document.getElementById('action-status'); if (statusEl) statusEl.textContent = 'Pending changes...'; } catch (e) {}
                   try { setActionsEditState(); } catch (e) {}
 
                   showToast('Event Parser mapping deleted', 'success');
@@ -3779,86 +3824,57 @@
             const el = document.getElementById("actions-panel-list");
             el.innerHTML = '<div class="muted">Loading...</div>';
             try {
-              const r = await fetch("/api/actions");
-              const data = await r.json();
-              if (!data || !data.ok) {
-                el.innerHTML =
-                  '<div class="muted">Failed to load actions</div>';
-                return;
+              // Use the reusable explorer to render actions in the left sidebar
+              if (!window.createExplorer) {
+                await new Promise((resolve) => {
+                  const s = document.createElement('script');
+                  s.src = '/assets/explorer.js';
+                  s.onload = () => {
+                    // small defer to ensure module has run
+                    setTimeout(resolve, 0);
+                  };
+                  s.onerror = (e) => {
+                    console.error('Failed to load explorer.js', e);
+                    resolve();
+                  };
+                  document.head.appendChild(s);
+                });
               }
-              // Cache all actions for duplicate checking
-              allActionsCache = data.actions || {};
-              let items = Object.values(data.actions || {}).sort((a, b) =>
-                (a.name || a.id).localeCompare(b.name || b.id)
-              );
 
-              // If a workflow is selected, scope actions to those used by the workflow.
-              try {
-                if (currentWorkflow && Array.isArray(currentWorkflow.steps)) {
-                  const used = new Set();
-                  (currentWorkflow.steps || []).forEach((s) => {
-                    try {
-                      if (!s) return;
-                      const candidates = [];
-                      if (s.action) candidates.push(String(s.action));
-                      if (s.id) candidates.push(String(s.id));
-                      if (s.data && s.data.action) candidates.push(String(s.data.action));
-                      candidates.forEach((c) => {
-                        if (c) used.add(c);
-                      });
-                    } catch (e) {
-                      /* ignore per-step */
-                    }
-                  });
-                  items = items.filter(
-                    (a) => a && (used.has(String(a.id)) || used.has(String(a.name)))
-                  );
-                }
-              } catch (e) {
-                /* ignore scoping errors */
-              }
-              if (!items.length) {
-                el.innerHTML = '<div class="muted">No actions defined.</div>';
-                const dbg = document.getElementById("actions-debug");
-                if (dbg) dbg.textContent = "Actions: 0";
-                return;
-              }
-              el.innerHTML = items
-                .map(
-                  (
-                    a
-                  ) => `<div class="list-item type-action" style="margin-bottom:8px; cursor:pointer;" data-action-id="${
-                    a.id
-                  }">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <div><div class="list-item-title">${a.name || a.id}</div>
-                  </div>
-                  <div style="display:flex; gap:8px;">
-                    <button class="btn btn-secondary" data-edit-id="${
-                      a.id
-                    }" title="Edit action" aria-label="Edit action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
-                    <button class="btn btn-danger" data-del-id="${
-                      a.id
-                    }" title="Delete action" aria-label="Delete action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
-                  </div>
-                </div>
-              </div>`
-                )
-                .join("");
-
-              // Auto-open first action when Actions tab is active.
-              try {
-                const actionsPanel = document.getElementById('actions-panel');
-                const firstId = items && items[0] && items[0].id;
-                if (actionsPanel && actionsPanel.classList.contains('active') && firstId && typeof openForEdit === 'function') {
-                  const currentId = (currentAction && currentAction.id) ? String(currentAction.id) : null;
-                  if (!currentId || currentId !== String(firstId)) {
-                    setTimeout(() => {
-                      try { openForEdit(firstId); } catch (e) { console.warn('auto open action failed', e); }
-                    }, 0);
+              if (typeof window.createExplorer !== 'function') {
+                // fallback: render actions via legacy path
+                try {
+                  const r = await fetch('/api/actions');
+                  const j = await r.json();
+                  const items = Object.values(j && j.actions ? j.actions : {});
+                  if (!items.length) {
+                    el.innerHTML = '<div class="muted">No actions defined.</div>';
+                    return;
                   }
+                  el.innerHTML = items.map(a => `<div class="list-item type-action" style="margin-bottom:8px; cursor:pointer;" data-action-id="${a.id}"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="list-item-title">${a.name || a.id}</div></div></div></div>`).join('');
+                  return;
+                } catch (e) {
+                  console.error('Legacy render failed', e);
+                  el.innerHTML = '<div class="muted">Failed to load actions</div>';
+                  return;
                 }
-              } catch (e) { /* ignore */ }
+              }
+
+              await window.createExplorer({
+                containerId: 'actions-panel-list',
+                fetchItems: async () => {
+                  const r = await fetch('/api/actions');
+                  const j = await r.json();
+                  if (!j || !j.ok) return [];
+                  // convert actions map to array
+                  return Object.values(j.actions || {});
+                },
+                itemLabel: (it) => it.name || it.id || '(untitled)',
+                nodeTypeMatch: 'connect',
+                onSelect: (it) => {
+                  try { openForEdit(it.id); } catch (e) { console.warn('openForEdit failed', e); }
+                }
+              });
             } catch (e) {
               console.error("fetchActions", e);
               el.innerHTML = '<div class="muted">Error loading actions</div>';
@@ -4294,24 +4310,7 @@
             }
           );
 
-          // delegate edit/delete buttons in list
-          document
-            .getElementById("actions-panel-list")
-            .addEventListener("click", (ev) => {
-              const edit = ev.target.closest("[data-edit-id]");
-              const del = ev.target.closest("[data-del-id]");
-              const item = ev.target.closest("[data-action-id]");
-              if (edit) {
-                const id = edit.getAttribute("data-edit-id");
-                openForEdit(id);
-              } else if (del) {
-                const id = del.getAttribute("data-del-id");
-                deleteAction(id);
-              } else if (item) {
-                const id = item.getAttribute("data-action-id");
-                openForEdit(id);
-              }
-            });
+          // Click handling now provided by the explorer's `onSelect`.
 
           // search box
           document
@@ -4377,6 +4376,18 @@
     <script>
       // Global state
       let currentWorkflow = null;
+      // keep a window-global mirror so fragment tabs and other pages can read active workflow
+      try { window.currentWorkflow = currentWorkflow; } catch (e) {}
+
+      function setCurrentWorkflow(wf) {
+        currentWorkflow = wf;
+        try { window.currentWorkflow = currentWorkflow; } catch (e) {}
+        try {
+          if (typeof window.onActiveWorkflowChanged === 'function') {
+            try { window.onActiveWorkflowChanged(currentWorkflow); } catch(e){}
+          }
+        } catch (e) {}
+      }
       let selectedNode = null;
       let taxonomy = null;
       let workflows = [];
@@ -5672,14 +5683,14 @@
               try {
                 // If no workflow exists yet, create a minimal one so the name binds
                 if (!currentWorkflow) {
-                  currentWorkflow = {
+                  setCurrentWorkflow({
                     id: 'wf_' + Date.now(),
                     name: ev.target.value || generateWorkflowName(),
                     description: '',
                     steps: [],
                     concept: '',
                     triggerEvent: ''
-                  };
+                  });
                   nodes = nodes || [];
                   connections = connections || [];
                 }
@@ -5820,33 +5831,78 @@
             if (res.ok) {
               const html = await res.text();
               // insert fragment at end of body
-              const wrapper = document.createElement("div");
-              wrapper.innerHTML = html;
-              // Execute scripts found in the fragment so functions become available
+              // Extract scripts from the raw HTML and execute them robustly.
+              // We remove scripts from the HTML before inserting it into the DOM to
+              // avoid the browser's HTML parser mangling script textContent.
               try {
-                const scripts = wrapper.querySelectorAll("script");
-                for (const s of Array.from(scripts)) {
-                  const newScript = document.createElement("script");
-                  // copy attributes
-                  for (const attr of Array.from(s.attributes || [])) {
-                    newScript.setAttribute(attr.name, attr.value);
+                const scriptRegex = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+                const scripts = [];
+                const cleanedHtml = html.replace(scriptRegex, function (m, attrs, code) {
+                  scripts.push({ attrs: attrs || '', code: code || '' });
+                  return '';
+                });
+
+                // Insert cleaned HTML (without script tags)
+                const template = document.createElement('template');
+                template.innerHTML = cleanedHtml;
+                wrapper = document.createElement('div');
+                wrapper.appendChild(template.content.cloneNode(true));
+
+                // Execute each extracted script in-order
+                let __inlineScriptAppendIndex = 0;
+                for (const s of scripts) {
+                  __inlineScriptAppendIndex++;
+                  try {
+                    // parse attributes by cloning into a dummy element
+                    const holder = document.createElement('div');
+                    holder.innerHTML = `<div ${s.attrs}></div>`;
+                    const el = holder.firstChild || {};
+                    const src = el.getAttribute && el.getAttribute('src');
+                    const type = (el.getAttribute && el.getAttribute('type')) || '';
+
+                    const code = s.code || '';
+                    console.error('INLINE_SCRIPT_EXTRACTED', __inlineScriptAppendIndex, { len: (code || '').length, src: src || null, type });
+
+                    if (src) {
+                      // external script: append and wait for load
+                      const newScript = document.createElement('script');
+                      newScript.src = src;
+                      if (type) newScript.type = type;
+                      newScript.async = false;
+                      document.head.appendChild(newScript);
+                      await new Promise((resolve) => { newScript.onload = resolve; newScript.onerror = resolve; });
+                      continue;
+                    }
+
+                    const isModule = /\bawait\b/.test(code) || /\bimport\b|\bexport\b/.test(code) || /type\s*=\s*['"]module['"]/i.test(type);
+
+                    if (!isModule) {
+                      // Non-module inline script: execute in global scope via Function
+                      try {
+                        new Function(code)();
+                        console.error('INLINE_SCRIPT_EXECUTED_FN', __inlineScriptAppendIndex);
+                      } catch (execErr) {
+                        console.error('INLINE_SCRIPT_EXEC_ERROR', execErr, code.slice(0, 2000));
+                      }
+                    } else {
+                      // Module script: execute via dynamic import of a Blob URL
+                      try {
+                        const blob = new Blob([code], { type: 'text/javascript' });
+                        const url = URL.createObjectURL(blob);
+                        try {
+                          await import(url + '');
+                          console.error('INLINE_MODULE_IMPORTED', __inlineScriptAppendIndex);
+                        } catch (impErr) {
+                          console.error('INLINE_MODULE_IMPORT_ERROR', impErr, code.slice(0, 2000));
+                        }
+                        try { URL.revokeObjectURL(url); } catch (revErr) {}
+                      } catch (modErr) {
+                        console.error('INLINE_MODULE_EXEC_ERROR', modErr);
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('execute extracted script failed', e);
                   }
-                  if (s.src) {
-                    // external script: append and wait for load
-                    newScript.src = s.src;
-                    newScript.async = false;
-                    document.head.appendChild(newScript);
-                    await new Promise((resolve, reject) => {
-                      newScript.onload = resolve;
-                      newScript.onerror = () => resolve();
-                    });
-                  } else {
-                    // inline script: execute by textContent
-                    newScript.textContent = s.textContent;
-                    document.head.appendChild(newScript);
-                  }
-                  // remove original script node so it won't be moved as-is
-                  s.parentNode && s.parentNode.removeChild(s);
                 }
               } catch (e) {
                 console.warn('failed executing fragment scripts', e);
@@ -6394,14 +6450,14 @@
       }
 
       function newWorkflow() {
-        currentWorkflow = {
+        setCurrentWorkflow({
           id: "wf_" + Date.now(),
           name: generateWorkflowName(),
           description: "",
           steps: [],
           concept: "",
           triggerEvent: "",
-        };
+        });
         nodes = [];
         connections = [];
         nextNodeId = 1;
@@ -6462,7 +6518,7 @@
         try { localStorage.setItem('activeWorkflowId', String(workflowId)); } catch (e) { /* ignore storage errors */ }
         const workflow = workflows.find((w) => w.id === workflowId);
         if (workflow) {
-          currentWorkflow = workflow;
+          setCurrentWorkflow(workflow);
           // Convert steps to nodes for visual editor
           nodes = (workflow.steps || []).map((step, idx) => ({
             id: step.id,
@@ -6541,19 +6597,19 @@
       }
 
       async function saveCurrentWorkflow() {
-        if (!currentWorkflow) {
-          // Create a minimal workflow using the workflow name input or generated name
-          try {
-            const el = document.getElementById('workflow-name-input');
-            const nameVal = el && el.value && String(el.value).trim() ? el.value.trim() : generateWorkflowName();
-            currentWorkflow = {
-              id: 'wf_' + Date.now(),
-              name: nameVal,
-              description: '',
-              steps: [],
-              concept: '',
-              triggerEvent: ''
-            };
+            if (!currentWorkflow) {
+            // Create a minimal workflow using the workflow name input or generated name
+            try {
+              const el = document.getElementById('workflow-name-input');
+              const nameVal = el && el.value && String(el.value).trim() ? el.value.trim() : generateWorkflowName();
+              setCurrentWorkflow({
+                id: 'wf_' + Date.now(),
+                name: nameVal,
+                description: '',
+                steps: [],
+                concept: '',
+                triggerEvent: ''
+              });
             // ensure nodes/connections arrays exist so save logic runs
             nodes = nodes || [];
             connections = connections || [];
@@ -10117,14 +10173,14 @@
 
           // Ensure there is a workflow to save. If none exists, create a minimal workflow
           if (!currentWorkflow) {
-            currentWorkflow = {
+            setCurrentWorkflow({
               id: 'wf_' + Date.now(),
               name: generateWorkflowName(),
               description: 'Auto-generated workflow to persist node->action binding',
               steps: [],
               concept: '',
               triggerEvent: ''
-            };
+            });
             // If nodes array doesn't include this node, add it. Otherwise keep existing nodes.
             if (!Array.isArray(nodes)) nodes = [];
             if (!nodes.find(n => n.id === nd.id)) nodes.push(nd);

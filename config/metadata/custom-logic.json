@@ -46,5 +46,437 @@
         }
       }
     }
+  },
+  {
+    "id": "logic_1770495996272_1c0otat0h",
+    "name": "playwright_test_logic_1770495996167",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-07T20:26:36.272Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770496070789_86z2smn8j",
+    "name": "playwright_test_logic_1770496070658",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-07T20:27:50.789Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770533850309_7cicugj0p",
+    "name": "playwright_test_logic_1770533850106",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T06:57:30.309Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770534187417_iljlj0l0k",
+    "name": "playwright_test_logic_1770534187156",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T07:03:07.417Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770534570869_yi2sljd5v",
+    "name": "playwright_test_logic_1770534570641",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T07:09:30.869Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770534594393_fexzz2z18",
+    "name": "manual_playwright_1770534594182",
+    "description": "Manual test logic",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T07:09:54.393Z"
+  },
+  {
+    "id": "logic_1770542992731_ntr00hgi4",
+    "name": "playwright_test_logic_1770542992542",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:29:52.731Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770543039597_ipusjnbg2",
+    "name": "playwright_test_logic_1770543039423",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:30:39.597Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770543149523_4zrg2u52g",
+    "name": "playwright_test_logic_1770543149401",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:32:29.523Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770543237146_9uwbf28xe",
+    "name": "playwright_test_logic_1770543236853",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:33:57.146Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770543370782_p6leib6fl",
+    "name": "playwright_test_logic_1770543370443",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:36:10.782Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770543434184_d6ycqpdtf",
+    "name": "attach_test_logic_1770543434039",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:37:14.184Z"
+  },
+  {
+    "id": "logic_1770543884654_520wq92av",
+    "name": "playwright_test_logic_1770543884369",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:44:44.654Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770543886070_hhyiwj4gp",
+    "name": "manual_playwright_1770543885802",
+    "description": "Manual test logic",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:44:46.070Z"
+  },
+  {
+    "id": "logic_1770543886800_g8dtos42y",
+    "name": "attach_test_logic_1770543886163",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:44:46.800Z"
+  },
+  {
+    "id": "logic_1770543968653_f40vj5464",
+    "name": "playwright_test_logic_1770543968258",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:46:08.653Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770543968956_nk2q9g47w",
+    "name": "attach_test_logic_1770543968762",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:46:08.956Z"
+  },
+  {
+    "id": "logic_1770544183677_zo3q88hud",
+    "name": "attach_test_logic_1770544183434",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:49:43.677Z"
+  },
+  {
+    "id": "logic_1770544184210_weibhfrev",
+    "name": "playwright_test_logic_1770544184048",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:49:44.210Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770544373025_wbj08wq34",
+    "name": "playwright_test_logic_1770544372640",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:52:53.025Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770544373795_i2pah0rir",
+    "name": "attach_test_logic_1770544373267",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:52:53.795Z"
+  },
+  {
+    "id": "logic_1770544373938_kqwnvy991",
+    "name": "manual_playwright_1770544373647",
+    "description": "Manual test logic",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:52:53.938Z"
+  },
+  {
+    "id": "logic_1770544443910_2m7brr6fh",
+    "name": "attach_test_logic_1770544443588",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:54:03.911Z"
+  },
+  {
+    "id": "logic_1770544444021_pa4vrtycg",
+    "name": "playwright_test_logic_1770544443618",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:54:04.021Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770544446201_rmreojoty",
+    "name": "manual_playwright_1770544446040",
+    "description": "Manual test logic",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:54:06.201Z"
+  },
+  {
+    "id": "logic_1770544649658_ch9cmyp4d",
+    "name": "playwright_test_logic_1770544648647",
+    "description": "Playwright test logic - returns inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:57:29.658Z",
+    "exampleContext": {
+      "events": {},
+      "actions": {}
+    },
+    "exampleContextUI": {
+      "foo": "bar",
+      "nested": {
+        "num": 42
+      }
+    }
+  },
+  {
+    "id": "logic_1770544651173_4oif3dmun",
+    "name": "attach_test_logic_1770544650707",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:57:31.173Z"
+  },
+  {
+    "id": "logic_1770544654303_h2ylln4df",
+    "name": "manual_playwright_1770544654059",
+    "description": "Manual test logic",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T09:57:34.303Z"
+  },
+  {
+    "id": "logic_1770545424917_zl3wt2m9s",
+    "name": "attach_test_logic_1770545424075",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T10:10:24.918Z"
+  },
+  {
+    "id": "logic_1770545426241_d1r10zbwi",
+    "name": "manual_playwright_1770545426058",
+    "description": "Manual test logic",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T10:10:26.241Z"
+  },
+  {
+    "id": "logic_1770545462606_cdneoalsp",
+    "name": "attach_test_logic_1770545462263",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T10:11:02.606Z"
+  },
+  {
+    "id": "logic_1770545463444_it44z1qxi",
+    "name": "manual_playwright_1770545463229",
+    "description": "Manual test logic",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T10:11:03.444Z"
+  },
+  {
+    "id": "logic_1770545498342_3u6oemt59",
+    "name": "attach_test_logic_1770545498127",
+    "description": "Test attach inputs",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T10:11:38.342Z"
+  },
+  {
+    "id": "logic_1770545500765_kud3gnheu",
+    "name": "manual_playwright_1770545500576",
+    "description": "Manual test logic",
+    "inputs": [],
+    "functionCode": "return inputs;",
+    "updatedAt": "2026-02-08T10:11:40.765Z"
   }
 ]

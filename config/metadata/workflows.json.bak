@@ -1,0 +1,287 @@
+{
+  "version": "1.0.0",
+  "definitions": [
+    {
+      "id": "invoice-processing",
+      "name": "Invoice Processing",
+      "description": "Process vendor invoice from receipt to payment",
+      "triggerEvent": "InvoiceReceived",
+      "concept": "Invoice",
+      "steps": [
+        {
+          "id": "validate",
+          "type": "action",
+          "name": "Validate Invoice",
+          "action": "ValidateInvoice",
+          "next": "determine-approval",
+          "x": 44,
+          "y": 100,
+          "outgoing": [
+            "determine-approval"
+          ]
+        },
+        {
+          "id": "determine-approval",
+          "type": "decision",
+          "name": "Determine Approval Required",
+          "ruleSet": "invoice-approval-policy",
+          "branches": {
+            "requiresApproval:true": "await-approval",
+            "requiresApproval:false": "post-accounting"
+          },
+          "default": "await-approval",
+          "x": 300,
+          "y": 100,
+          "outgoing": [
+            "await-approval"
+          ],
+          "next": "await-approval"
+        },
+        {
+          "id": "await-approval",
+          "type": "human-task",
+          "name": "Await Approval",
+          "taskType": "approval",
+          "assignmentRule": "approvalLevel",
+          "timeout": "72h",
+          "next": "check-approval-result",
+          "x": 653,
+          "y": 100,
+          "outgoing": [
+            "check-approval-result"
+          ]
+        },
+        {
+          "id": "check-approval-result",
+          "type": "decision",
+          "name": "Check Approval Result",
+          "condition": {
+            "field": "approved",
+            "operator": "==",
+            "value": true
+          },
+          "branches": {
+            "true": "post-accounting",
+            "false": "reject-invoice"
+          },
+          "x": 935,
+          "y": 85,
+          "outgoing": [
+            "post-accounting",
+            "post-accounting"
+          ],
+          "next": "post-accounting"
+        },
+        {
+          "id": "post-accounting",
+          "type": "action",
+          "name": "Post to Accounting",
+          "action": "PostAccountingEntry",
+          "next": "reject-invoice",
+          "x": 1157,
+          "y": 99,
+          "outgoing": [
+            "reject-invoice"
+          ]
+        },
+        {
+          "id": "reject-invoice",
+          "type": "action",
+          "name": "Reject Invoice",
+          "action": "RejectInvoice",
+          "next": "close-workflow",
+          "outgoing": [
+            "close-workflow"
+          ],
+          "x": 1422,
+          "y": 94
+        },
+        {
+          "id": "close-workflow",
+          "type": "end",
+          "name": "Complete",
+          "outgoing": [],
+          "next": null,
+          "x": 1687,
+          "y": 103
+        }
+      ],
+      "connections": [
+        {
+          "from": "validate",
+          "to": "determine-approval",
+          "id": "c_1765660706065_702"
+        },
+        {
+          "from": "determine-approval",
+          "to": "await-approval",
+          "id": "c_1765660720796_9160"
+        },
+        {
+          "from": "await-approval",
+          "to": "check-approval-result",
+          "id": "c_1765660727628_7517"
+        },
+        {
+          "from": "check-approval-result",
+          "to": "post-accounting",
+          "id": "c_1765660764394_2039"
+        },
+        {
+          "from": "check-approval-result",
+          "to": "post-accounting",
+          "id": "c_1765660768099_6546"
+        },
+        {
+          "from": "post-accounting",
+          "to": "reject-invoice",
+          "id": "c_1765661474813_5045"
+        },
+        {
+          "from": "reject-invoice",
+          "to": "close-workflow",
+          "id": "c_1765661481618_8515"
+        }
+      ]
+    },
+    {
+      "id": "purchase-order-approval",
+      "name": "Purchase Order Approval",
+      "description": "Approve purchase order with dynamic routing",
+      "triggerEvent": "PurchaseOrderCreated",
+      "concept": "PurchaseOrder",
+      "steps": [
+        {
+          "id": "validate-po",
+          "type": "action",
+          "name": "Validate PO",
+          "action": "ValidatePO",
+          "next": "determine-approver"
+        },
+        {
+          "id": "determine-approver",
+          "type": "decision",
+          "name": "Determine Approver",
+          "ruleSet": "purchase-order-routing",
+          "next": "await-approval"
+        },
+        {
+          "id": "await-approval",
+          "type": "human-task",
+          "name": "Await PO Approval",
+          "taskType": "approval",
+          "assignmentRule": "approver",
+          "timeout": "48h",
+          "next": "check-result"
+        },
+        {
+          "id": "check-result",
+          "type": "decision",
+          "name": "Check Result",
+          "condition": {
+            "field": "approved",
+            "operator": "==",
+            "value": true
+          },
+          "branches": {
+            "true": "create-po",
+            "false": "cancel-po"
+          }
+        },
+        {
+          "id": "create-po",
+          "type": "action",
+          "name": "Create Purchase Order",
+          "action": "CreatePO",
+          "next": "complete"
+        },
+        {
+          "id": "cancel-po",
+          "type": "action",
+          "name": "Cancel Purchase Order",
+          "action": "CancelPO",
+          "next": "complete"
+        },
+        {
+          "id": "complete",
+          "type": "end",
+          "name": "Complete"
+        }
+      ]
+    },
+    {
+      "id": "wf_1769462424453",
+      "name": "New Workflow",
+      "description": "",
+      "steps": [
+        {
+          "id": "node_1",
+          "type": "action",
+          "name": "Action 2",
+          "next": null,
+          "x": 110,
+          "y": 121,
+          "outgoing": []
+        },
+        {
+          "id": "node_2",
+          "type": "connect",
+          "name": "Connect 3",
+          "next": null,
+          "x": 400,
+          "y": 135,
+          "outgoing": []
+        }
+      ],
+      "concept": "",
+      "triggerEvent": "",
+      "connections": []
+    },
+    {
+      "id": "wf_1769462593726",
+      "name": "n2",
+      "description": "",
+      "steps": [
+        {
+          "id": "node_1",
+          "type": "action",
+          "name": "Action 2",
+          "next": null,
+          "x": 206,
+          "y": 134,
+          "outgoing": [],
+          "action": "ef4212aa-0fbe-4e40-a6d0-ea00bbd66d63"
+        },
+        {
+          "id": "node_2",
+          "type": "connect",
+          "name": "Connect 3",
+          "next": null,
+          "x": 595,
+          "y": 196,
+          "outgoing": []
+        }
+      ],
+      "concept": "",
+      "triggerEvent": "",
+      "connections": []
+    },
+    {
+      "id": "wf_1769809382007",
+      "name": "Workflow-IBE2",
+      "description": "",
+      "steps": [
+        {
+          "id": "node_1",
+          "type": "event",
+          "name": "Event 2",
+          "next": "node_2",
+          "x": 55,
+          "y": 176,
+          "event": "appsthink_crm:recordAdded",
+          "module": "appsthink_crm",
+          "outgoing": [
+            "node_2"
+          ]
+        },
+  

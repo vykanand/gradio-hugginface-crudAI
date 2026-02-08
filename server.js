@@ -34,7 +34,7 @@ const PORT = process.env.PORT || 5050;
 let aiConfigFromFile = {};
 try {
   aiConfigFromFile = require(path.join(__dirname, 'config', 'ai-config.js')) || {};
-} catch (e) {
+} catch (_) {
   aiConfigFromFile = {};
 }
 
@@ -81,7 +81,9 @@ app.use('/config', express.static(path.join(__dirname, 'config')));
 app.use((req, res, next) => {
   try {
     console.log(`[req] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
-  } catch (e) {}
+  } catch (_) {
+    // Ignore logging errors
+  }
   next();
 });
 
@@ -117,7 +119,7 @@ if (process.env.WORKER_PROCESS !== 'true') {
     } catch (err) {
       console.error('[BackupManager/EventBus] ❌ Initialization failed:', err.message, err.stack);
       // Still try to init event bus even if backup fails
-      try { await eventBus.init(); } catch(e) { console.warn('eventBus.init failed after backup error', e.message); }
+      try { await eventBus.init(); } catch(_e) { console.warn('eventBus.init failed after backup error', e.message); }
       return false;
     }
   })();
@@ -132,11 +134,11 @@ if (process.env.WORKER_PROCESS !== 'true') {
 app.get('/orchestration/bindings', async (req, res) => {
   try {
     const localBindingsPath = path.join(__dirname, 'config', 'orchestration_bindings.json');
-    try { await fs.mkdir(path.join(__dirname, 'config'), { recursive: true }); } catch (e) {}
+    try { await fs.mkdir(path.join(__dirname, 'config'), { recursive: true }); } catch (_) { }
     try {
       const raw = await fs.readFile(localBindingsPath, 'utf8');
       return res.json({ ok: true, bindings: JSON.parse(raw || '{}') });
-    } catch (e) {
+    } catch (_) {
       // If file not present, return empty bindings map
       return res.json({ ok: true, bindings: {} });
     }
@@ -159,7 +161,7 @@ app.get('/orchestration/modules', async (req, res) => {
         const j = JSON.parse(raw || '{}');
         const m = j.module || j.id || j.name || null;
         if (m) modules[m] = modules[m] || { id: m, name: j.name || m, description: j.description || '', source: 'metadata' };
-      } catch (e) {}
+      } catch (_) {}
     }
     // Also include DB tables from schema_store/tables
     try {
@@ -172,7 +174,7 @@ app.get('/orchestration/modules', async (req, res) => {
         const name = j.tableName || tf.replace(/\.json$/, '');
         modules[name] = modules[name] || { id: name, name: j.title || name, description: j.description || '', source: 'schema' };
       }
-    } catch (e) {}
+    } catch (_) {}
 
     // Enrich modules with existing bindings (if any)
     await ensureBindingsFile();
@@ -334,7 +336,7 @@ async function getTableStructure(entity) {
     console.error("Error fetching table structure from DB:", error && error.message ? error.message : error);
     return null;
   } finally {
-    try { connection.release(); } catch(e){}
+    try { connection.release(); } catch (_) {}
   }
 }
 
@@ -356,7 +358,7 @@ async function getAllTables() {
     console.error("Error fetching tables:", error && error.message ? error.message : error);
     return null;
   } finally {
-    try { connection.release(); } catch(e){}
+    try { connection.release(); } catch (_) {}
   }
 }
 
@@ -481,7 +483,9 @@ app.post('/api/event/execute', async (req, res) => {
       try {
         const registryCount = Array.isArray(registryBindings) ? registryBindings.length : 0;
         console.debug('event-execute: incoming binding=', binding, 'registryBindingsCount=', registryCount);
-      } catch (dbgErr) {}
+      } catch (dbgErr) {
+        // ignore debug errors
+      }
 
       if (!globalThis.eventBridge || !globalThis.eventBridge.tryResolveQuery) {
         // Fallback to existing resolveQuery (will throw on missing fields)
@@ -494,7 +498,9 @@ app.post('/api/event/execute', async (req, res) => {
           try {
             const registryCount = Array.isArray(registryBindings) ? registryBindings.length : 0;
             console.error('Template resolution diagnostics: binding=', binding, 'registryBindingsCount=', registryCount, 'sqlPreview=', out.sql);
-          } catch (diagErr) {}
+          } catch (diagErr) {
+            // ignore diagnostic errors
+          }
           executedQuery = out.sql || null;
           return res.status(400).json({ ok: false, error: 'Template resolution failed', details: out.error, executedQuery });
         }
@@ -511,7 +517,7 @@ app.post('/api/event/execute', async (req, res) => {
           if (probe && probe.sql) executedQuery = probe.sql;
         }
       } catch (probeErr) {
-        // ignore
+        // ignore probe errors
       }
       return res.status(400).json({ ok: false, error: 'Template resolution failed', details: e && e.message ? e.message : String(e), executedQuery });
     }
@@ -2590,30 +2596,84 @@ app.get('/api/unified-workflows/:id', async (req, res) => {
   }
 });
 
-// Backwards-compatible endpoint: expose workflow components/logics
+// Workflow components endpoint (unified store only)
 app.get('/api/unified-workflows/:id/components', async (req, res) => {
   try {
-    const wf = await unifiedWorkflowEngine.getWorkflow(req.params.id);
+    // Use the main workflow store as the single source of truth
+    const wf = await workflowEngine.getWorkflow(req.params.id);
     if (!wf) return res.status(404).json({ ok: false, error: 'Workflow not found' });
 
-    // Components may be stored under different property names depending on version
-    const components = wf.components || wf.logics || wf.nodes || [];
+    // Build workflow-scoped components: logics and actions only
+    const steps = wf && (wf.steps || wf.nodes || wf.components || wf.logics) ? (wf.steps || wf.nodes || wf.components || wf.logics) : [];
 
-    // Normalize to an object map keyed by id (frontend expects a map-like shape)
-    let map = {};
-    if (Array.isArray(components)) {
-      map = components.reduce((acc, c) => {
-        const key = c && (c.id || c.name) ? (c.id || c.name) : JSON.stringify(c);
-        acc[key] = c;
-        return acc;
-      }, {});
-    } else if (components && typeof components === 'object') {
-      map = components;
+    const logicIds = new Set();
+    const actionIds = new Set();
+
+    if (Array.isArray(steps)) {
+      steps.forEach((s) => {
+        try {
+          if (!s) return;
+          // logic references
+          if (s.logicId) logicIds.add(String(s.logicId));
+          if (s.data && s.data.logicId) logicIds.add(String(s.data.logicId));
+          // custom-logic node type may reference logicId as well
+          if (s.type === 'custom-logic' && s.logicId) logicIds.add(String(s.logicId));
+
+          // action references
+          if (s.action) actionIds.add(String(s.action));
+          if (s.data && s.data.action) actionIds.add(String(s.data.action));
+          // some legacy shapes put action id under s.actionId
+          if (s.actionId) actionIds.add(String(s.actionId));
+        } catch (e) {
+          // ignore per-step parse errors
+        }
+      });
+    } else if (steps && typeof steps === 'object') {
+      // object map: iterate values
+      Object.values(steps).forEach((s) => {
+        try {
+          if (!s) return;
+          if (s.logicId) logicIds.add(String(s.logicId));
+          if (s.data && s.data.logicId) logicIds.add(String(s.data.logicId));
+          if (s.type === 'custom-logic' && s.logicId) logicIds.add(String(s.logicId));
+          if (s.action) actionIds.add(String(s.action));
+          if (s.data && s.data.action) actionIds.add(String(s.data.action));
+          if (s.actionId) actionIds.add(String(s.actionId));
+        } catch (e) {}
+      });
     }
 
-    res.json({ ok: true, logics: map });
+    // Fetch logic definitions referenced by this workflow
+    const logicsMap = {};
+    try {
+      const allLogics = customLogicEngine.getLogics ? customLogicEngine.getLogics() : [];
+      for (const id of logicIds) {
+        const found = allLogics.find((l) => String(l.id) === String(id) || String(l.name) === String(id));
+        if (found) logicsMap[found.id || found.name || id] = found;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Fetch action definitions referenced by this workflow
+    const actionsMap = {};
+    try {
+      const actions = await taxonomyService.getActions();
+      for (const id of actionIds) {
+        if (actions && actions[id]) actionsMap[id] = actions[id];
+        else {
+          // try find by name
+          const found = Object.values(actions || {}).find((a) => String(a.name) === String(id) || String(a.id) === String(id));
+          if (found) actionsMap[found.id || id] = found;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return res.json({ ok: true, logics: logicsMap, actions: actionsMap });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    return res.status(500).json({ ok: false, error: e.message });
   }
 });
 

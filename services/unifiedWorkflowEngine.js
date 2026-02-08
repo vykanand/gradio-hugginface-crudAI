@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { executeWorkflow } = require('./unifiedOrchestrator');
 
 const WORKFLOWS_FILE = path.join(__dirname, '..', 'config', 'metadata', 'unified-workflows.json');
+const MAIN_WORKFLOWS_FILE = path.join(__dirname, '..', 'config', 'metadata', 'workflows.json');
 
 class UnifiedWorkflowEngine {
   static workflows = null;
@@ -15,8 +16,43 @@ class UnifiedWorkflowEngine {
     try {
       const raw = await fs.readFile(WORKFLOWS_FILE, 'utf8');
       UnifiedWorkflowEngine.workflows = raw ? JSON.parse(raw) : this.getDefaultWorkflows();
+      // If unified store is empty, initialize defaults
       if (!UnifiedWorkflowEngine.workflows || !Array.isArray(UnifiedWorkflowEngine.workflows.definitions)) {
         UnifiedWorkflowEngine.workflows = this.getDefaultWorkflows();
+      }
+
+      // If unified store has definitions, attempt to merge them into the main workflows.json
+      try {
+        const unifiedDefs = Array.isArray(UnifiedWorkflowEngine.workflows.definitions) ? UnifiedWorkflowEngine.workflows.definitions : [];
+        if (unifiedDefs.length) {
+          // read main workflows file (create default if missing)
+          let mainRaw = await fs.readFile(MAIN_WORKFLOWS_FILE, 'utf8').catch(() => null);
+          let mainObj = null;
+          if (mainRaw) {
+            try { mainObj = JSON.parse(mainRaw); } catch (_) { mainObj = null; }
+          }
+          if (!mainObj || !Array.isArray(mainObj.definitions)) mainObj = { version: '1.0.0', definitions: [] };
+
+          // Merge without overwriting existing workflow ids
+          const existingIds = new Set((mainObj.definitions || []).map(d => d.id));
+          let mergedCount = 0;
+          for (const d of unifiedDefs) {
+            if (!d || !d.id) continue;
+            if (!existingIds.has(d.id)) {
+              mainObj.definitions.push(d);
+              existingIds.add(d.id);
+              mergedCount++;
+            }
+          }
+
+          if (mergedCount > 0) {
+            await fs.writeFile(MAIN_WORKFLOWS_FILE, JSON.stringify(mainObj, null, 2));
+            console.log(`[UnifiedWorkflowEngine] Merged ${mergedCount} unified workflow(s) into ${MAIN_WORKFLOWS_FILE}`);
+          }
+        }
+      } catch (e) {
+        // non-fatal: log and continue
+        console.warn('[UnifiedWorkflowEngine] merge into main workflows failed', e && e.message ? e.message : e);
       }
     } catch (e) {
       console.error('Failed to load workflows:', e);
