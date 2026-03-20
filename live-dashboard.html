@@ -1,0 +1,1350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>⚡ Orchestration Live Center</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" />
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --panel: #111827;
+      --card: #1f2937;
+      --card-hover: #263142;
+      --accent: #3b82f6;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --text: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border: #374151;
+      --selected: #1d3a5e;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* ─── HEADER ─────────────────────────────────── */
+    #header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 0.6rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-shrink: 0;
+      height: 52px;
+    }
+    #header .title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #fff;
+      white-space: nowrap;
+    }
+    #header .spacer { flex: 1; }
+    #header .nav-links { display: flex; gap: 0.5rem; }
+    #header .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.8rem;
+      padding: 0.25rem 0.6rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    #header .nav-links a:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.2rem 0.55rem;
+      border-radius: 20px;
+      letter-spacing: 0.03em;
+    }
+    .status-badge .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      animation: pulse-dot 1.8s ease-in-out infinite;
+    }
+    .status-badge.connected { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+    .status-badge.connected .dot { background: var(--success); }
+    .status-badge.disconnected { background: rgba(239,68,68,0.15); color: var(--error); border: 1px solid rgba(239,68,68,0.3); animation: none; }
+    .status-badge.disconnected .dot { background: var(--error); animation: none; }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ─── STATS ROW ───────────────────────────────── */
+    #stats-row {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+    .stat-card {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .stat-icon {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+    .stat-icon.blue { background: rgba(59,130,246,0.15); color: var(--accent); }
+    .stat-icon.green { background: rgba(16,185,129,0.15); color: var(--success); }
+    .stat-icon.yellow { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .stat-icon.red { background: rgba(239,68,68,0.15); color: var(--error); }
+    .stat-value { font-size: 1.4rem; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+
+    /* ─── MAIN LAYOUT ─────────────────────────────── */
+    #main {
+      display: flex;
+      gap: 0;
+      flex: 1;
+      overflow: hidden;
+      height: calc(100vh - 52px - 56px - 36px); /* header + stats + bottom bar handle */
+    }
+
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+      min-width: 0;
+    }
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-shrink: 0;
+      background: #0d1421;
+    }
+    .panel-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      color: #fff;
+      flex: 1;
+    }
+    .panel-controls { display: flex; gap: 0.4rem; align-items: center; }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.6rem;
+    }
+    .panel-body::-webkit-scrollbar { width: 5px; }
+    .panel-body::-webkit-scrollbar-track { background: transparent; }
+    .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ─── EVENT CARDS ─────────────────────────────── */
+    .event-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.45rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      animation: slide-in-left 0.25s ease-out;
+    }
+    .event-card:hover { background: var(--card-hover); border-color: #4b5563; }
+    .event-card.selected { background: var(--selected); border-color: var(--accent); }
+    @keyframes slide-in-left {
+      from { opacity: 0; transform: translateX(-18px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .event-card-header { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem; }
+    .module-badge {
+      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+      padding: 0.15rem 0.45rem; border-radius: 4px;
+      background: rgba(59,130,246,0.2); color: var(--accent);
+      letter-spacing: 0.04em; border: 1px solid rgba(59,130,246,0.35);
+      white-space: nowrap;
+    }
+    .action-badge {
+      font-size: 0.65rem; font-weight: 600;
+      padding: 0.15rem 0.45rem; border-radius: 4px;
+      white-space: nowrap;
+    }
+    .action-badge.created { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+    .action-badge.updated { background: rgba(245,158,11,0.15); color: var(--warning); border: 1px solid rgba(245,158,11,0.3); }
+    .action-badge.deleted { background: rgba(239,68,68,0.15); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+    .action-badge.field-level { background: rgba(96,165,250,0.15); color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
+    .event-ts { font-size: 0.65rem; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+    .event-fields { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .event-field-pill {
+      display: inline-block;
+      background: rgba(255,255,255,0.06);
+      border-radius: 3px;
+      padding: 0.1rem 0.35rem;
+      margin: 0.1rem 0.1rem 0 0;
+      font-family: monospace;
+      font-size: 0.65rem;
+      color: #d1d5db;
+    }
+    .matched-workflows {
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.7rem;
+    }
+    .matched-workflows .mw-label { color: var(--text-muted); margin-bottom: 0.25rem; }
+    .matched-wf-item {
+      display: flex; align-items: center; gap: 0.35rem;
+      color: var(--accent); padding: 0.1rem 0;
+    }
+
+    /* ─── EXECUTION CARDS ─────────────────────────── */
+    .exec-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.45rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .exec-card:hover { background: var(--card-hover); border-color: #4b5563; }
+    .exec-card.selected { background: var(--selected); border-color: var(--accent); }
+    .exec-card.running { border-left: 3px solid var(--accent); }
+    .exec-card-header { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; }
+    .exec-name { font-size: 0.8rem; font-weight: 600; flex: 1; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status-pill {
+      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+      padding: 0.15rem 0.5rem; border-radius: 20px; letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+    .status-pill.running {
+      background: rgba(59,130,246,0.2); color: var(--accent); border: 1px solid rgba(59,130,246,0.4);
+      animation: pulse-running 1.5s ease-in-out infinite;
+    }
+    .status-pill.completed { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+    .status-pill.failed { background: rgba(239,68,68,0.15); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+    .status-pill.pending { background: rgba(156,163,175,0.15); color: var(--text-muted); border: 1px solid rgba(156,163,175,0.3); }
+    @keyframes pulse-running {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+      50% { box-shadow: 0 0 0 4px rgba(59,130,246,0); }
+    }
+    .exec-meta { display: flex; gap: 0.75rem; font-size: 0.68rem; color: var(--text-muted); }
+    .exec-progress { margin-top: 0.35rem; }
+    .exec-progress-bar {
+      height: 3px; background: var(--border); border-radius: 2px; overflow: hidden;
+    }
+    .exec-progress-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+    .exec-progress-fill.completed { background: var(--success); }
+    .exec-progress-fill.running { background: var(--accent); animation: progress-shimmer 1.5s infinite; }
+    .exec-progress-fill.failed { background: var(--error); }
+    @keyframes progress-shimmer {
+      0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; }
+    }
+
+    /* ─── DETAIL PANEL ────────────────────────────── */
+    #detail-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      gap: 0.75rem;
+    }
+    #detail-placeholder i { font-size: 2.5rem; opacity: 0.3; }
+    #detail-placeholder p { font-size: 0.82rem; opacity: 0.5; }
+
+    .detail-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      margin-bottom: 0.65rem;
+      overflow: hidden;
+    }
+    .detail-section-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      background: rgba(0,0,0,0.2);
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-section-body { padding: 0.6rem 0.75rem; }
+
+    .exec-detail-header { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 0.5rem; }
+    .exec-detail-name { font-size: 1rem; font-weight: 700; color: #fff; line-height: 1.2; }
+    .exec-detail-id { font-size: 0.68rem; color: var(--text-muted); font-family: monospace; }
+    .exec-detail-meta { display: flex; gap: 1rem; font-size: 0.72rem; color: var(--text-muted); margin-top: 0.4rem; }
+    .exec-detail-meta span { display: flex; align-items: center; gap: 0.25rem; }
+
+    .step-list { list-style: none; padding: 0; margin: 0; }
+    .step-item {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.45rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .step-item:last-child { border-bottom: none; }
+    .step-icon {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem;
+      flex-shrink: 0;
+    }
+    .step-icon.completed { background: rgba(16,185,129,0.2); color: var(--success); }
+    .step-icon.running { background: rgba(59,130,246,0.2); color: var(--accent); }
+    .step-icon.failed { background: rgba(239,68,68,0.2); color: var(--error); }
+    .step-icon.pending { background: rgba(156,163,175,0.1); color: var(--text-muted); }
+    .step-name { font-size: 0.78rem; color: var(--text); flex: 1; }
+    .step-type { font-size: 0.65rem; color: var(--text-muted); font-family: monospace; }
+    .step-duration { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    .json-output {
+      background: #0a0e1a;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.6rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.7rem;
+      color: #a3e635;
+      max-height: 140px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .json-output::-webkit-scrollbar { width: 4px; }
+    .json-output::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ─── BOTTOM BAR ──────────────────────────────── */
+    #bottom-bar {
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #bottom-bar-handle {
+      padding: 0.45rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      user-select: none;
+      height: 36px;
+    }
+    #bottom-bar-handle:hover { background: rgba(255,255,255,0.03); }
+    #bottom-bar-handle .handle-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    #bottom-bar-handle i.toggle-icon { color: var(--text-muted); font-size: 0.75rem; transition: transform 0.2s; }
+    #bottom-bar-handle i.toggle-icon.open { transform: rotate(180deg); }
+
+    #quick-creator {
+      display: none;
+      padding: 0.75rem 1rem;
+      border-top: 1px solid var(--border);
+      background: #0d1421;
+    }
+    #quick-creator.open { display: block; }
+
+    .qc-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; }
+    .qc-field { display: flex; flex-direction: column; gap: 0.2rem; }
+    .qc-field label { font-size: 0.68rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+    .qc-field input, .qc-field select, .qc-field textarea {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 5px;
+      padding: 0.35rem 0.55rem;
+      font-size: 0.78rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .qc-field input:focus, .qc-field select:focus, .qc-field textarea:focus {
+      border-color: var(--accent);
+    }
+    .qc-field select option { background: var(--card); }
+    .qc-feedback { font-size: 0.72rem; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    .qc-feedback.success { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+    .qc-feedback.error { background: rgba(239,68,68,0.15); color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+
+    /* ─── MISC CONTROLS ───────────────────────────── */
+    .ctrl-select {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 5px;
+      padding: 0.2rem 0.45rem;
+      font-size: 0.72rem;
+      outline: none;
+      cursor: pointer;
+    }
+    .ctrl-select:focus { border-color: var(--accent); }
+    .ctrl-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 5px;
+      padding: 0.2rem 0.55rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex; align-items: center; gap: 0.25rem;
+    }
+    .ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .ctrl-btn.danger:hover { border-color: var(--error); color: var(--error); }
+    .ctrl-btn.primary {
+      background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+    }
+    .ctrl-btn.primary:hover { background: #2563eb; border-color: #2563eb; color: #fff; }
+
+    .placeholder-msg {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 2rem 1rem;
+      font-size: 0.8rem;
+    }
+    .placeholder-msg i { display: block; font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.3; }
+
+    /* ─── TOAST ───────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      top: 1rem; right: 1rem;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      pointer-events: none;
+    }
+    .toast-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.78rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 240px;
+      max-width: 320px;
+      animation: toast-in 0.25s ease-out;
+      pointer-events: all;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    .toast-item.success { border-left: 3px solid var(--success); }
+    .toast-item.success i { color: var(--success); }
+    .toast-item.warning { border-left: 3px solid var(--warning); }
+    .toast-item.warning i { color: var(--warning); }
+    .toast-item.info { border-left: 3px solid var(--accent); }
+    .toast-item.info i { color: var(--accent); }
+    .toast-item.error { border-left: 3px solid var(--error); }
+    .toast-item.error i { color: var(--error); }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateX(24px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes toast-out {
+      from { opacity: 1; transform: translateX(0); }
+      to { opacity: 0; transform: translateX(24px); }
+    }
+
+    /* ─── LAYOUT WRAPPER ──────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div class="title">⚡ ORCHESTRATION LIVE CENTER</div>
+    <div id="sse-badge" class="status-badge disconnected">
+      <div class="dot"></div> SSE
+    </div>
+    <div id="orch-badge" class="status-badge disconnected">
+      <div class="dot"></div> Orchestration
+    </div>
+    <div class="spacer"></div>
+    <div class="nav-links">
+      <a href="/orchestration-builder.html"><i class="bi bi-diagram-3"></i> Workflow Builder</a>
+      <a href="/monitor.html"><i class="bi bi-activity"></i> Monitor</a>
+    </div>
+  </div>
+
+  <!-- STATS ROW -->
+  <div id="stats-row">
+    <div class="stat-card">
+      <div class="stat-icon blue"><i class="bi bi-broadcast"></i></div>
+      <div>
+        <div class="stat-value" id="stat-events">0</div>
+        <div class="stat-label">Total Events</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon green"><i class="bi bi-lightning-charge"></i></div>
+      <div>
+        <div class="stat-value" id="stat-triggered">0</div>
+        <div class="stat-label">Workflows Triggered</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon yellow"><i class="bi bi-check2-circle"></i></div>
+      <div>
+        <div class="stat-value" id="stat-success">—</div>
+        <div class="stat-label">Success Rate</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon red"><i class="bi bi-gear-fill"></i></div>
+      <div>
+        <div class="stat-value" id="stat-active">0</div>
+        <div class="stat-label">Active Executions</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN 3-COLUMN LAYOUT -->
+  <div id="main">
+
+    <!-- LEFT: LIVE EVENTS -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">📡 LIVE EVENTS</span>
+        <div class="panel-controls">
+          <select id="module-filter" class="ctrl-select">
+            <option value="all">All Modules</option>
+          </select>
+          <button class="ctrl-btn danger" onclick="clearEvents()">
+            <i class="bi bi-trash3"></i> Clear
+          </button>
+        </div>
+      </div>
+      <div class="panel-body" id="events-panel">
+        <div class="placeholder-msg" id="events-placeholder">
+          <i class="bi bi-broadcast"></i>
+          No events yet — waiting for live data…
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: WORKFLOW EXECUTIONS -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">🔄 WORKFLOW EXECUTIONS</span>
+        <div class="panel-controls">
+          <select id="status-filter" class="ctrl-select" onchange="state.statusFilter = this.value; renderExecutions()">
+            <option value="all">All</option>
+            <option value="running">Running</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button class="ctrl-btn" onclick="fetchExecutions()" title="Refresh (R)">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
+      </div>
+      <div class="panel-body" id="executions-panel">
+        <div class="placeholder-msg" id="executions-placeholder">
+          <i class="bi bi-hourglass-split"></i>
+          No executions yet
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: DETAIL -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">📋 EXECUTION DETAIL</span>
+        <div class="panel-controls">
+          <button class="ctrl-btn" id="detail-refresh-btn" onclick="refreshDetail()" style="display:none">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
+      </div>
+      <div class="panel-body" id="detail-panel">
+        <div id="detail-placeholder">
+          <i class="bi bi-card-checklist"></i>
+          <p>Select an execution to view details</p>
+        </div>
+        <div id="detail-content" style="display:none"></div>
+      </div>
+    </div>
+
+  </div><!-- /#main -->
+
+  <!-- BOTTOM BAR -->
+  <div id="bottom-bar">
+    <div id="bottom-bar-handle" onclick="toggleQuickCreator()">
+      <i class="bi bi-plus-square-dotted" style="color:var(--accent)"></i>
+      <span class="handle-title">⚡ Quick Workflow Creator</span>
+      <span style="flex:1"></span>
+      <i class="bi bi-chevron-up toggle-icon" id="toggle-icon"></i>
+    </div>
+    <div id="quick-creator">
+      <div class="qc-form">
+        <div class="qc-field">
+          <label>Workflow Name</label>
+          <input type="text" id="qc-name" placeholder="My Workflow" style="width:180px" />
+        </div>
+        <div class="qc-field">
+          <label>Module</label>
+          <select id="qc-module" onchange="updateTriggerPattern()" style="width:140px">
+            <option value="">Select module…</option>
+          </select>
+        </div>
+        <div class="qc-field">
+          <label>Event Type</label>
+          <select id="qc-event" onchange="updateTriggerPattern()" style="width:160px">
+            <option value="record-created">record-created</option>
+            <option value="record-updated">record-updated</option>
+            <option value="record-deleted">record-deleted</option>
+          </select>
+        </div>
+        <div class="qc-field">
+          <label>Trigger Pattern</label>
+          <input type="text" id="qc-pattern" placeholder="module:event-type" style="width:190px" />
+        </div>
+        <div class="qc-field">
+          <label>SQL Step</label>
+          <textarea id="qc-sql" rows="2" placeholder="SELECT * FROM delivery WHERE id = {{detail.record.id}}" style="width:260px; resize:none"></textarea>
+        </div>
+        <div class="qc-field">
+          <label>Step Name</label>
+          <input type="text" id="qc-step-name" value="Query Action" style="width:130px" />
+        </div>
+        <div class="qc-field" style="justify-content:flex-end">
+          <button class="ctrl-btn primary" onclick="createWorkflow()">
+            <i class="bi bi-plus-circle"></i> Create Workflow
+          </button>
+        </div>
+        <div class="qc-field" style="justify-content:flex-end; align-self:center">
+          <div id="qc-feedback" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<script>
+'use strict';
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+const state = {
+  events: [],
+  executions: [],
+  workflows: [],
+  selectedEvent: null,
+  selectedExecution: null,
+  sseConnected: false,
+  orchConnected: false,
+  moduleFilter: 'all',
+  statusFilter: 'all',
+  stats: { totalEvents: 0, triggered: 0, success: 0, active: 0 },
+  modules: [],
+  _sseRetryTimer: null,
+  _execPollTimer: null,
+  _tsTimer: null,
+  _es: null
+};
+
+// ─── UTILITIES ───────────────────────────────────────────────────────────────
+function relativeTime(ts) {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 5) return 'just now';
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function formatDuration(ms) {
+  if (ms == null || isNaN(ms)) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+}
+
+function truncate(str, n) {
+  if (!str) return '';
+  return str.length > n ? str.slice(0, n) + '…' : str;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function getActionClass(action) {
+  if (!action) return '';
+  if (action.includes('creat')) return 'created';
+  if (action.includes('updat')) return 'updated';
+  if (action.includes('delet')) return 'deleted';
+  return '';
+}
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info', duration = 3500) {
+  const icons = { info: 'bi-info-circle-fill', success: 'bi-check-circle-fill', warning: 'bi-exclamation-triangle-fill', error: 'bi-x-circle-fill' };
+  const icon = icons[type] || icons.info;
+  const el = document.createElement('div');
+  el.className = `toast-item ${type}`;
+  el.innerHTML = `<i class="bi ${icon}"></i><span>${escHtml(msg)}</span>`;
+  const container = document.getElementById('toast-container');
+  container.appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'toast-out 0.25s ease-in forwards';
+    setTimeout(() => el.remove(), 260);
+  }, duration);
+}
+
+// ─── STATUS BADGES ────────────────────────────────────────────────────────────
+function setSSEStatus(connected) {
+  state.sseConnected = connected;
+  const b = document.getElementById('sse-badge');
+  b.className = 'status-badge ' + (connected ? 'connected' : 'disconnected');
+  b.innerHTML = `<div class="dot"></div> SSE`;
+}
+
+function setOrchStatus(connected) {
+  state.orchConnected = connected;
+  const b = document.getElementById('orch-badge');
+  b.className = 'status-badge ' + (connected ? 'connected' : 'disconnected');
+  b.innerHTML = `<div class="dot"></div> Orchestration`;
+}
+
+// ─── STATS ────────────────────────────────────────────────────────────────────
+function updateStats() {
+  const { stats, executions } = state;
+  const active = executions.filter(e => e.status === 'running').length;
+  const completed = executions.filter(e => e.status === 'completed').length;
+  const failed = executions.filter(e => e.status === 'failed').length;
+  const total = completed + failed;
+  const successRate = total > 0 ? Math.round((completed / total) * 100) : null;
+
+  document.getElementById('stat-events').textContent = stats.totalEvents;
+  document.getElementById('stat-triggered').textContent = stats.triggered;
+  document.getElementById('stat-success').textContent = successRate !== null ? successRate + '%' : '—';
+  document.getElementById('stat-active').textContent = active;
+}
+
+// ─── EVENTS PANEL ─────────────────────────────────────────────────────────────
+function handleIncomingEvent(data) {
+  // Accept various shapes
+  const ev = {
+    id: data.id || (data.module + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+    module: data.module || (data.event || '').split('.')[1] || 'unknown',
+    action: data.action || data.eventType || 'event',
+    ts: data.ts || Date.now(),
+    detail: data.detail || {},
+    producer: data.producer || {},
+    actor: data.actor || {},
+    raw: data
+  };
+
+  // Prepend (newest first)
+  state.events.unshift(ev);
+  if (state.events.length > 50) state.events.pop();
+
+  state.stats.totalEvents++;
+  updateStats();
+  renderEvents();
+  showToast(`New event: ${ev.module} › ${ev.action}`, 'info', 2500);
+
+  // Check workflows match
+  if (state.selectedEvent && state.selectedEvent.id === ev.id) {
+    fetchMatchingWorkflows(ev);
+  }
+}
+
+function renderEvents() {
+  const panel = document.getElementById('events-panel');
+  const placeholder = document.getElementById('events-placeholder');
+  const filter = state.moduleFilter;
+
+  const filtered = filter === 'all' ? state.events : state.events.filter(e => e.module === filter);
+
+  if (filtered.length === 0) {
+    placeholder.style.display = '';
+    // Remove old cards
+    panel.querySelectorAll('.event-card').forEach(c => c.remove());
+    return;
+  }
+  placeholder.style.display = 'none';
+
+  // Re-render all (max 50 cards, manageable)
+  panel.querySelectorAll('.event-card').forEach(c => c.remove());
+
+  filtered.forEach((ev, idx) => {
+    const card = document.createElement('div');
+    card.className = 'event-card' + (state.selectedEvent && state.selectedEvent.id === ev.id ? ' selected' : '');
+    // Only animate the newest (idx===0)
+    if (idx > 0) card.style.animation = 'none';
+
+    // Check if this is a field-level event
+    const isFieldLevel = ev.raw && (ev.raw.eventType === 'field' || ev.detail && ev.detail.elementType === 'field');
+    const record = (ev.detail && ev.detail.record) ? ev.detail.record : {};
+    const fields = Object.keys(record).filter(k => k !== 'id');
+    const previewFields = fields.slice(0, 3);
+    const fieldCount = fields.length;
+
+    const actionCls = isFieldLevel ? 'field-level' : getActionClass(ev.action);
+    let pillLabel = ev.action.replace('record-', '');
+
+    // For field-level events, show the field name instead of action
+    let fieldPills = '';
+    if (isFieldLevel) {
+      const fieldName = ev.detail && ev.detail.field ? ev.detail.field : 'unknown';
+      const prevVal = ev.detail && ev.detail.prev !== undefined ? ev.detail.prev : null;
+      const newVal = ev.detail && ev.detail.value !== undefined ? ev.detail.value : null;
+
+      if (prevVal !== null || newVal !== null) {
+        const prev = prevVal !== null ? String(prevVal).slice(0, 20) : '∅';
+        const next = newVal !== null ? String(newVal).slice(0, 20) : '∅';
+        fieldPills = `<span class="event-field-pill"><b>${escHtml(fieldName)}</b>: ${escHtml(prev)} → ${escHtml(next)}</span>`;
+      } else {
+        fieldPills = `<span class="event-field-pill"><b>${escHtml(fieldName)}</b></span>`;
+      }
+      pillLabel = 'field';
+    } else {
+      previewFields.forEach(k => {
+        const val = record[k];
+        if (val != null && val !== '') {
+          fieldPills += `<span class="event-field-pill">${escHtml(k)}: <b>${escHtml(String(val).slice(0, 20))}</b></span>`;
+        }
+      });
+      if (fieldCount > 3) {
+        fieldPills += `<span class="event-field-pill">+${fieldCount - 3} more</span>`;
+      }
+    }
+
+    card.innerHTML = `
+      <div class="event-card-header">
+        <span class="module-badge">${escHtml(ev.module)}</span>
+        <span class="action-badge ${actionCls}">${escHtml(pillLabel)}</span>
+        <span class="event-ts" data-ts="${ev.ts}">${relativeTime(ev.ts)}</span>
+      </div>
+      <div class="event-fields">${fieldPills || '<span style="color:var(--text-muted);font-size:0.68rem">No field data</span>'}</div>
+      <div class="matched-wf-container" style="display:none"></div>
+    `;
+
+    card.addEventListener('click', () => selectEvent(ev, card));
+    panel.appendChild(card);
+  });
+}
+
+function selectEvent(ev, card) {
+  state.selectedEvent = ev;
+  document.querySelectorAll('.event-card').forEach(c => c.classList.remove('selected'));
+  if (card) card.classList.add('selected');
+  fetchMatchingWorkflows(ev);
+}
+
+async function fetchMatchingWorkflows(ev) {
+  const card = document.querySelector('.event-card.selected');
+  if (!card) return;
+  const container = card.querySelector('.matched-wf-container');
+  if (!container) return;
+
+  container.style.display = '';
+  container.innerHTML = '<div class="matched-workflows"><div class="mw-label"><i class="bi bi-search" style="font-size:0.65rem"></i> Looking for matching workflows…</div></div>';
+
+  try {
+    const url = `/api/workflows/for-event?module=${encodeURIComponent(ev.module)}&action=${encodeURIComponent(ev.action)}&event=${encodeURIComponent(ev.raw.event || '')}`;
+    const res = await fetch(url);
+    let matched = [];
+    if (res.ok) {
+      const data = await res.json();
+      matched = Array.isArray(data) ? data : (data.workflows || data.data || []);
+    }
+
+    if (matched.length === 0) {
+      container.innerHTML = '<div class="matched-workflows"><div class="mw-label" style="color:var(--text-muted)"><i class="bi bi-slash-circle" style="font-size:0.65rem"></i> No matching workflows found</div></div>';
+    } else {
+      state.stats.triggered += matched.length;
+      updateStats();
+      let items = matched.map(w => `
+        <div class="matched-wf-item">
+          <i class="bi bi-lightning-charge-fill" style="font-size:0.65rem"></i>
+          <span>${escHtml(w.name || w.id || JSON.stringify(w))}</span>
+        </div>`).join('');
+      container.innerHTML = `<div class="matched-workflows">
+        <div class="mw-label"><i class="bi bi-lightning-charge" style="font-size:0.65rem;color:var(--warning)"></i> Matched Workflows:</div>
+        ${items}
+      </div>`;
+      showToast(`${matched.length} workflow(s) matched for ${ev.module}:${ev.action}`, 'warning', 3000);
+    }
+  } catch (err) {
+    container.innerHTML = '<div class="matched-workflows"><div class="mw-label" style="color:var(--text-muted)">Could not fetch matching workflows</div></div>';
+  }
+}
+
+function clearEvents() {
+  state.events = [];
+  state.selectedEvent = null;
+  renderEvents();
+}
+
+// ─── EXECUTIONS ───────────────────────────────────────────────────────────────
+async function fetchExecutions() {
+  try {
+    const res = await fetch('/api/executions/recent?limit=30');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : (data.executions || data.data || []);
+    setOrchStatus(true);
+    mergeExecutions(list);
+    renderExecutions();
+    updateStats();
+  } catch (err) {
+    setOrchStatus(false);
+    // Keep existing data, don't clear
+  }
+}
+
+function mergeExecutions(incoming) {
+  const map = new Map(state.executions.map(e => [e.id, e]));
+  incoming.forEach(e => map.set(e.id, e));
+  state.executions = Array.from(map.values())
+    .sort((a, b) => (b.startedAt || b.createdAt || 0) - (a.startedAt || a.createdAt || 0))
+    .slice(0, 30);
+
+  // Update detail if selected execution changed
+  if (state.selectedExecution) {
+    const updated = map.get(state.selectedExecution.id);
+    if (updated) {
+      const wasRunning = state.selectedExecution.status === 'running';
+      state.selectedExecution = updated;
+      renderDetail();
+      if (wasRunning && updated.status === 'completed') {
+        showToast(`Execution "${updated.name}" completed`, 'success');
+      } else if (wasRunning && updated.status === 'failed') {
+        showToast(`Execution "${updated.name}" failed`, 'error');
+      }
+    }
+  }
+}
+
+function renderExecutions() {
+  const panel = document.getElementById('executions-panel');
+  const placeholder = document.getElementById('executions-placeholder');
+  const filter = state.statusFilter;
+
+  const filtered = filter === 'all' ? state.executions : state.executions.filter(e => e.status === filter);
+
+  if (filtered.length === 0) {
+    placeholder.style.display = '';
+    panel.querySelectorAll('.exec-card').forEach(c => c.remove());
+    return;
+  }
+  placeholder.style.display = 'none';
+
+  // Build a set of existing card ids
+  const existing = new Map();
+  panel.querySelectorAll('.exec-card[data-id]').forEach(c => existing.set(c.dataset.id, c));
+
+  // Remove cards no longer in list
+  existing.forEach((card, id) => {
+    if (!filtered.find(e => e.id === id)) card.remove();
+  });
+
+  filtered.forEach((ex, idx) => {
+    let card = existing.get(ex.id);
+    const isNew = !card;
+    if (isNew) {
+      card = document.createElement('div');
+      card.dataset.id = ex.id;
+    }
+    card.className = 'exec-card' +
+      (state.selectedExecution && state.selectedExecution.id === ex.id ? ' selected' : '') +
+      (ex.status === 'running' ? ' running' : '');
+
+    const steps = ex.steps || [];
+    const totalSteps = steps.filter(s => s.type !== 'end').length;
+    const completedSteps = steps.filter(s => s.status === 'completed').length;
+    const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : (ex.status === 'completed' ? 100 : 0);
+    const dur = (ex.endedAt && ex.startedAt) ? (ex.endedAt - ex.startedAt) : (ex.duration || null);
+
+    card.innerHTML = `
+      <div class="exec-card-header">
+        <div class="exec-name" title="${escHtml(ex.name || ex.id)}">${escHtml(ex.name || truncate(ex.id, 24))}</div>
+        <span class="status-pill ${ex.status || 'pending'}">${escHtml(ex.status || 'pending')}</span>
+      </div>
+      <div class="exec-meta">
+        <span><i class="bi bi-list-check"></i> ${completedSteps}/${totalSteps} steps</span>
+        ${dur ? `<span><i class="bi bi-clock"></i> ${formatDuration(dur)}</span>` : ''}
+        <span><i class="bi bi-calendar3"></i> <span data-ts="${ex.startedAt || ex.createdAt || Date.now()}">${relativeTime(ex.startedAt || ex.createdAt || Date.now())}</span></span>
+      </div>
+      <div class="exec-progress">
+        <div class="exec-progress-bar">
+          <div class="exec-progress-fill ${ex.status}" style="width:${progressPct}%"></div>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => selectExecution(ex));
+
+    if (isNew) panel.insertBefore(card, panel.querySelector('.exec-card') || null);
+    else panel.insertBefore(card, panel.children[idx] || null);
+  });
+}
+
+function selectExecution(ex) {
+  state.selectedExecution = ex;
+  document.querySelectorAll('.exec-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector(`.exec-card[data-id="${CSS.escape(ex.id)}"]`);
+  if (card) card.classList.add('selected');
+  document.getElementById('detail-refresh-btn').style.display = '';
+  renderDetail();
+}
+
+function refreshDetail() {
+  if (state.selectedExecution) {
+    fetchExecutions().then(() => renderDetail());
+  }
+}
+
+// ─── DETAIL PANEL ─────────────────────────────────────────────────────────────
+function renderDetail() {
+  const ex = state.selectedExecution;
+  if (!ex) {
+    document.getElementById('detail-placeholder').style.display = '';
+    document.getElementById('detail-content').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('detail-placeholder').style.display = 'none';
+  const content = document.getElementById('detail-content');
+  content.style.display = '';
+
+  const steps = (ex.steps || []).filter(s => s.type !== 'end');
+  const dur = (ex.endedAt && ex.startedAt) ? (ex.endedAt - ex.startedAt) : (ex.duration || null);
+  const shortId = (ex.id || '').slice(-8);
+
+  // Find last completed step output
+  const lastCompleted = [...steps].reverse().find(s => s.status === 'completed' && s.output);
+  const outputJson = lastCompleted ? JSON.stringify(lastCompleted.output, null, 2) : null;
+
+  // Event trigger info
+  const trigger = ex.triggerEvent || ex.trigger || null;
+
+  function stepIcon(step) {
+    const s = step.status;
+    if (s === 'completed') return `<i class="bi bi-check-lg"></i>`;
+    if (s === 'running') return `<i class="bi bi-arrow-repeat spin"></i>`;
+    if (s === 'failed') return `<i class="bi bi-x-lg"></i>`;
+    return `<i class="bi bi-circle"></i>`;
+  }
+
+  const stepItems = steps.map(s => `
+    <li class="step-item">
+      <div class="step-icon ${s.status || 'pending'}">${stepIcon(s)}</div>
+      <span class="step-name">${escHtml(s.name || s.id || 'Step')}</span>
+      <span class="step-type">${escHtml(s.type || '')}</span>
+      ${s.duration ? `<span class="step-duration">${formatDuration(s.duration)}</span>` : ''}
+    </li>
+  `).join('');
+
+  content.innerHTML = `
+    <div class="detail-section">
+      <div class="detail-section-header"><i class="bi bi-info-circle"></i> Execution Info</div>
+      <div class="detail-section-body">
+        <div class="exec-detail-header">
+          <div>
+            <div class="exec-detail-name">${escHtml(ex.name || 'Unnamed Workflow')}</div>
+            <div class="exec-detail-id">ID: …${escHtml(shortId)}</div>
+          </div>
+          <span class="status-pill ${ex.status || 'pending'}" style="margin-left:auto">${escHtml(ex.status || 'pending')}</span>
+        </div>
+        <div class="exec-detail-meta">
+          ${dur ? `<span><i class="bi bi-stopwatch"></i> ${formatDuration(dur)}</span>` : ''}
+          ${ex.startedAt ? `<span><i class="bi bi-play-circle"></i> Started ${relativeTime(ex.startedAt)}</span>` : ''}
+          ${ex.endedAt ? `<span><i class="bi bi-stop-circle"></i> Ended ${relativeTime(ex.endedAt)}</span>` : ''}
+        </div>
+      </div>
+    </div>
+
+    ${steps.length > 0 ? `
+    <div class="detail-section">
+      <div class="detail-section-header"><i class="bi bi-list-ol"></i> Steps (${steps.length})</div>
+      <div class="detail-section-body" style="padding:0.25rem 0.75rem">
+        <ul class="step-list">${stepItems}</ul>
+      </div>
+    </div>` : ''}
+
+    ${trigger ? `
+    <div class="detail-section">
+      <div class="detail-section-header"><i class="bi bi-broadcast"></i> Event Trigger</div>
+      <div class="detail-section-body">
+        <div class="json-output">${escHtml(typeof trigger === 'string' ? trigger : JSON.stringify(trigger, null, 2))}</div>
+      </div>
+    </div>` : ''}
+
+    ${outputJson ? `
+    <div class="detail-section">
+      <div class="detail-section-header"><i class="bi bi-code-square"></i> Result / Output</div>
+      <div class="detail-section-body">
+        <div class="json-output">${escHtml(outputJson)}</div>
+      </div>
+    </div>` : ''}
+  `;
+}
+
+// ─── MODULES ──────────────────────────────────────────────────────────────────
+async function loadModules() {
+  try {
+    const res = await fetch('/api/erp/modules');
+    if (!res.ok) return;
+    const data = await res.json();
+    const modules = Array.isArray(data) ? data : (data.modules || data.data || []);
+    state.modules = modules;
+
+    const filterSel = document.getElementById('module-filter');
+    const qcModSel = document.getElementById('qc-module');
+
+    modules.forEach(m => {
+      const name = typeof m === 'string' ? m : (m.name || m.urn || m.id || JSON.stringify(m));
+      const opt1 = document.createElement('option');
+      opt1.value = name;
+      opt1.textContent = name;
+      filterSel.appendChild(opt1);
+
+      const opt2 = document.createElement('option');
+      opt2.value = name;
+      opt2.textContent = name;
+      qcModSel.appendChild(opt2);
+    });
+  } catch (_) {}
+}
+
+document.getElementById('module-filter').addEventListener('change', function() {
+  state.moduleFilter = this.value;
+  renderEvents();
+});
+
+// ─── SSE ──────────────────────────────────────────────────────────────────────
+function connectSSE() {
+  if (state._es) {
+    try { state._es.close(); } catch (_) {}
+  }
+  if (state._sseRetryTimer) { clearTimeout(state._sseRetryTimer); state._sseRetryTimer = null; }
+
+  const es = new EventSource('/events/stream');
+  state._es = es;
+
+  es.onopen = () => {
+    setSSEStatus(true);
+    showToast('SSE stream connected', 'success', 2000);
+  };
+
+  es.onmessage = (e) => {
+    // Ignore keepalive comments (these arrive as empty data or ": connected")
+    if (!e.data || e.data.trim() === '') return;
+    try {
+      const parsed = JSON.parse(e.data);
+      handleIncomingEvent(parsed);
+    } catch (_) {
+      // Non-JSON message (keepalive text, etc.) — ignore
+    }
+  };
+
+  es.addEventListener('error', () => {
+    setSSEStatus(false);
+    es.close();
+    state._es = null;
+    state._sseRetryTimer = setTimeout(() => connectSSE(), 3000);
+  });
+
+  // Some servers send named events
+  ['erp.event', 'event', 'record-created', 'record-updated', 'record-deleted'].forEach(evName => {
+    es.addEventListener(evName, (e) => {
+      try { handleIncomingEvent(JSON.parse(e.data)); } catch (_) {}
+    });
+  });
+}
+
+// ─── QUICK CREATOR ────────────────────────────────────────────────────────────
+let quickCreatorOpen = false;
+
+function toggleQuickCreator() {
+  quickCreatorOpen = !quickCreatorOpen;
+  const panel = document.getElementById('quick-creator');
+  const icon = document.getElementById('toggle-icon');
+  if (quickCreatorOpen) {
+    panel.classList.add('open');
+    icon.classList.add('open');
+  } else {
+    panel.classList.remove('open');
+    icon.classList.remove('open');
+  }
+}
+
+function updateTriggerPattern() {
+  const mod = document.getElementById('qc-module').value;
+  const evt = document.getElementById('qc-event').value;
+  if (mod && evt) {
+    document.getElementById('qc-pattern').value = `${mod}:${evt}`;
+  }
+}
+
+async function createWorkflow() {
+  const name = document.getElementById('qc-name').value.trim();
+  const module = document.getElementById('qc-module').value;
+  const event = document.getElementById('qc-event').value;
+  const pattern = document.getElementById('qc-pattern').value.trim();
+  const sql = document.getElementById('qc-sql').value.trim();
+  const stepName = document.getElementById('qc-step-name').value.trim() || 'Query Action';
+  const feedbackEl = document.getElementById('qc-feedback');
+
+  if (!name) { showFeedback('Workflow name is required', 'error'); return; }
+  if (!pattern) { showFeedback('Trigger pattern is required', 'error'); return; }
+
+  const body = {
+    name,
+    triggerEvent: pattern,
+    steps: [
+      {
+        id: 'step1',
+        type: 'action',
+        name: stepName,
+        db: { operation: 'query', query: sql || 'SELECT 1' },
+        next: 'end'
+      },
+      { id: 'end', type: 'end' }
+    ]
+  };
+
+  try {
+    showFeedback('Creating…', 'info');
+    const res = await fetch('/api/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText || 'HTTP ' + res.status);
+    }
+
+    const data = await res.json();
+    showFeedback(`Created: ${data.name || data.id || 'workflow'}`, 'success');
+    showToast(`Workflow "${name}" created`, 'success');
+
+    // Reset form
+    document.getElementById('qc-name').value = '';
+    document.getElementById('qc-sql').value = '';
+    document.getElementById('qc-step-name').value = 'Query Action';
+
+    // Refresh executions
+    await fetchExecutions();
+  } catch (err) {
+    showFeedback('Error: ' + err.message, 'error');
+    showToast('Failed to create workflow: ' + err.message, 'error');
+  }
+}
+
+function showFeedback(msg, type) {
+  const el = document.getElementById('qc-feedback');
+  el.style.display = '';
+  el.className = 'qc-feedback ' + type;
+  el.textContent = msg;
+  if (type === 'success') {
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+  }
+}
+
+// ─── RELATIVE TIMESTAMPS UPDATER ─────────────────────────────────────────────
+function updateTimestamps() {
+  document.querySelectorAll('[data-ts]').forEach(el => {
+    const ts = parseInt(el.dataset.ts, 10);
+    if (!isNaN(ts)) el.textContent = relativeTime(ts);
+  });
+}
+
+// ─── KEYBOARD SHORTCUT ────────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'r' || e.key === 'R') {
+    fetchExecutions();
+    showToast('Refreshing executions…', 'info', 1500);
+  }
+});
+
+// ─── LAYOUT HEIGHT ADJUSTMENT ─────────────────────────────────────────────────
+function adjustLayout() {
+  const header = document.getElementById('header').offsetHeight;
+  const statsRow = document.getElementById('stats-row').offsetHeight;
+  const bottomBar = document.getElementById('bottom-bar').offsetHeight;
+  const main = document.getElementById('main');
+  main.style.height = `calc(100vh - ${header}px - ${statsRow}px - ${bottomBar}px)`;
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+async function init() {
+  await loadModules();
+  connectSSE();
+
+  // Poll executions every 3 seconds
+  await fetchExecutions();
+  state._execPollTimer = setInterval(fetchExecutions, 3000);
+
+  // Update relative timestamps every 5 seconds
+  state._tsTimer = setInterval(updateTimestamps, 5000);
+
+  // Layout adjustment on resize
+  window.addEventListener('resize', adjustLayout);
+  adjustLayout();
+}
+
+init();
+</script>
+</body>
+</html>
