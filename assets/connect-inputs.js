@@ -182,17 +182,40 @@
                 const placeholder = `{{event_parser_${cn.id}.${mappedPath}}}`;
                 e.dataTransfer.setData('text/plain', placeholder);
                 e.dataTransfer.effectAllowed = 'copy';
+                try {
+                  // provide a lightweight drag image for better UX across browsers
+                  const di = document.createElement('div');
+                  di.style.cssText = 'padding:6px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-family:monospace;position:fixed;left:-9999px;';
+                  di.textContent = placeholder;
+                  document.body.appendChild(di);
+                  if (e.dataTransfer.setDragImage) {
+                    e.dataTransfer.setDragImage(di, 8, 8);
+                  }
+                  setTimeout(function(){ try { document.body.removeChild(di); } catch(e){} }, 0);
+                } catch (err) {}
+                // stop propagation to avoid duplicated handlers
+                e.stopPropagation();
               } catch (err) { console.warn('connect-pill dragstart failed', err); }
             });
 
             pill.addEventListener('click', function () {
               try {
-                // Default click inserts placeholder into any focused input via global insertAtCursor
+                // Default click inserts placeholder into any focused input via global insertAtCursor.
+                // If no input is focused, fall back to the primary function editor.
                 const placeholder = `{{event_parser_${cn.id}.${mappedPath}}}`;
                 if (globalThis && typeof globalThis.insertAtCursor === 'function') {
-                  const active = document.activeElement;
+                  var active = document.activeElement;
                   if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
                     globalThis.insertAtCursor(active, placeholder);
+                    active.dispatchEvent(new Event('input', { bubbles: true }));
+                  } else {
+                    var fn = document.getElementById('logic-function');
+                    if (!fn) fn = document.getElementById('logic-ai-prompt');
+                    if (fn) {
+                      globalThis.insertAtCursor(fn, placeholder);
+                      fn.dispatchEvent(new Event('input', { bubbles: true }));
+                      try { fn.focus(); } catch (e) {}
+                    }
                   }
                 }
               } catch (e) { console.warn(e); }

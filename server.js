@@ -681,7 +681,11 @@ app.post('/api/orchestrator/event', async (req, res) => {
     // Pass request headers so server can enrich envelope (actor role/group) when available
     const result = await eventBus.publishEvent(body, { headers: req.headers, ip: req.ip });
     if (result && result.ok) {
-      // Persisted and enqueued
+      // Immediately trigger matching workflows in addition to Kafka async path
+      setImmediate(() => {
+        fallbackDispatchEvent(body.event || body.module || 'erp.event', { ...body, id: result.id })
+          .catch(e => console.warn('[auto-trigger]', e && e.message ? e.message : e));
+      });
       return res.status(202).json({ ok: true, id: result.id, status: 'accepted' });
     } else {
       return res.status(500).json({ ok: false, error: result && result.error ? result.error : 'publish_failed' });
@@ -1298,6 +1302,51 @@ app.get('/monitor.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'monitor.html'));
 });
 
+// Orchestration Live Dashboard (ERP integration real-time view)
+app.get('/live-dashboard.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'live-dashboard.html'));
+});
+app.get('/live', (req, res) => {
+  res.sendFile(path.join(__dirname, 'live-dashboard.html'));
+});
+
+// Discover ERP modules from shared erpz.navigation table
+app.get('/api/erp/modules', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT id, nav, urn FROM navigation ORDER BY nav ASC');
+    return res.json({ ok: true, modules: rows.map(r => ({ id: r.id, name: r.nav, urn: r.urn || r.nav })) });
+  } catch (e) { return res.status(500).json({ ok: false, modules: [], error: e.message }); }
+});
+
+// Find workflows whose triggerEvent matches an incoming ERP event
+app.get('/api/workflows/for-event', async (req, res) => {
+  try {
+    const { module: mod, action, event: eventName } = req.query;
+    const workflows = await workflowEngine.getWorkflows();
+    const candidates = [mod, action, eventName,
+      mod && action ? `${mod}:${action}` : null,
+      mod && action ? `${mod}.${action}` : null
+    ].filter(Boolean).map(v => v.toString());
+    const matching = (workflows || []).filter(wf => {
+      const trigger = (wf.triggerEvent || '').toString().trim();
+      return trigger && candidates.includes(trigger);
+    });
+    return res.json({ ok: true, workflows: matching, candidates });
+  } catch (e) { return res.status(500).json({ ok: false, workflows: [], error: e.message }); }
+});
+
+// Recent executions sorted by start time (most recent first)
+app.get('/api/executions/recent', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
+    const all = await workflowEngine.getExecutions({});
+    const sorted = (all || [])
+      .sort((a, b) => new Date(b.startedAt || 0) - new Date(a.startedAt || 0))
+      .slice(0, limit);
+    return res.json({ ok: true, executions: sorted });
+  } catch (e) { return res.status(500).json({ ok: false, executions: [], error: e.message }); }
+});
+
 // In-memory ring buffer for recent messages seen by the monitor
 const MONITOR_BUFFER_LIMIT = 500;
 const monitorBuffer = [];
@@ -1356,7 +1405,7 @@ async function fallbackDispatchEvent(subject, payload) {
       for (const wf of workflows || []) {
         const trigger = (wf.triggerEvent || '').toString();
         if (!trigger) continue;
-        const matches = [evt.eventType, evt.action, `${evt.eventType}:${evt.action}`, evt.module].map(v => v && v.toString());
+        const matches = [evt.eventType, evt.action, `${evt.eventType}:${evt.action}`, evt.module, evt.event, `${evt.module}:${evt.action}`, `${evt.module}.${evt.action}`].filter(Boolean).map(v => v.toString());
         if (matches.includes(trigger)) {
           try {
             await workflowEngine.startExecution(wf.id, { event: evt }, 'fallback_dispatch');

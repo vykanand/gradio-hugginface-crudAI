@@ -15,6 +15,9 @@ globalThis.VariableInsertion = (() => {
    */
   function enableDropZone(element) {
     if (!element) return;
+    // Prevent adding multiple listeners to the same element
+    if (element.__vi_drop_enabled) return;
+    element.__vi_drop_enabled = true;
 
     // Add visual feedback styling
     const originalBorder = element.style.border;

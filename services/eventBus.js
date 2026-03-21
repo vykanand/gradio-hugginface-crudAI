@@ -10,7 +10,9 @@ const producer = kafka.producer();
 const consumer = kafka.consumer({ groupId: process.env.KAFKA_GROUP_ID || 'orchestrator-group' });
 
 const TOPIC = process.env.ORCH_EVENTS_TOPIC || 'orchestrator-events';
-const DB_PATH = process.env.EVENT_DB_PATH || path.join(__dirname, '..', 'storage', 'event_registry_db');
+// Disable LevelDB on Windows to avoid path separator issues (system falls back to in-memory)
+const DISABLE_LEVEL_DB = process.env.DISABLE_LEVEL_DB || (process.platform === 'win32' ? 'true' : 'false');
+const DB_PATH = DISABLE_LEVEL_DB !== 'true' ? (process.env.EVENT_DB_PATH || path.resolve(path.join(__dirname, '..', 'storage', 'event_registry_db'))) : null;
 
 // In-memory registry: module -> { events: { name: count }, total: number }
 const registry = {};
@@ -36,8 +38,29 @@ const RETRY_BASE_MS = parseInt(process.env.EVENT_RETRY_BASE_MS || '1000', 10); /
 let db = null;
 
 async function _connectDB() {
+  // Skip LevelDB on Windows or if disabled
+  if (!DB_PATH) {
+    console.log('[eventBus] LevelDB persistence disabled (Windows detected or DISABLE_LEVEL_DB=true)');
+    console.log('[eventBus] Using in-memory event storage');
+    return true;
+  }
+
   try {
+    // Create storage directory if it doesn't exist
+    const fs = require('fs');
+    const storageDir = path.dirname(DB_PATH);
+    if (!fs.existsSync(storageDir)) {
+      fs.mkdirSync(storageDir, { recursive: true });
+    }
+
     db = level(DB_PATH, { valueEncoding: 'json' });
+
+    // Handle initialization error event
+    db.once('error', (err) => {
+      console.warn('[eventBus] level db error event:', err && err.message ? err.message : err);
+      db = null;
+    });
+
     // load existing keys into registry
     return new Promise((resolve) => {
       const stream = db.createReadStream();
@@ -52,11 +75,12 @@ async function _connectDB() {
           }
         } catch (e) {}
       });
-      stream.on('error', (e) => { console.warn('level read error', e && e.message ? e.message : e); resolve(false); });
+      stream.on('error', (e) => { console.warn('[eventBus] level read error', e && e.message ? e.message : e); resolve(false); });
       stream.on('end', () => resolve(true));
     });
   } catch (e) {
-    console.warn('level open failed', e && e.message ? e.message : e);
+    console.warn('[eventBus] level db initialization failed:', e && e.message ? e.message : e);
+    console.warn('[eventBus] continuing without persistence...');
     db = null;
     return false;
   }

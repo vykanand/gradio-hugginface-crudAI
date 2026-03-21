@@ -31,8 +31,14 @@
         No custom logic defined
       </div>
     </div>
-    <div class="content-area" style="flex: 1">
-      <div id="custom-logic-editor" style="display: none">
+    <div
+      class="content-area"
+      style="flex: 1; display: flex; gap: 16px; align-items: flex-start"
+    >
+      <div
+        id="custom-logic-editor"
+        style="flex: 0 0 60%; min-width: 0; display: none"
+      >
         <input
           id="logic-name"
           placeholder="Name"
@@ -46,6 +52,41 @@
         <!-- Connect inputs area: placed after description to match DB Actions layout -->
         <div id="custom-logic-connect-inputs" style="margin: 8px 0 12px"></div>
         <div style="margin-bottom: 8px">
+          <label style="font-weight: 600"
+            >AI Prompt (describe desired function)</label
+          >
+          <textarea
+            id="logic-ai-prompt"
+            placeholder="Describe what the function should do. Leave blank to write manually."
+            style="
+              width: 100%;
+              height: 100px;
+              font-family: inherit;
+              margin-top: 4px;
+            "
+          ></textarea>
+          <div
+            style="
+              margin-top: 8px;
+              display: flex;
+              gap: 8px;
+              align-items: center;
+            "
+          >
+            <button
+              class="btn btn-secondary"
+              onclick="generateFunctionFromPrompt()"
+            >
+              Generate from Prompt
+            </button>
+            <div style="font-size: 0.9rem; color: #666">
+              AI will generate a complete async JavaScript function. Parameters
+              are derived from connected inputs.
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 8px">
           <label style="font-weight: 600">Function code</label>
           <textarea
             id="logic-function"
@@ -56,6 +97,24 @@
               margin-top: 4px;
             "
           ></textarea>
+        </div>
+
+        <!-- Generated params mapping UI -->
+        <div id="function-params" style="margin-bottom: 8px"></div>
+        <div
+          style="
+            margin-bottom: 8px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          "
+        >
+          <button class="btn btn-secondary" onclick="runCustomLogic()">
+            Run
+          </button>
+          <div style="font-size: 0.9rem; color: #666">
+            Run the function with mapped inputs and view output on the right.
+          </div>
         </div>
         <!-- Test Data, Variables Preview, and Input Shape removed per request -->
 
@@ -95,6 +154,38 @@
             &nbsp;
           </div>
         </div>
+      </div>
+
+      <!-- Right-side run / output panel (40%) -->
+      <div
+        id="function-run-panel"
+        style="
+          flex: 0 0 40%;
+          border-left: 1px solid #e6eef3;
+          padding-left: 12px;
+          min-width: 220px;
+        "
+      >
+        <h4 style="margin-top: 0; margin-bottom: 8px">Test Run</h4>
+        <div
+          id="function-run-controls"
+          style="margin-bottom: 8px; font-size: 0.95rem; color: #333"
+        >
+          Map params to inputs or enter raw values. Drag a connect-pill onto any
+          input to map.
+        </div>
+        <div
+          id="function-run-output"
+          style="
+            height: calc(100% - 100px);
+            overflow: auto;
+            white-space: pre-wrap;
+            background: #f8f9fa;
+            border: 1px solid #eee;
+            padding: 8px;
+            border-radius: 4px;
+          "
+        ></div>
       </div>
     </div>
   </div>
@@ -143,33 +234,99 @@
           }
         } else {
           // fallback minimal drop support when VariableInsertion not available
-          logicFunc.addEventListener("dragover", function (e) {
-            e.preventDefault();
-          });
-          logicFunc.addEventListener("drop", function (e) {
-            try {
+          if (!logicFunc.dataset.viDrop) {
+            logicFunc.dataset.viDrop = "1";
+            logicFunc.addEventListener("dragover", function (e) {
               e.preventDefault();
-              let text = e.dataTransfer.getData("text/plain") || "";
-              if (!text) {
-                const json = e.dataTransfer.getData("application/json");
-                if (json) {
-                  try {
-                    const p = JSON.parse(json);
-                    if (p && p.eventParserNodeId && p.path)
-                      text = `{{event_parser_${p.eventParserNodeId}.${p.path}}}`;
-                    else if (p && p.actionId && p.path)
-                      text = `{{action_${p.actionId}.${p.path}}}`;
-                  } catch (err) {}
+            });
+            logicFunc.addEventListener("drop", function (e) {
+              try {
+                e.preventDefault();
+                let text = e.dataTransfer.getData("text/plain") || "";
+                if (!text) {
+                  const json = e.dataTransfer.getData("application/json");
+                  if (json) {
+                    try {
+                      const p = JSON.parse(json);
+                      if (p && p.eventParserNodeId && p.path)
+                        text = `{{event_parser_${p.eventParserNodeId}.${p.path}}}`;
+                      else if (p && p.actionId && p.path)
+                        text = `{{action_${p.actionId}.${p.path}}}`;
+                    } catch (err) {}
+                  }
                 }
+                if (text && typeof globalThis.insertAtCursor === "function") {
+                  globalThis.insertAtCursor(logicFunc, text);
+                  logicFunc.dispatchEvent(
+                    new Event("input", { bubbles: true }),
+                  );
+                }
+              } catch (err) {
+                console.warn("logic-function drop failed", err);
               }
-              if (text && typeof globalThis.insertAtCursor === "function") {
-                globalThis.insertAtCursor(logicFunc, text);
-                logicFunc.dispatchEvent(new Event("input", { bubbles: true }));
+            });
+          }
+        }
+      }
+    } catch (e) {}
+
+    // update params UI whenever the function text changes
+    try {
+      const logicFuncWatcher = document.getElementById("logic-function");
+      if (logicFuncWatcher) {
+        logicFuncWatcher.addEventListener("input", function () {
+          try {
+            if (typeof updateParamMappingsUI === "function")
+              updateParamMappingsUI();
+          } catch (e) {}
+        });
+      }
+    } catch (e) {}
+
+    // Also enable drop/insert for AI prompt textarea (logic-ai-prompt)
+    try {
+      const aiPrompt = document.getElementById("logic-ai-prompt");
+      if (aiPrompt) {
+        if (
+          typeof window.VariableInsertion !== "undefined" &&
+          typeof VariableInsertion.enableDropZone === "function"
+        ) {
+          try {
+            VariableInsertion.enableDropZone(aiPrompt);
+          } catch (e) {
+            /* fallback below */
+          }
+        } else {
+          if (!aiPrompt.dataset.viDrop) {
+            aiPrompt.dataset.viDrop = "1";
+            aiPrompt.addEventListener("dragover", function (e) {
+              e.preventDefault();
+            });
+            aiPrompt.addEventListener("drop", function (e) {
+              try {
+                e.preventDefault();
+                let text = e.dataTransfer.getData("text/plain") || "";
+                if (!text) {
+                  const json = e.dataTransfer.getData("application/json");
+                  if (json) {
+                    try {
+                      const p = JSON.parse(json);
+                      if (p && p.eventParserNodeId && p.path)
+                        text = `{{event_parser_${p.eventParserNodeId}.${p.path}}}`;
+                      else if (p && p.actionId && p.path)
+                        text = `{{action_${p.actionId}.${p.path}}}`;
+                    } catch (err) {}
+                  }
+                }
+                if (text && typeof globalThis.insertAtCursor === "function") {
+                  globalThis.insertAtCursor(aiPrompt, text);
+                  aiPrompt.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              } catch (err) {
+                console.warn("logic-ai-prompt drop failed", err);
               }
-            } catch (err) {
-              console.warn("logic-function drop failed", err);
-            }
-          });
+            });
+          }
         }
       }
     } catch (e) {}
@@ -201,6 +358,8 @@
     document.getElementById("logic-name").value = "";
     document.getElementById("logic-description").value = "";
     document.getElementById("logic-function").value = "";
+    var promptEl = document.getElementById("logic-ai-prompt");
+    if (promptEl) promptEl.value = "";
   }
 
   async function loadCustomLogics() {
@@ -218,6 +377,10 @@
           it.description || "";
         document.getElementById("logic-function").value =
           it.functionCode || it.function || "";
+        try {
+          if (typeof updateParamMappingsUI === "function")
+            updateParamMappingsUI();
+        } catch (e) {}
         // focus editor so click-to-insert works
         try {
           const lf = document.getElementById("logic-function");
@@ -430,6 +593,22 @@
         body: JSON.stringify(logic),
       });
       var data = await res.json();
+      // extract a sensible raw string from the AI response
+      var pasteRaw = "";
+      try {
+        if (typeof data === "string") pasteRaw = data;
+        else if (data && typeof data === "object")
+          pasteRaw =
+            data.response ||
+            data.text ||
+            (data.data && (data.data.response || data.data.text)) ||
+            JSON.stringify(data);
+        pasteRaw = String(pasteRaw || "");
+        // normalize escaped newline sequences to actual newlines
+        pasteRaw = pasteRaw.replace(/\r\n?/g, "\n").replace(/\\n/g, "\n");
+      } catch (e) {
+        pasteRaw = String(data || "");
+      }
       var statusEl = document.getElementById("custom-logic-action-status");
       if (data.ok) {
         try {
@@ -462,6 +641,477 @@
       alert("Save error: " + e.message);
     }
   }
+
+  async function generateFunctionFromPrompt() {
+    var promptText =
+      (document.getElementById("logic-ai-prompt") || {}).value || "";
+    // Build inputs metadata from logicInputs and window.nodes
+    var inputs = Array.isArray(logicInputs) ? logicInputs.slice() : [];
+    var params = [];
+    try {
+      var allNodes = window.nodes || [];
+      inputs.forEach(function (inp, idx) {
+        var pname = "input" + (idx + 1);
+        try {
+          if (inp && inp.nodeId) {
+            var found = allNodes.find(function (n) {
+              return String(n.id) === String(inp.nodeId);
+            });
+            if (found) {
+              pname =
+                (found.data && (found.data.name || found.data.label)) ||
+                found.name ||
+                ("n_" + String(found.id)).replace(/[^a-z0-9_]/gi, "_");
+            }
+          }
+        } catch (e) {}
+        // sanitize param name
+        pname = String(pname || "p" + (idx + 1)).replace(/[^a-zA-Z0-9_]/g, "_");
+        params.push(pname);
+      });
+    } catch (e) {}
+
+    // Build instructive prompt for the AI
+    var fnName =
+      (document.getElementById("logic-name") || {}).value ||
+      "generatedFunction";
+    var instruction = `Write a complete, self-contained JavaScript async function named ${fnName.replace(/[^a-zA-Z0-9_]/g, "_")} that implements the following behavior.`;
+    var paramsList = params.join(", ");
+    // Build readable inputs list with sample values when available
+    var inputsList =
+      (inputs || [])
+        .map(function (i, ix) {
+          var pName = params[ix] || "input" + (ix + 1);
+          var nodeInfo = "";
+          try {
+            var n = (window.nodes || []).find(function (nn) {
+              return String(nn.id) === String(i.nodeId || i.actionId || i.id);
+            });
+            if (n) nodeInfo = n.name || n.id;
+          } catch (e) {}
+          var sample = "";
+          try {
+            var sampleObj =
+              (n &&
+                n.data &&
+                n.data.variableMappings &&
+                Array.isArray(n.data.variableMappings._exampleOutputs) &&
+                n.data.variableMappings._exampleOutputs[0]) ||
+              (n && n.data && n.data.mappingPreview) ||
+              (n && n.data && n.data.examplePayload) ||
+              i.sampleValue ||
+              i.parserSample ||
+              "";
+            if (sampleObj && typeof sampleObj === "object") {
+              var vals = Object.values(sampleObj);
+              sample =
+                vals && vals.length
+                  ? String(vals[0])
+                  : JSON.stringify(sampleObj);
+            } else sample = String(sampleObj || "");
+          } catch (e) {
+            sample = "";
+          }
+          return (
+            "- " +
+            pName +
+            ": " +
+            (i.parserVarName ||
+              i.parserPath ||
+              nodeInfo ||
+              i.nodeId ||
+              i.actionId ||
+              "") +
+            (sample ? " — example: " + sample : "")
+          );
+        })
+        .join("\n") || "(none)";
+
+    var fullPrompt = instruction + "\n\n";
+    if (promptText) fullPrompt += "User description:\n" + promptText + "\n\n";
+    fullPrompt +=
+      "Connected inputs (use these as function parameters):\n" +
+      inputsList +
+      "\n\n";
+    fullPrompt +=
+      "Function signature: async function " +
+      fnName.replace(/[^a-zA-Z0-9_]/g, "_") +
+      "(" +
+      paramsList +
+      ") { /* implementation */ }\n\n";
+    // Append strict execution model and parser grammar to ensure AI outputs are fully parseable
+    fullPrompt += "=== CUSTOM LOGIC ENGINE EXECUTION MODEL ===\n";
+    fullPrompt +=
+      "The generated code must be a single, standalone async JavaScript function definition. It will be executed directly by the engine. Return only the function definition (no surrounding text).\n\n";
+    fullPrompt += "=== INPUT CONTRACT ===\n";
+    fullPrompt +=
+      "Use the exact parameter names shown in the Function signature above. Parameters correspond to connected inputs and their example values shown earlier. Do NOT reference any global variables or external modules.\n\n";
+    fullPrompt += "=== GRAMMAR RULES AND REQUIREMENTS ===\n";
+    fullPrompt +=
+      "1) Output must be syntactically valid JavaScript.\n" +
+      "2) Do not include comments, markdown fences, or explanatory text.\n" +
+      "3) Use only the listed parameter names; if AI suggests different names, map them positionally to the provided parameters.\n" +
+      "4) The function must return a serializable value (object, array, string, number, boolean).\n" +
+      "5) Keep implementation simple and robust; include basic error handling.\n\n";
+    fullPrompt +=
+      "IMPORTANT: RETURN ONLY the async function definition. Any deviation will be ignored.\n";
+
+    var aiTarget =
+      globalThis.RUNTIME_CONFIG &&
+      globalThis.RUNTIME_CONFIG.ai &&
+      globalThis.RUNTIME_CONFIG.ai.mode === "direct"
+        ? globalThis.RUNTIME_CONFIG.ai.directUrl
+        : "/ai/send";
+
+    // temporary storage for normalized/generated code (kept for fallback compatibility)
+    var finalFnCode = "";
+
+    try {
+      var statusEl = document.getElementById("custom-logic-action-status");
+      if (statusEl) {
+        statusEl.textContent = "Generating...";
+        statusEl.style.color = "#0b63d6";
+      }
+      var res = await fetch(aiTarget, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "custom-logic-gen-" + Date.now(),
+          aiquestion: fullPrompt,
+        }),
+        timeout: 120000,
+      });
+      if (!res.ok) throw new Error("AI request failed: " + res.status);
+      var data = await res.json();
+      // extract raw AI text and normalize escaped newlines
+      var pasteRaw = "";
+      try {
+        if (typeof data === "string") pasteRaw = data;
+        else if (data && typeof data === "object")
+          pasteRaw =
+            data.response ||
+            data.text ||
+            (data.data && (data.data.response || data.data.text)) ||
+            JSON.stringify(data);
+        pasteRaw = String(pasteRaw || "");
+        pasteRaw = pasteRaw.replace(/\r\n?/g, "\n").replace(/\\n/g, "\n");
+      } catch (e) {
+        pasteRaw = String(data || "");
+      }
+
+      // Paste raw AI response directly into the function editor (preserve formatting/newlines)
+      try {
+        var funcEl = document.getElementById("logic-function");
+        if (funcEl) {
+          funcEl.value = pasteRaw.trim();
+          try {
+            if (typeof updateParamMappingsUI === "function")
+              updateParamMappingsUI();
+          } catch (e) {}
+        }
+        if (statusEl) {
+          statusEl.textContent = "Generated (raw)";
+          statusEl.style.color = "#28a745";
+        }
+        setTimeout(function () {
+          if (statusEl) statusEl.textContent = "\u00A0";
+        }, 3000);
+      } catch (e) {
+        console.warn("Failed to paste AI raw response:", e);
+      }
+
+      // If the generated function has an empty implementation, try to preserve original AI body
+      try {
+        var emptyBodyMatch = (finalFnCode || "").match(
+          /async\s+function\s+[A-Za-z0-9_]+\s*\([^)]*\)\s*\{[\s\S]*?try\s*\{([\s\S]*?)\}\s*catch/,
+        );
+        var innerBody =
+          emptyBodyMatch && emptyBodyMatch[1] ? emptyBodyMatch[1].trim() : null;
+      } catch (e) {}
+      var funcEl = document.getElementById("logic-function");
+      if (funcEl) {
+        // prefer the raw pasted AI text (pasteRaw). Fall back to normalized finalFnCode if missing.
+        var toPaste =
+          typeof pasteRaw !== "undefined" && pasteRaw
+            ? pasteRaw
+            : finalFnCode || "";
+        try {
+          funcEl.value = String(toPaste).trim();
+          try {
+            if (typeof updateParamMappingsUI === "function")
+              updateParamMappingsUI();
+          } catch (e) {}
+        } catch (e) {
+          funcEl.value = finalFnCode || "";
+        }
+      }
+      if (statusEl) {
+        statusEl.textContent = "Generated";
+        statusEl.style.color = "#28a745";
+      }
+      setTimeout(function () {
+        if (statusEl) statusEl.textContent = "\u00A0";
+      }, 3000);
+    } catch (e) {
+      console.warn("AI generation failed", e);
+      alert("AI generation failed: " + (e.message || e));
+      var statusEl = document.getElementById("custom-logic-action-status");
+      if (statusEl) {
+        statusEl.textContent = "AI error";
+        statusEl.style.color = "#c53030";
+      }
+    }
+  }
+
+  // ---- Parameter mapping + run helpers ----
+  var paramMappings = {};
+
+  function parseFunctionParams(code) {
+    try {
+      var src = String(code || "").trim();
+      if (!src) return [];
+      var patterns = [
+        /async\s+function\s+[A-Za-z0-9_]*\s*\(([^)]*)\)/,
+        /function\s+[A-Za-z0-9_]*\s*\(([^)]*)\)/,
+        /[A-Za-z0-9_]+\s*=\s*async\s*\(([^)]*)\)/,
+        /async\s*\(([^)]*)\)\s*=>/,
+        /\(([^)]*)\)\s*=>/,
+      ];
+      for (var i = 0; i < patterns.length; i++) {
+        var m = src.match(patterns[i]);
+        if (m && m[1] != null) {
+          var raw = m[1].trim();
+          if (!raw) return [];
+          return raw
+            .split(",")
+            .map(function (p) {
+              return p.trim();
+            })
+            .filter(Boolean);
+        }
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function getAvailableInputOptions() {
+    var opts = [{ value: "", label: "(unmapped)" }];
+    try {
+      (logicInputs || []).forEach(function (i, idx) {
+        var label =
+          i.parserVarName ||
+          i.parserPath ||
+          i.name ||
+          i.nodeId ||
+          i.actionId ||
+          "input" + (idx + 1);
+        var sample = "";
+        try {
+          sample =
+            i.sampleValue ||
+            i.parserSample ||
+            (i.example && JSON.stringify(i.example)) ||
+            "";
+        } catch (e) {}
+        opts.push({
+          value: "mapped:" + idx,
+          label: label + (sample ? " — example: " + sample : ""),
+          idx: idx,
+        });
+      });
+    } catch (e) {}
+    opts.push({ value: "__raw__", label: "Enter raw value..." });
+    return opts;
+  }
+
+  function updateParamMappingsUI() {
+    try {
+      var code = (document.getElementById("logic-function") || {}).value || "";
+      var params = parseFunctionParams(code);
+      var container = document.getElementById("function-params");
+      if (!container) return;
+      container.innerHTML = "";
+      var opts = getAvailableInputOptions();
+      params.forEach(function (p) {
+        if (!p) return;
+        if (!paramMappings[p])
+          paramMappings[p] = { type: "", value: null, mappedIndex: null };
+
+        var row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.gap = "8px";
+        row.style.alignItems = "center";
+        row.style.marginBottom = "6px";
+
+        var pill = document.createElement("div");
+        pill.textContent = p;
+        pill.style.background = "#eef6ff";
+        pill.style.padding = "6px 8px";
+        pill.style.borderRadius = "16px";
+        pill.style.fontFamily = "monospace";
+        pill.style.fontSize = "0.95rem";
+
+        var sel = document.createElement("select");
+        sel.style.flex = "1";
+        opts.forEach(function (o) {
+          var opt = document.createElement("option");
+          opt.value = o.value;
+          opt.textContent = o.label;
+          sel.appendChild(opt);
+        });
+
+        // restore selection if exists
+        try {
+          var cur = paramMappings[p] || {};
+          if (cur.type === "mapped" && typeof cur.mappedIndex === "number")
+            sel.value = "mapped:" + cur.mappedIndex;
+          else if (cur.type === "raw") sel.value = "__raw__";
+          else sel.value = "";
+        } catch (e) {}
+
+        var rawInput = document.createElement("input");
+        rawInput.type = "text";
+        rawInput.placeholder = "raw JSON or string";
+        rawInput.style.display = sel.value === "__raw__" ? "block" : "none";
+        rawInput.style.flex = "1";
+        rawInput.value = (paramMappings[p] && paramMappings[p].value) || "";
+
+        sel.addEventListener("change", function (ev) {
+          var v = ev.target.value;
+          if (v === "") {
+            paramMappings[p] = { type: "", value: null, mappedIndex: null };
+            rawInput.style.display = "none";
+          } else if (v === "__raw__") {
+            paramMappings[p] = {
+              type: "raw",
+              value: rawInput.value || "",
+              mappedIndex: null,
+            };
+            rawInput.style.display = "block";
+          } else if (v.indexOf("mapped:") === 0) {
+            var idx = parseInt(v.split(":")[1], 10);
+            paramMappings[p] = {
+              type: "mapped",
+              value: null,
+              mappedIndex: idx,
+            };
+            rawInput.style.display = "none";
+          }
+        });
+
+        rawInput.addEventListener("input", function (ev) {
+          paramMappings[p] = paramMappings[p] || {};
+          paramMappings[p].type = "raw";
+          paramMappings[p].value = ev.target.value;
+        });
+
+        // allow dropping placeholders directly onto raw input
+        rawInput.addEventListener("dragover", function (e) {
+          e.preventDefault();
+        });
+        rawInput.addEventListener("drop", function (e) {
+          try {
+            e.preventDefault();
+            var txt = e.dataTransfer.getData("text/plain") || "";
+            if (txt) {
+              rawInput.value = txt;
+              rawInput.dispatchEvent(new Event("input", { bubbles: true }));
+              paramMappings[p] = { type: "raw", value: txt, mappedIndex: null };
+              sel.value = "__raw__";
+            }
+          } catch (err) {}
+        });
+
+        row.appendChild(pill);
+        row.appendChild(sel);
+        row.appendChild(rawInput);
+        container.appendChild(row);
+      });
+    } catch (e) {
+      console.warn("updateParamMappingsUI failed", e);
+    }
+  }
+
+  async function runCustomLogic() {
+    var outEl = document.getElementById("function-run-output");
+    outEl.textContent = "Running...";
+    try {
+      var code = (document.getElementById("logic-function") || {}).value || "";
+      // normalize common module/export tokens that break eval
+      var safeCode = String(code || "")
+        .replace(/^\s*export\s+default\s+/m, "")
+        .replace(/^\s*module\.exports\s*=\s*/m, "");
+
+      var params = parseFunctionParams(safeCode);
+      var args = [];
+      params.forEach(function (p) {
+        var m = paramMappings[p] || {};
+        if (m.type === "mapped") {
+          var li = (logicInputs || [])[m.mappedIndex];
+          var v = null;
+          try {
+            v =
+              li &&
+              (li.sampleValue || li.parserSample || li.examplePayload || null);
+          } catch (e) {
+            v = null;
+          }
+          args.push(v);
+        } else if (m.type === "raw") {
+          var raw = m.value;
+          try {
+            args.push(JSON.parse(raw));
+          } catch (e) {
+            args.push(raw);
+          }
+        } else {
+          args.push(null);
+        }
+      });
+
+      // Robustly evaluate the provided code and extract the function object
+      var fn = null;
+      try {
+        // try wrapping as expression first
+        fn = new Function("return (" + safeCode + ")")();
+      } catch (e1) {
+        try {
+          // try to detect named function and return it
+          var nameMatch =
+            safeCode.match(/async\s+function\s+([A-Za-z0-9_]+)/) ||
+            safeCode.match(/function\s+([A-Za-z0-9_]+)/) ||
+            safeCode.match(/([A-Za-z0-9_]+)\s*=\s*async/);
+          if (nameMatch && nameMatch[1]) {
+            var nm = nameMatch[1];
+            fn = new Function(safeCode + "; return " + nm + ";")();
+          } else {
+            // last resort: eval in global scope
+            fn = eval("(" + safeCode + ")");
+          }
+        } catch (e2) {
+          throw new Error(
+            "Failed to parse function: " + (e2.message || e1.message),
+          );
+        }
+      }
+
+      if (typeof fn !== "function")
+        throw new Error("Parsed code is not a function");
+      var res = await fn.apply(null, args);
+      try {
+        outEl.textContent = JSON.stringify(res, null, 2);
+      } catch (e) {
+        outEl.textContent = String(res);
+      }
+    } catch (e) {
+      outEl.textContent =
+        "Error: " + ((e && e.message) || e) + "\n" + ((e && e.stack) || "");
+    }
+  }
+
+  // ---- end helpers ----
 
   async function deleteCurrentLogic() {
     if (!currentLogic) return;

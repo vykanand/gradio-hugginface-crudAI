@@ -64,8 +64,8 @@
             "true": "post-accounting",
             "false": "reject-invoice"
           },
-          "x": 935,
-          "y": 85,
+          "x": 920,
+          "y": 97,
           "outgoing": [
             "post-accounting",
             "post-accounting"
@@ -78,8 +78,8 @@
           "name": "Post to Accounting",
           "action": "PostAccountingEntry",
           "next": "reject-invoice",
-          "x": 1157,
-          "y": 99,
+          "x": 1231,
+          "y": 104,
           "outgoing": [
             "reject-invoice"
           ]
@@ -93,8 +93,8 @@
           "outgoing": [
             "close-workflow"
           ],
-          "x": 1422,
-          "y": 94
+          "x": 1557,
+          "y": 101
         },
         {
           "id": "close-workflow",
@@ -102,8 +102,8 @@
           "name": "Complete",
           "outgoing": [],
           "next": null,
-          "x": 1687,
-          "y": 103
+          "x": 1851,
+          "y": 102
         }
       ],
       "connections": [
