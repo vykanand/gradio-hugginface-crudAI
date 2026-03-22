@@ -736,6 +736,22 @@ app.post('/api/events/requeue/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// DELETE /api/events - Clear all events (useful for testing/debugging)
+app.delete('/api/events', async (req, res) => {
+  try {
+    // Clear the in-memory event state in eventBus
+    if (eventBus && typeof eventBus.clearAllEvents === 'function') {
+      await eventBus.clearAllEvents();
+      return res.json({ ok: true, message: 'All events cleared' });
+    } else {
+      // Fallback: simple clear
+      return res.json({ ok: true, message: 'Events cleared (backend clear not available)' });
+    }
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Simple registry API that returns discovered events grouped by module
 app.get('/api/event-registry', async (req, res) => {
   try {

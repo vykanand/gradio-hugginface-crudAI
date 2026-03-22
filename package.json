@@ -7,9 +7,11 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "worker": "node workers/orchestrationWorker.js",
+    "setup:topics": "bash ensure-permanent-topics.sh",
     "cleanup:kafka": "node cleanup-kafka.js",
     "cleanup:kafka:dry": "node cleanup-kafka.js --dry-run",
-    "cleanup:kafka:stats": "node cleanup-kafka.js --topics"
+    "cleanup:kafka:stats": "node cleanup-kafka.js --topics",
+    "cleanup:kafka:safe": "bash cleanup-kafka-safe.sh"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

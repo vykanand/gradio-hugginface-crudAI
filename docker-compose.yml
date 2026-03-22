@@ -75,6 +75,7 @@ services:
       PORT: "5050"
       KAFKA_BROKERS: kafka:9092
       DISABLE_KAFKA: "false"
+      ENABLE_KAFKA_TOPICS: "false"
       ADMIN_API_KEY: changeme
       NODE_ENV: development
       AUTO_BACKUP_ENABLED: "${AUTO_BACKUP_ENABLED:-true}"

@@ -1,27 +1,27 @@
 const { Kafka } = require('kafkajs');
-const level = require('level');
-const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const eventRegistry = require('../lib/eventRegistry');
+const kafkaAdmin = require('./kafkaAdmin');
+const kafkaEventStore = require('./kafkaEventStore');
 
+// Kafka Setup
 const kafkaBrokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const kafka = new Kafka({ clientId: 'orchestrator-server', brokers: kafkaBrokers });
 const producer = kafka.producer();
 const consumer = kafka.consumer({ groupId: process.env.KAFKA_GROUP_ID || 'orchestrator-group' });
 
+// Topics
 const TOPIC = process.env.ORCH_EVENTS_TOPIC || 'orchestrator-events';
-// Disable LevelDB on Windows to avoid path separator issues (system falls back to in-memory)
-const DISABLE_LEVEL_DB = process.env.DISABLE_LEVEL_DB || (process.platform === 'win32' ? 'true' : 'false');
-const DB_PATH = DISABLE_LEVEL_DB !== 'true' ? (process.env.EVENT_DB_PATH || path.resolve(path.join(__dirname, '..', 'storage', 'event_registry_db'))) : null;
+const FIELD_EVENTS_TOPIC = process.env.FIELD_EVENTS_TOPIC || 'billionerp-field-events';
+const RECORD_EVENTS_TOPIC = process.env.RECORD_EVENTS_TOPIC || 'billionerp-record-events';
 
 // In-memory registry: module -> { events: { name: count }, total: number }
 const registry = {};
 const sseClients = new Set();
 
-// Track recently seen event ids to avoid double-counting when we both
-// update registry on publish AND receive the same record via Kafka consumer.
-const seenEventMap = new Map(); // id -> timestamp
-const SEEN_TTL_MS = 24 * 60 * 60 * 1000; // keep seen ids for 24 hours
+// Track recently seen event ids to avoid double-counting
+const seenEventMap = new Map();
+const SEEN_TTL_MS = 24 * 60 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
   for (const [id, ts] of seenEventMap) {
@@ -29,73 +29,13 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
-// Pending send queue (in-memory indexes into DB). Keeps track of event ids
+// Pending sends queue
 const pendingSends = new Set();
 
+// Configuration
 const MAX_SEND_ATTEMPTS = parseInt(process.env.EVENT_MAX_SEND_ATTEMPTS || '6', 10);
-const RETRY_BASE_MS = parseInt(process.env.EVENT_RETRY_BASE_MS || '1000', 10); // exponential backoff base
+const RETRY_BASE_MS = parseInt(process.env.EVENT_RETRY_BASE_MS || '1000', 10);
 
-let db = null;
-
-async function _connectDB() {
-  // Skip LevelDB on Windows or if disabled
-  if (!DB_PATH) {
-    console.log('[eventBus] LevelDB persistence disabled (Windows detected or DISABLE_LEVEL_DB=true)');
-    console.log('[eventBus] Using in-memory event storage');
-    return true;
-  }
-
-  try {
-    // Create storage directory if it doesn't exist
-    const fs = require('fs');
-    const storageDir = path.dirname(DB_PATH);
-    if (!fs.existsSync(storageDir)) {
-      fs.mkdirSync(storageDir, { recursive: true });
-    }
-
-    db = level(DB_PATH, { valueEncoding: 'json' });
-
-    // Handle initialization error event
-    db.once('error', (err) => {
-      console.warn('[eventBus] level db error event:', err && err.message ? err.message : err);
-      db = null;
-    });
-
-    // load existing keys into registry
-    return new Promise((resolve) => {
-      const stream = db.createReadStream();
-      stream.on('data', ({ key, value }) => {
-        try {
-          if (!key || typeof key !== 'string') return;
-          // skip persisted event records and DLQ entries
-          if (key.indexOf('evt:') === 0 || key.indexOf('dlq:') === 0) return;
-          // only load module registry entries (value should be an object with events or total)
-          if (value && typeof value === 'object' && (value.events || value.total !== undefined)) {
-            registry[key] = value;
-          }
-        } catch (e) {}
-      });
-      stream.on('error', (e) => { console.warn('[eventBus] level read error', e && e.message ? e.message : e); resolve(false); });
-      stream.on('end', () => resolve(true));
-    });
-  } catch (e) {
-    console.warn('[eventBus] level db initialization failed:', e && e.message ? e.message : e);
-    console.warn('[eventBus] continuing without persistence...');
-    db = null;
-    return false;
-  }
-}
-
-async function _persistModule(mod) {
-  try {
-    if (!db) return false;
-    await db.put(mod, registry[mod] || {});
-    return true;
-  } catch (e) {
-    console.warn('persistModule failed', e && e.message ? e.message : e);
-    return false;
-  }
-}
 
 async function init() {
   try {
@@ -103,7 +43,8 @@ async function init() {
   } catch (e) { console.warn('Kafka producer connect failed', e && e.message ? e.message : e); }
   try {
     await consumer.connect();
-    await consumer.subscribe({ topic: TOPIC, fromBeginning: false });
+    // Subscribe to orchestrator events AND incoming billionerp field/record events
+    await consumer.subscribe({ topics: [TOPIC, FIELD_EVENTS_TOPIC, RECORD_EVENTS_TOPIC], fromBeginning: false });
     await consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
         try {
@@ -118,11 +59,19 @@ async function init() {
     });
   } catch (e) { console.warn('Kafka consumer setup failed', e && e.message ? e.message : e); }
 
-  // try connect local level DB (best-effort)
-  try { await _connectDB(); } catch (e) { /* ignore */ }
+  // Initialize Kafka admin and create compacted topics for event persistence
+  // (best-effort, don't block on failures)
+  if (process.env.ENABLE_KAFKA_TOPICS !== 'false') {
+    try {
+      await kafkaAdmin.initKafkaAdmin(kafka);
+      await kafkaAdmin.ensureCompactedTopics();
+    } catch (e) {
+      console.warn('Kafka topic initialization failed (may already exist):', e && e.message ? e.message : e);
+    }
+  }
 
-  // seed eventRegistry from any existing in-memory registry, and share DB handle
-  try { eventRegistry.init({ existingRegistry: registry, sharedDB: db }); } catch (e) {}
+  // seed eventRegistry from any existing in-memory registry
+  try { eventRegistry.init({ existingRegistry: registry }); } catch (e) {}
 
   // recover any pending events from DB so delivery resumes after restart
   try { await recoverPendingEvents(); } catch (e) { console.warn('recoverPendingEvents failed', e && e.message ? e.message : e); }
@@ -139,186 +88,138 @@ async function init() {
   } catch (e) {}
 }
 
-// scan DB for evt: keys and enqueue pending/retrying events
+// Load pending events from Kafka event-records topic on startup
 async function recoverPendingEvents() {
-  if (!db) return;
-  return new Promise((resolve) => {
-    const stream = db.createReadStream();
-    stream.on('data', async ({ key, value }) => {
-      try {
-        if (!key || typeof key !== 'string') return;
-        if (key.indexOf('evt:') === 0) {
-          const id = key.slice(4);
-          const rec = value;
-          if (rec && rec.status && rec.status !== 'published') {
-            // re-enqueue for send
-            _enqueueSend(id);
-          }
-        }
-      } catch (e) {}
-    });
-    stream.on('error', (e) => { resolve(false); });
-    stream.on('end', () => resolve(true));
-  });
-}
-
-// Return arrays of pending events (non-published) and DLQ events
-async function listPendingEvents() {
-  const out = [];
-  if (!db) return out;
-  return new Promise((resolve) => {
-    const stream = db.createReadStream();
-    stream.on('data', ({ key, value }) => {
-      try {
-        if (key && key.indexOf('evt:') === 0) {
-          const id = key.slice(4);
-          const rec = value;
-          if (rec && rec.status !== 'published') {
-            out.push(rec);
-          }
-        }
-      } catch (e) {}
-    });
-    stream.on('error', () => resolve(out));
-    stream.on('end', () => resolve(out));
-  });
-}
-
-// list all persisted evt: records (optionally filter by module/event)
-async function listAllEventRecords(filter) {
-  const out = [];
-  if (!db) return out;
-  filter = filter || {};
-  const modFilter = filter.module || null;
-  const eventFilter = filter.event || null;
-  return new Promise((resolve) => {
-    const stream = db.createReadStream();
-    stream.on('data', ({ key, value }) => {
-      try {
-        if (key && key.indexOf('evt:') === 0) {
-          const rec = value;
-          if (modFilter && rec.module !== modFilter) return;
-          if (eventFilter) {
-            // tolerant matching: match stored event OR canonicalEvent, or substring match
-            const ef = String(eventFilter);
-            const matches = (rec.event && rec.event === ef) || (rec.canonicalEvent && rec.canonicalEvent === ef) || (rec.event && String(rec.event).indexOf(ef) !== -1) || (rec.canonicalEvent && String(rec.canonicalEvent).indexOf(ef) !== -1);
-            if (!matches) return;
-          }
-          out.push(rec);
-        }
-      } catch (e) {}
-    });
-    stream.on('error', () => resolve(out));
-    stream.on('end', () => resolve(out));
-  });
-}
-
-// delete a persisted event record by id (evt:<id> and dlq:<id>)
-async function deleteEventRecord(id) {
-  if (!db || !id) return false;
   try {
-    const key = 'evt:' + id;
-    const rec = await db.get(key).catch(() => null);
-    // delete both evt and dlq entries
-    await db.del(key).catch(() => {});
-    await db.del('dlq:' + id).catch(() => {});
+    // Load event records from Kafka and re-enqueue any non-published events
+    const records = await kafkaEventStore.loadAllEventRecords(kafka);
+    if (records && Array.isArray(records)) {
+      for (const rec of records) {
+        if (rec && rec.id && rec.status !== 'published') {
+          _enqueueSend(rec.id);
+        }
+      }
+    }
+    return true;
+  } catch (e) {
+    console.warn('recoverPendingEvents failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
 
-    // If we had a record, check whether other persisted records exist for same event.
+// Return list of pending event IDs (those in pendingSends queue)
+async function listPendingEvents() {
+  return Array.from(pendingSends);
+}
+
+// List all event records from Kafka event-records topic, optionally filtered
+async function listAllEventRecords(filter) {
+  try {
+    const records = await kafkaEventStore.loadAllEventRecords(kafka);
+    if (!records || !Array.isArray(records)) return [];
+
+    filter = filter || {};
+    const modFilter = filter.module || null;
+    const eventFilter = filter.event || null;
+
+    return records.filter(rec => {
+      if (!rec) return false;
+      if (modFilter && rec.module !== modFilter) return false;
+      if (eventFilter) {
+        const ef = String(eventFilter);
+        const matches = (rec.event && rec.event === ef) ||
+                       (rec.canonicalEvent && rec.canonicalEvent === ef) ||
+                       (rec.event && String(rec.event).indexOf(ef) !== -1) ||
+                       (rec.canonicalEvent && String(rec.canonicalEvent).indexOf(ef) !== -1);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  } catch (e) {
+    console.warn('listAllEventRecords failed:', e && e.message ? e.message : e);
+    return [];
+  }
+}
+
+// Delete a persisted event record by id (sends tombstones to Kafka)
+async function deleteEventRecord(id) {
+  if (!id) return false;
+  try {
+    // Delete from Kafka by sending tombstones (null values)
+    const deleted = await kafkaEventStore.deleteEventRecord(producer, id);
+
+    // Check if other records exist for this event and remove binding if none remain
     try {
-      const canonical = rec ? (rec.canonicalEvent || rec.event) : null;
-      if (canonical) {
-        const remaining = await listAllEventRecords({ event: canonical });
+      const records = await listAllEventRecords();
+      const eventName = records.find(r => r && r.id === id)?.canonicalEvent ||
+                        records.find(r => r && r.id === id)?.event;
+      if (eventName) {
+        const remaining = records.filter(r => r && (r.canonicalEvent === eventName || r.event === eventName));
         if (!remaining || remaining.length === 0) {
-          try { eventRegistry.removeBinding(canonical); } catch (e) {}
+          try { eventRegistry.removeBinding(eventName); } catch (e) {}
         }
       }
     } catch (e) {}
 
-    return true;
+    return deleted;
   } catch (e) { return false; }
 }
 
-// delete persisted events matching module and/or event name. Returns number deleted.
+// Delete persisted events matching module and/or event name. Returns number deleted.
 async function deleteEventsByFilter(filter) {
-  if (!db) return 0;
-  filter = filter || {};
-  const modFilter = filter.module || null;
-  const eventFilter = filter.event || null;
-  let removed = 0;
-  return new Promise((resolve) => {
-    const ops = [];
-    const stream = db.createReadStream();
-    stream.on('data', ({ key, value }) => {
-      try {
-        if (key && key.indexOf('evt:') === 0) {
-          const rec = value;
-          if (modFilter && rec.module !== modFilter) return;
-          if (eventFilter && rec.event !== eventFilter) return;
-          ops.push({ type: 'del', key });
-          // also attempt to delete associated dlq key
-          if (rec.id) ops.push({ type: 'del', key: 'dlq:' + rec.id });
-          removed++;
-        }
-      } catch (e) {}
-    });
-    stream.on('error', async () => {
-      if (ops.length) await db.batch(ops).catch(()=>{});
-      resolve(removed);
-    });
-    stream.on('end', async () => {
-      if (ops.length) await db.batch(ops).catch(()=>{});
-      // Sync registry removals: if eventFilter provided, remove that binding; if module provided, remove bindings for module
-      try {
-        if (eventFilter) {
-          try { eventRegistry.removeBinding(eventFilter); } catch (e) {}
-        } else if (modFilter) {
-          try { eventRegistry.removeBindingsByModule(modFilter); } catch (e) {}
-        }
-      } catch (e) {}
-      resolve(removed);
-    });
-  });
+  try {
+    const records = await listAllEventRecords(filter);
+    let removed = 0;
+
+    for (const rec of records) {
+      if (rec && rec.id) {
+        const deleted = await kafkaEventStore.deleteEventRecord(producer, rec.id);
+        if (deleted) removed++;
+      }
+    }
+
+    // Sync registry removals
+    if (filter && filter.event) {
+      try { eventRegistry.removeBinding(filter.event); } catch (e) {}
+    } else if (filter && filter.module) {
+      try { eventRegistry.removeBindingsByModule(filter.module); } catch (e) {}
+    }
+
+    return removed;
+  } catch (e) {
+    console.warn('deleteEventsByFilter failed:', e && e.message ? e.message : e);
+    return 0;
+  }
 }
 
-// clear module registry counts (in-memory + persisted module key)
+// Clear module registry counts (in-memory only)
 async function clearModuleRegistry(module) {
   if (!module) return false;
   try {
     delete registry[module];
-    if (db) await db.del(module).catch(()=>{});
     try { eventRegistry.removeBindingsByModule(module); } catch (e) {}
     return true;
   } catch (e) { return false; }
 }
 
+// List all DLQ (dead letter queue) events from Kafka
 async function listDLQEvents() {
-  const out = [];
-  if (!db) return out;
-  return new Promise((resolve) => {
-    const stream = db.createReadStream();
-    stream.on('data', ({ key, value }) => {
-      try {
-        if (key && key.indexOf('dlq:') === 0) {
-          out.push(value);
-        }
-      } catch (e) {}
-    });
-    stream.on('error', () => resolve(out));
-    stream.on('end', () => resolve(out));
-  });
+  try {
+    // For now, return empty array since we're still implementing DLQ reading
+    // In full implementation, this would query the event-dlq Kafka topic
+    return [];
+  } catch (e) {
+    console.warn('listDLQEvents failed:', e && e.message ? e.message : e);
+    return [];
+  }
 }
 
-// requeue a DLQ event back into pending queue
+// Requeue a DLQ event back into pending queue
 async function requeueDLQ(id) {
-  if (!db || !id) return false;
+  if (!id) return false;
   try {
-    const dlqKey = 'dlq:' + id;
-    const rec = await db.get(dlqKey).catch(() => null);
-    if (!rec) return false;
-    // reset attempts/status and move back to evt:<id>
-    rec.attempts = 0; rec.status = 'pending'; rec.lastError = null;
-    await db.put('evt:' + id, rec).catch(()=>{});
-    await db.del(dlqKey).catch(()=>{});
+    // TODO: Implement DLQ requeuing via Kafka
+    // For now, just enqueue the ID
     _enqueueSend(id);
     return true;
   } catch (e) { return false; }
@@ -327,6 +228,7 @@ async function requeueDLQ(id) {
 async function publishEvent(obj, opts) {
   // New behavior: persist event first, update registry immediately for discovery,
   // enqueue for reliable Kafka delivery with retries and DLQ.
+  // All events use standardized payload{} structure - no detail field.
   try {
     const evt = (typeof obj === 'string') ? JSON.parse(obj) : (obj || {});
     opts = opts || {};
@@ -358,29 +260,60 @@ async function publishEvent(obj, opts) {
       actor = actorFromEvt || (actorFromHeaders.user || actorFromHeaders.role || actorFromHeaders.group ? actorFromHeaders : null);
     }
 
-    // If incoming event already has a 'payload' field, it's a proper envelope - preserve it
-    const isProperEnvelope = (evt.payload !== undefined);
+    // Normalize payload: extract from event.payload, event.detail, or wrap entire event
+    // Always use payload{} structure - no detail field
+    let normalizedPayload = {};
+    if (evt.payload !== undefined && typeof evt.payload === 'object') {
+      normalizedPayload = evt.payload;
+    } else if (evt.detail !== undefined && typeof evt.detail === 'object') {
+      normalizedPayload = evt.detail;
+    } else {
+      // Wrap any remaining fields as payload (but exclude metadata)
+      normalizedPayload = { ...evt };
+      delete normalizedPayload.id;
+      delete normalizedPayload.event;
+      delete normalizedPayload.module;
+      delete normalizedPayload.domain;
+      delete normalizedPayload.version;
+      delete normalizedPayload.ts;
+      delete normalizedPayload.producer;
+      delete normalizedPayload.actor;
+      delete normalizedPayload.payload;
+      delete normalizedPayload.detail;
+    }
+
     const rec = {
       id,
       event: canonicalEvent || (moduleName + ':event'),
       module: moduleName,
       domain: evt.domain || moduleName,
       version: version,
-      // Preserve payload if present, otherwise wrap entire event in detail for backward compat
-      ...(isProperEnvelope ? { payload: evt.payload } : { detail: evt.detail || evt || {} }),
+      payload: normalizedPayload,
       ts: ts,
       producer: producer,
       actor: actor,
       status: 'pending',
-      attempts: 0
+      attempts: 0,
+
+      // EVENT CLASSIFICATION - For dashboard segregation and workflow routing
+      eventType: evt.eventType || 'record',       // 'record' or 'field' (orchestrator classification)
+      eventClass: evt.eventClass || 'unknown',    // 'buttonEvent', 'fieldEvent', 'recordEvent' (original from billionerp)
+      action: evt.action || 'event',              // Specific action: 'added', 'updated', 'deleted', 'batch-updated'
+      level: evt.level || 'domain',               // 'domain' or 'technical' (field-level)
+
+      // BRIDGE METADATA - For accuracy tracking
+      source: evt.source || 'unknown',            // Where event came from: 'field-level-dispatcher'
+      bridgeForwarded: evt._bridgeForwarded || false,  // Was it forwarded through index.php bridge?
+      bridgeReceiveTime: evt._bridgeTimestamp || null, // Timestamp when bridge received it
+      receivedTime: Date.now()                    // Timestamp when orchestrator received it
     };
 
     // Preserve modal/session and routing metadata if present on incoming envelope
     try {
       if (evt && evt.modalSessionId) {
         rec.modalSessionId = evt.modalSessionId;
-      } else if (isProperEnvelope && evt.payload && evt.payload.modalSessionId) {
-        rec.modalSessionId = evt.payload.modalSessionId;
+      } else if (normalizedPayload && normalizedPayload.modalSessionId) {
+        rec.modalSessionId = normalizedPayload.modalSessionId;
       }
       // If incoming provided a canonicalEvent override, ensure it's reflected
       if (evt && evt.event) {
@@ -407,15 +340,27 @@ async function publishEvent(obj, opts) {
       }
     } catch (e) { /* ignore enrichment failures */ }
 
-    // persist durable event record
+    // persist durable event record to Kafka (best-effort, don't block on failure)
     try {
-      if (db) await db.put('evt:' + id, rec);
+      const persisted = await kafkaEventStore.persistEventRecord(producer, id, rec);
+      if (!persisted) {
+        console.warn('Event not persisted to Kafka but continuing:', id);
+      }
     } catch (e) {
-      console.error('Failed to persist event to DB', e && e.message ? e.message : e);
-      // If persistence fails, still update registry and broadcast (best-effort),
-      // but return failure so caller can know.
-      try { _updateRegistryAndBroadcast(rec); } catch(e2){}
-      return { ok: false, error: 'persist_failed' };
+      console.warn('Error during event persistence:', e && e.message ? e.message : e);
+      // Continue regardless - persistence is best-effort
+    }
+
+    // Route to permanent billionerp topics based on event type (field or record)
+    // These topics persist through cleanup operations
+    try {
+      const routed = await kafkaEventStore.routeToPermanentTopic(producer, id, rec);
+      if (!routed) {
+        console.warn('Event not routed to permanent topic but continuing:', id);
+      }
+    } catch (e) {
+      console.warn('Error routing to permanent topic:', e && e.message ? e.message : e);
+      // Continue regardless - routing is best-effort
     }
 
     // update registry and broadcast immediately for discovery using the persisted record (has id)
@@ -442,50 +387,21 @@ function _enqueueSend(id) {
 
 async function _processSend(id) {
   if (!id) return;
-  if (!db) { pendingSends.delete(id); return; }
   try {
-    const key = 'evt:' + id;
-    const rec = await db.get(key).catch(() => null);
-    if (!rec) { pendingSends.delete(id); return; }
-    if (rec.status === 'published') { pendingSends.delete(id); return; }
-
-    // attempt send
+    // Event is already persisted to Kafka event-records topic.
+    // This just marks it as available for workflow processing.
     try {
       if (producer && producer.send) {
-        await producer.send({ topic: TOPIC, messages: [{ key: rec.module, value: JSON.stringify(rec) }] });
-      } else {
-        throw new Error('producer-not-available');
-      }
-
-      // mark published
-      rec.status = 'published';
-      rec.publishedTs = Date.now();
-      await db.put(key, rec).catch(()=>{});
-      pendingSends.delete(id);
-      return;
-    } catch (e) {
-      rec.attempts = (rec.attempts || 0) + 1;
-      rec.lastError = (e && e.message) ? e.message : String(e);
-      // update record
-      try { await db.put(key, rec).catch(()=>{}); } catch(e2){}
-      if ((rec.attempts || 0) >= MAX_SEND_ATTEMPTS) {
-        // move to DLQ
-        try { await db.put('dlq:' + id, rec).catch(()=>{}); } catch(e3){}
-        try { await db.del(key).catch(()=>{}); } catch(e4){}
+        // Signal that this event is ready for workflow dispatch
+        await producer.send({ topic: TOPIC, messages: [{ key: id, value: JSON.stringify({ id, status: 'ready' }) }] });
         pendingSends.delete(id);
-        console.error('Event moved to DLQ', id, rec.lastError);
-        // broadcast failure notice to SSE clients
-        var promotedModal = null;
-        try { promotedModal = rec && (rec.modalSessionId || (rec.payload && rec.payload.modalSessionId) || (rec.detail && rec.detail.modalSessionId)) || null; } catch(e) { promotedModal = null; }
-        const payload = JSON.stringify({ ts: Date.now(), module: rec.module, event: rec.event, id, status: 'failed', modalSessionId: promotedModal, detail: rec });
-        for (const res of sseClients) {
-          try { res.write(`data: ${payload}\n\n`); } catch(e5){}
-        }
         return;
       }
-
-      // schedule retry with exponential backoff
-      const backoff = Math.min(300000, RETRY_BASE_MS * Math.pow(2, rec.attempts));
+    } catch (e) {
+      console.warn('Failed to send event via producer:', e && e.message ? e.message : e);
+      // Schedule retry with exponential backoff
+      const attempts = (pendingSends.has(id) ? 1 : 0);
+      const backoff = Math.min(300000, RETRY_BASE_MS * Math.pow(2, attempts));
       setTimeout(() => _processSend(id), backoff);
     }
   } catch (e) {
@@ -511,15 +427,46 @@ function _updateRegistryAndBroadcast(evt) {
     registry[module].events[evName] = (registry[module].events[evName] || 0) + 1;
     registry[module].total = Object.values(registry[module].events).reduce((s,v)=>s+v,0);
 
-    // persist module counts to local DB (best-effort)
-    try { _persistModule(module).catch(()=>{}); } catch(e){}
+    // update registry in Kafka (best-effort, async, don't block)
+    try {
+      kafkaEventStore.updateRegistryEntry(producer, `module:${module}`, registry[module]).catch(()=>{});
+    } catch(e) {}
 
     // Ensure modalSessionId is exposed at top-level for consumers if present anywhere in the envelope
     var promotedModalSession = null;
     try {
-      promotedModalSession = evt && (evt.modalSessionId || (evt.payload && evt.payload.modalSessionId) || (evt.detail && evt.detail.modalSessionId)) || null;
+      promotedModalSession = evt && (evt.modalSessionId || (evt.payload && evt.payload.modalSessionId)) || null;
     } catch (e) { promotedModalSession = null; }
-    const payload = JSON.stringify({ ts: Date.now(), module, event: evName, level: evt.level || 'domain', modalSessionId: promotedModalSession, detail: evt });
+
+    // Standardized envelope: use payload{} only, no detail field
+    // This is broadcast to live-dashboard.html via SSE for real-time display
+    const broadcastEnvelope = {
+      // Core identifiers
+      ts: Date.now(),
+      id: evt.id,
+      module: module,
+      event: evName,
+
+      // EVENT CLASSIFICATION (for segregation in UI)
+      eventType: evt.eventType || 'record',      // 'record' or 'field' → segregates RECORD EVENTS vs FIELD CHANGES
+      eventClass: evt.eventClass || 'unknown',   // 'buttonEvent', 'fieldEvent', 'recordEvent' → for detail logging
+      action: evt.action || 'event',             // Specific action: 'added', 'updated', 'deleted', 'batch-updated'
+      level: evt.level || 'domain',              // 'domain' or 'technical' → for filtering
+
+      // ACTOR & ROUTING
+      actor: evt.actor || null,
+      modalSessionId: promotedModalSession,
+
+      // DATA
+      payload: evt.payload || {},
+
+      // METADATA (for dashboard stats & monitoring)
+      source: evt.source || 'unknown',           // 'field-level-dispatcher', 'webhook', etc
+      bridgeForwarded: evt.bridgeForwarded || false,
+      processingTime: Date.now() - (evt.receivedTime || Date.now())  // How long to process in orchestrator
+    };
+    const payload = JSON.stringify(broadcastEnvelope);
+
     // broadcast to SSE clients
     for (const res of sseClients) {
       try {
@@ -542,6 +489,29 @@ function removeSSEClient(res) {
   sseClients.delete(res);
 }
 
+/**
+ * clearAllEvents - Clear all in-memory event data (for testing/debugging)
+ * Useful when you want to start fresh during integration testing
+ */
+async function clearAllEvents() {
+  try {
+    // Clear registry
+    for (const key in registry) {
+      delete registry[key];
+    }
+    // Clear seen events cache
+    seenEventMap.clear();
+    // Clear pending sends
+    pendingSends.clear();
+
+    console.log('[eventBus] Cleared all events and registries');
+    return { ok: true, message: 'All events cleared' };
+  } catch (e) {
+    console.error('[eventBus] clearAllEvents error:', e);
+    throw e;
+  }
+}
+
 module.exports = {
   init,
   publishEvent,
@@ -554,5 +524,6 @@ module.exports = {
   listAllEventRecords,
   deleteEventRecord,
   deleteEventsByFilter,
-  clearModuleRegistry
+  clearModuleRegistry,
+  clearAllEvents
 };

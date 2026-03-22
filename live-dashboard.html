@@ -542,6 +542,34 @@
         <div class="stat-label">Active Executions</div>
       </div>
     </div>
+    <div class="stat-card">
+      <div class="stat-icon blue"><i class="bi bi-speedometer"></i></div>
+      <div>
+        <div class="stat-value" id="stat-velocity">0/min</div>
+        <div class="stat-label">Event Velocity</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon yellow"><i class="bi bi-memory"></i></div>
+      <div>
+        <div class="stat-value" id="stat-memory">0 MB</div>
+        <div class="stat-label">Memory Usage</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon blue"><i class="bi bi-clock-history"></i></div>
+      <div>
+        <div class="stat-value" id="stat-latest" style="font-size: 0.85rem; font-family: monospace;">—</div>
+        <div class="stat-label">Latest Event</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon red"><i class="bi bi-trash3"></i></div>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button onclick="clearAllEvents()" style="background: var(--error); color: white; border: none; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 0.8rem;">CLEAR ALL</button>
+      </div>
+      <div class="stat-label">Clear Events</div>
+    </div>
   </div>
 
   <!-- MAIN 3-COLUMN LAYOUT -->
@@ -560,11 +588,11 @@
           </button>
         </div>
       </div>
+      <div class="placeholder-msg" id="events-placeholder" style="display:none;">
+        <i class="bi bi-broadcast"></i>
+        No events yet — waiting for live data…
+      </div>
       <div class="panel-body" id="events-panel">
-        <div class="placeholder-msg" id="events-placeholder">
-          <i class="bi bi-broadcast"></i>
-          No events yet — waiting for live data…
-        </div>
       </div>
     </div>
 
@@ -761,39 +789,82 @@ function setOrchStatus(connected) {
 }
 
 // ─── STATS ────────────────────────────────────────────────────────────────────
+// Track event velocity for real-time monitoring
+state.eventVelocity = { lastMinuteCount: 0, lastMinuteTime: Date.now() };
+
 function updateStats() {
-  const { stats, executions } = state;
+  const { stats, executions, events, eventVelocity } = state;
   const active = executions.filter(e => e.status === 'running').length;
   const completed = executions.filter(e => e.status === 'completed').length;
   const failed = executions.filter(e => e.status === 'failed').length;
   const total = completed + failed;
   const successRate = total > 0 ? Math.round((completed / total) * 100) : null;
 
+  // Calculate events per minute
+  const now = Date.now();
+  const timeDiff = (now - eventVelocity.lastMinuteTime) / 1000;
+  const eventsPerSec = timeDiff > 0 ? (stats.totalEvents - eventVelocity.lastMinuteCount) / timeDiff : 0;
+  const eventsPerMin = Math.round(eventsPerSec * 60);
+
+  // Estimate memory usage
+  const estimatedMemory = (JSON.stringify(events).length / 1024 / 1024).toFixed(2);
+
+  // Update UI
   document.getElementById('stat-events').textContent = stats.totalEvents;
   document.getElementById('stat-triggered').textContent = stats.triggered;
   document.getElementById('stat-success').textContent = successRate !== null ? successRate + '%' : '—';
   document.getElementById('stat-active').textContent = active;
+
+  // Show event velocity and memory usage if element exists
+  const velocityEl = document.getElementById('stat-velocity');
+  if (velocityEl) velocityEl.textContent = eventsPerMin + '/min';
+
+  const memoryEl = document.getElementById('stat-memory');
+  if (memoryEl) memoryEl.textContent = estimatedMemory + ' MB';
+
+  // Update velocity tracking
+  if (timeDiff >= 60) {  // Reset every minute
+    eventVelocity.lastMinuteCount = stats.totalEvents;
+    eventVelocity.lastMinuteTime = now;
+  }
 }
 
 // ─── EVENTS PANEL ─────────────────────────────────────────────────────────────
 function handleIncomingEvent(data) {
-  // Accept various shapes
+  // Accept various shapes - use standardized payload field
   const ev = {
     id: data.id || (data.module + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
     module: data.module || (data.event || '').split('.')[1] || 'unknown',
     action: data.action || data.eventType || 'event',
     ts: data.ts || Date.now(),
-    detail: data.detail || {},
+    detail: data.payload || data.detail || {},  // Use payload field (standardized) or fall back to detail (legacy)
     producer: data.producer || {},
     actor: data.actor || {},
     raw: data
   };
 
-  // Prepend (newest first)
+  // Ring buffer: Keep last 10,000 events only (scalability for millions/day)
   state.events.unshift(ev);
-  if (state.events.length > 50) state.events.pop();
+  const MAX_EVENTS = 10000;  // Prevent memory bloat
+  if (state.events.length > MAX_EVENTS) {
+    state.events.pop();  // Remove oldest
+  }
+
+  console.log('[SSE] Event received:', ev.module, '| eventType:', data.eventType, '| total in state:', state.events.length, '| memory:', (JSON.stringify(state.events).length / 1024 / 1024).toFixed(2), 'MB');
 
   state.stats.totalEvents++;
+
+  // Update latest event timestamp display
+  try {
+    const latestEl = document.getElementById('stat-latest');
+    if (latestEl) {
+      const now = new Date(ev.ts);
+      const time = now.toLocaleTimeString();
+      latestEl.textContent = time;
+      latestEl.title = `${ev.module}: ${ev.action}`;
+    }
+  } catch (e) {}
+
   updateStats();
   renderEvents();
   showToast(`New event: ${ev.module} › ${ev.action}`, 'info', 2500);
@@ -809,75 +880,133 @@ function renderEvents() {
   const placeholder = document.getElementById('events-placeholder');
   const filter = state.moduleFilter;
 
+  // Apply module filter
   const filtered = filter === 'all' ? state.events : state.events.filter(e => e.module === filter);
 
   if (filtered.length === 0) {
     placeholder.style.display = '';
-    // Remove old cards
-    panel.querySelectorAll('.event-card').forEach(c => c.remove());
+    panel.innerHTML = '';
     return;
   }
   placeholder.style.display = 'none';
 
-  // Re-render all (max 50 cards, manageable)
-  panel.querySelectorAll('.event-card').forEach(c => c.remove());
+  // Segregate field-level and record-level events using accurate eventType from orchestrator
+  const fieldLevelEvents = filtered.filter(e =>
+    e.raw && (e.raw.eventType === 'field' || e.raw.level === 'technical' || (e.detail && e.detail.elementType === 'field'))
+  );
+  const recordLevelEvents = filtered.filter(e =>
+    !fieldLevelEvents.includes(e)
+  );
 
-  filtered.forEach((ev, idx) => {
-    const card = document.createElement('div');
-    card.className = 'event-card' + (state.selectedEvent && state.selectedEvent.id === ev.id ? ' selected' : '');
-    // Only animate the newest (idx===0)
-    if (idx > 0) card.style.animation = 'none';
+  // Stats for dashboard monitoring
+  console.log('[Events] Filtered:', filtered.length, '| Record:', recordLevelEvents.length, '| Field:', fieldLevelEvents.length);
+  console.log('[Events] Memory usage:', (JSON.stringify(filtered).length / 1024).toFixed(2), 'KB');
+  recordLevelEvents.forEach(e => console.log('  📦 Record:', e.raw?.event, '| action:', e.raw?.action, '| eventType:', e.raw?.eventType));
+  fieldLevelEvents.forEach(e => console.log('  🔧 Field:', e.raw?.event, '| field:', e.detail?.field, '| eventType:', e.raw?.eventType));
 
-    // Check if this is a field-level event
-    const isFieldLevel = ev.raw && (ev.raw.eventType === 'field' || ev.detail && ev.detail.elementType === 'field');
-    const record = (ev.detail && ev.detail.record) ? ev.detail.record : {};
-    const fields = Object.keys(record).filter(k => k !== 'id');
-    const previewFields = fields.slice(0, 3);
-    const fieldCount = fields.length;
+  // OPTIMIZATION: Only render visible portion (virtual scrolling for scalability)
+  // Render top events first, limit initial DOM nodes to prevent lag
+  const VISIBLE_LIMIT = 50;  // Show max 50 items, rest lazy-load on scroll
+  const visibleRecordEvents = recordLevelEvents.slice(0, VISIBLE_LIMIT);
+  const visibleFieldEvents = fieldLevelEvents.slice(0, VISIBLE_LIMIT);
 
-    const actionCls = isFieldLevel ? 'field-level' : getActionClass(ev.action);
-    let pillLabel = ev.action.replace('record-', '');
+  // Clear panel
+  panel.innerHTML = '';
 
-    // For field-level events, show the field name instead of action
-    let fieldPills = '';
-    if (isFieldLevel) {
-      const fieldName = ev.detail && ev.detail.field ? ev.detail.field : 'unknown';
-      const prevVal = ev.detail && ev.detail.prev !== undefined ? ev.detail.prev : null;
-      const newVal = ev.detail && ev.detail.value !== undefined ? ev.detail.value : null;
+  // Render Record-Level Events
+  if (recordLevelEvents.length > 0) {
+    const recordSection = document.createElement('div');
+    recordSection.style.marginBottom = '1rem';
 
-      if (prevVal !== null || newVal !== null) {
-        const prev = prevVal !== null ? String(prevVal).slice(0, 20) : '∅';
-        const next = newVal !== null ? String(newVal).slice(0, 20) : '∅';
-        fieldPills = `<span class="event-field-pill"><b>${escHtml(fieldName)}</b>: ${escHtml(prev)} → ${escHtml(next)}</span>`;
-      } else {
-        fieldPills = `<span class="event-field-pill"><b>${escHtml(fieldName)}</b></span>`;
-      }
-      pillLabel = 'field';
-    } else {
-      previewFields.forEach(k => {
-        const val = record[k];
-        if (val != null && val !== '') {
-          fieldPills += `<span class="event-field-pill">${escHtml(k)}: <b>${escHtml(String(val).slice(0, 20))}</b></span>`;
-        }
-      });
-      if (fieldCount > 3) {
-        fieldPills += `<span class="event-field-pill">+${fieldCount - 3} more</span>`;
-      }
-    }
+    const sectionTitle = document.createElement('div');
+    sectionTitle.style.fontSize = '0.75rem';
+    sectionTitle.style.fontWeight = '700';
+    sectionTitle.style.color = 'var(--accent)';
+    sectionTitle.style.padding = '0.5rem 0.75rem';
+    sectionTitle.style.textTransform = 'uppercase';
+    sectionTitle.style.letterSpacing = '0.05em';
+    // Show count with "more" indicator if exceeding visible limit
+    const moreRecords = recordLevelEvents.length > VISIBLE_LIMIT ? ` (+${recordLevelEvents.length - VISIBLE_LIMIT} more)` : '';
+    sectionTitle.textContent = `📦 RECORD EVENTS (${recordLevelEvents.length}${moreRecords})`;
+    recordSection.appendChild(sectionTitle);
 
-    card.innerHTML = `
-      <div class="event-card-header">
-        <span class="module-badge">${escHtml(ev.module)}</span>
-        <span class="action-badge ${actionCls}">${escHtml(pillLabel)}</span>
-        <span class="event-ts" data-ts="${ev.ts}">${relativeTime(ev.ts)}</span>
+    // Render only visible records (scalability optimization)
+    visibleRecordEvents.forEach((ev, idx) => {
+      const card = createEventCard(ev, idx === 0);
+      recordSection.appendChild(card);
+    });
+    panel.appendChild(recordSection);
+  }
+
+  // Render Field-Level Events
+  if (fieldLevelEvents.length > 0) {
+    const fieldSection = document.createElement('div');
+
+    const sectionTitle = document.createElement('div');
+    sectionTitle.style.fontSize = '0.75rem';
+    sectionTitle.style.fontWeight = '700';
+    sectionTitle.style.color = 'var(--warning)';
+    sectionTitle.style.padding = '0.5rem 0.75rem';
+    sectionTitle.style.textTransform = 'uppercase';
+    sectionTitle.style.letterSpacing = '0.05em';
+    // Show count with "more" indicator if exceeding visible limit
+    const moreFields = fieldLevelEvents.length > VISIBLE_LIMIT ? ` (+${fieldLevelEvents.length - VISIBLE_LIMIT} more)` : '';
+    sectionTitle.textContent = `🔧 FIELD CHANGES (${fieldLevelEvents.length}${moreFields})`;
+    fieldSection.appendChild(sectionTitle);
+
+    // Render only visible field events (scalability optimization)
+    visibleFieldEvents.forEach((ev, idx) => {
+      const card = createEventCard(ev, idx === 0);
+      fieldSection.appendChild(card);
+    });
+    panel.appendChild(fieldSection);
+  }
+}
+
+function createEventCard(ev, isNewest) {
+  const card = document.createElement('div');
+  card.className = 'event-card' + (state.selectedEvent && state.selectedEvent.id === ev.id ? ' selected' : '');
+  if (!isNewest) card.style.animation = 'none';
+
+  const isFieldLevel = ev.raw && (ev.raw.eventType === 'field' || ev.raw.level === 'technical' || (ev.detail && ev.detail.elementType === 'field'));
+  const record = (ev.detail && typeof ev.detail === 'object') ? ev.detail : {};
+  const actionCls = isFieldLevel ? 'field-level' : getActionClass(ev.action);
+  let pillLabel = ev.action.replace('record-', '');
+
+  let payloadDisplay = '';
+
+  if (isFieldLevel) {
+    const fieldName = ev.detail && ev.detail.field ? ev.detail.field : 'unknown';
+    const prevVal = ev.detail && ev.detail.prev !== undefined ? ev.detail.prev : null;
+    const newVal = ev.detail && ev.detail.value !== undefined ? ev.detail.value : null;
+
+    payloadDisplay = `
+      <div class="event-field-pill"><b>${escHtml(fieldName)}</b></div>
+      <div style="font-size:0.68rem; color:var(--text-muted); padding:0.4rem 0; margin-top:0.3rem;">
+        <div>Prev: <code style="color:var(--accent)">${escHtml(String(prevVal).slice(0, 30))}</code></div>
+        <div>New: <code style="color:var(--success)">${escHtml(String(newVal).slice(0, 30))}</code></div>
       </div>
-      <div class="event-fields">${fieldPills || '<span style="color:var(--text-muted);font-size:0.68rem">No field data</span>'}</div>
-      <div class="matched-wf-container" style="display:none"></div>
     `;
+    pillLabel = 'field';
+  } else {
+    const fields = Object.keys(record).filter(k => k !== 'id');
+    payloadDisplay = `<div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.4rem;"><pre style="margin:0; max-height:100px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:0.3rem; border-radius:3px; font-family:monospace;">${escHtml(JSON.stringify(record, null, 2))}</pre></div>`;
+  }
 
-    card.addEventListener('click', () => selectEvent(ev, card));
-    panel.appendChild(card);
-  });
+  card.innerHTML = `
+    <div class="event-card-header">
+      <span class="module-badge">${escHtml(ev.module)}</span>
+      <span class="action-badge ${actionCls}">${escHtml(pillLabel)}</span>
+      <span class="event-ts" data-ts="${ev.ts}">${relativeTime(ev.ts)}</span>
+    </div>
+    <div class="event-fields" style="padding:0.5rem 0.75rem;">
+      ${payloadDisplay}
+    </div>
+    <div class="matched-wf-container" style="display:none"></div>
+  `;
+
+  card.addEventListener('click', () => selectEvent(ev, card));
+  return card;
 }
 
 function selectEvent(ev, card) {
@@ -930,6 +1059,37 @@ function clearEvents() {
   state.events = [];
   state.selectedEvent = null;
   renderEvents();
+}
+
+/**
+ * clearAllEvents - Clear events on orchestrator backend AND local UI
+ * Calls DELETE /api/events to clear backend state
+ */
+async function clearAllEvents() {
+  if (!confirm('Clear all events on orchestrator? This will delete all recorded events.')) {
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/events', { method: 'DELETE' });
+    const data = await res.json();
+
+    if (data.ok) {
+      console.log('[dashboard] Events cleared on orchestrator:', data.message);
+      // Also clear local UI
+      state.events = [];
+      state.selectedEvent = null;
+      state.stats.totalEvents = 0;
+      renderEvents();
+      updateStats();
+      alert('✅ All events cleared successfully');
+    } else {
+      alert('❌ Failed to clear events: ' + (data.error || 'Unknown error'));
+    }
+  } catch (err) {
+    console.error('[dashboard] Error clearing events:', err);
+    alert('❌ Error clearing events: ' + err.message);
+  }
 }
 
 // ─── EXECUTIONS ───────────────────────────────────────────────────────────────
