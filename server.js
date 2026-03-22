@@ -737,10 +737,32 @@ app.post('/api/events/requeue/:id', async (req, res) => {
 });
 
 // GET /api/events/history - Return recent events for dashboard hydration on refresh
+// Primary: Kafka write-through cache. Fallback: in-memory eventHistory
 app.get('/api/events/history', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 200, 500);
-  const events = eventBus.getEventHistory(limit);
-  res.json({ ok: true, events, total: events.length });
+  const module = req.query.module || null;
+
+  // Try Kafka cache first (enterprise-grade, survives restarts)
+  const kafkaEventStore = require('./services/kafkaEventStore');
+  let events = kafkaEventStore.getCachedEventRecords(limit);
+
+  // Filter by module if requested
+  if (module && events.length > 0) {
+    events = events.filter(e => e.module === module);
+  }
+
+  // Fallback to in-memory history if Kafka cache is empty
+  if (events.length === 0) {
+    events = eventBus.getEventHistory(limit);
+    if (module) events = events.filter(e => e.module === module);
+  }
+
+  res.json({
+    ok: true,
+    events: events.slice(0, limit),
+    total: events.length,
+    source: kafkaEventStore.isCacheReady() ? 'kafka' : 'memory'
+  });
 });
 
 // DELETE /api/events - Clear all events (useful for testing/debugging)

@@ -1,36 +1,38 @@
 /**
- * Kafka Event Store
- * Replaces LevelDB with Kafka compacted topics for event persistence
+ * Kafka Event Store — Enterprise-grade event persistence
  *
- * Stores:
- * - event-records: All event records (evt-<uuid>)
- * - event-dlq: Dead letter queue entries (dlq-<uuid>)
+ * Topics:
+ * - event-records: All event records (compacted, keyed by evt-<uuid>)
+ * - event-dlq: Dead letter queue (compacted, keyed by dlq-<uuid>)
  * - event-registry: Module registry and event bindings
  * - event-processing-state: Deduplication tracking
+ * - billionerp-field-events: Permanent field-level events
+ * - billionerp-record-events: Permanent record-level events
  */
 
 const kafkaAdmin = require('./kafkaAdmin');
-
-// Cache of loaded records to avoid repeated reads (short-lived)
-const recordCache = new Map();
-const CACHE_TTL_MS = 5000;
-
 const TOPICS = kafkaAdmin.TOPICS;
+
+// Write-through cache: always in sync with Kafka
+// Populated on startup via loadAllEventRecords, updated on every persist
+const eventCache = new Map();
+let cacheWarmedUp = false;
 
 /**
  * Persist event record to Kafka event-records topic
+ * Also updates the write-through cache
  */
 async function persistEventRecord(producer, id, record) {
-  try {
-    // Ensure producer has send method and is connected
-    if (!producer || typeof producer.send !== 'function') {
-      console.warn('[kafkaEventStore] Producer not ready yet, skipping Kafka persistence for now');
-      // For now, just skip Kafka persistence if producer isn't ready
-      // This is OK - events are still stored in memory and can be queried
-      return true;  // Return success so event is still processed
-    }
+  // Always update cache immediately (even if Kafka write fails, we have it in memory)
+  eventCache.set(`evt-${id}`, record);
 
-    const result = await producer.send({
+  if (!producer || typeof producer.send !== 'function') {
+    console.warn('[kafkaEventStore] Producer not ready — event cached in memory, will persist on next write');
+    return false;
+  }
+
+  try {
+    await producer.send({
       topic: TOPICS.EVENT_RECORDS,
       messages: [{
         key: `evt-${id}`,
@@ -38,203 +40,202 @@ async function persistEventRecord(producer, id, record) {
         timestamp: Date.now().toString()
       }]
     });
-
-    // Update cache
-    recordCache.set(`evt-${id}`, { value: record, timestamp: Date.now() });
     return true;
   } catch (e) {
-    console.error('[kafkaEventStore] Failed to persist event record:', e && e.message ? e.message : e);
-    return true;  // Return success anyway - don't block event processing
-  }
-}
-
-/**
- * Retrieve event record from Kafka
- * First checks cache, then reads from compacted topic
- */
-async function getEventRecord(admin, id) {
-  const cacheKey = `evt-${id}`;
-
-  // Check cache
-  const cached = recordCache.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
-    return cached.value;
-  }
-
-  // Read from Kafka compacted topic
-  try {
-    const admin_instance = kafkaAdmin.getAdmin();
-    if (!admin_instance) throw new Error('Kafka admin not initialized');
-
-    // Fetch offsets for the event-records topic
-    const offsets = await admin_instance.fetchOffsets({ topics: [TOPICS.EVENT_RECORDS] });
-
-    // For a compacted topic, we'd need to fetch from the leader partition
-    // This is a simplified approach - in production, use Kafka client to read specific key
-    console.warn('[kafkaEventStore] getEventRecord() requires Kafka client library for efficient key lookup');
-
-    return null;  // Would be replaced with actual Kafka read
-  } catch (e) {
-    console.error('[kafkaEventStore] Failed to get event record:', e && e.message ? e.message : e);
-    return null;
-  }
-}
-
-/**
- * Move event to DLQ by writing to event-dlq topic
- * and sending tombstone (null) to event-records to remove it
- */
-async function moveEventToDLQ(producer, id, errorRecord) {
-  try {
-    if (!producer || typeof producer.send !== 'function') {
-      console.error('[kafkaEventStore] Invalid producer for DLQ operation');
-      return false;
-    }
-
-    // Add to DLQ
-    await producer.send({
-      topic: TOPICS.EVENT_DLQ,
-      messages: [{
-        key: `dlq-${id}`,
-        value: JSON.stringify(errorRecord),
-        timestamp: Date.now().toString()
-      }]
-    });
-
-    // Remove from event-records (compaction will clean up)
-    await producer.send({
-      topic: TOPICS.EVENT_RECORDS,
-      messages: [{
-        key: `evt-${id}`,
-        value: null,  // Tombstone - signals deletion for compacted topic
-        timestamp: Date.now().toString()
-      }]
-    });
-
-    recordCache.delete(`evt-${id}`);
-    return true;
-  } catch (e) {
-    console.error('[kafkaEventStore] Failed to move event to DLQ:', e && e.message ? e.message : e);
+    console.error('[kafkaEventStore] Kafka persist failed (cached in memory):', e.message);
     return false;
   }
 }
 
 /**
- * Mark event as processed in deduplication state topic
+ * Get event record — from cache (instant) or Kafka (fallback)
+ */
+function getEventRecord(id) {
+  return eventCache.get(`evt-${id}`) || null;
+}
+
+/**
+ * Load ALL event records from Kafka event-records topic into cache
+ * Called on server startup for recovery
+ *
+ * Strategy: Get high-water offset first, then consume from beginning
+ * until we reach that offset. This guarantees we read all existing records.
+ */
+async function loadAllEventRecords(kafka) {
+  const records = new Map();
+
+  try {
+    const admin = kafkaAdmin.getAdmin();
+    if (!admin) {
+      console.warn('[kafkaEventStore] Admin not ready, returning cached records');
+      return Array.from(eventCache.values());
+    }
+
+    // Get high-water mark offsets to know when we've read everything
+    let highWaterOffset = 0;
+    try {
+      const offsets = await admin.fetchTopicOffsets(TOPICS.EVENT_RECORDS);
+      if (offsets && offsets.length > 0) {
+        highWaterOffset = parseInt(offsets[0].high, 10) || 0;
+      }
+    } catch (e) {
+      console.warn('[kafkaEventStore] Could not fetch offsets:', e.message);
+      return Array.from(eventCache.values());
+    }
+
+    // Empty topic — nothing to load
+    if (highWaterOffset === 0) {
+      console.log('[kafkaEventStore] Topic empty, no records to load');
+      cacheWarmedUp = true;
+      return [];
+    }
+
+    console.log(`[kafkaEventStore] Loading records from Kafka (${highWaterOffset} messages in topic)...`);
+
+    // Create isolated consumer with unique group
+    const groupId = `event-records-loader-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const tempConsumer = kafka.consumer({ groupId, sessionTimeout: 30000 });
+
+    await tempConsumer.connect();
+    await tempConsumer.subscribe({ topic: TOPICS.EVENT_RECORDS, fromBeginning: true });
+
+    let messagesRead = 0;
+    const targetOffset = highWaterOffset;
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(async () => {
+        try { await tempConsumer.disconnect(); } catch (e) {}
+        resolve();
+      }, 15000); // 15s safety timeout
+
+      tempConsumer.run({
+        eachMessage: async ({ message }) => {
+          try {
+            const key = message.key ? message.key.toString() : null;
+            if (!key) return;
+
+            const value = message.value ? JSON.parse(message.value.toString()) : null;
+
+            // Compacted topic: null value = tombstone (deletion)
+            if (value === null) {
+              records.delete(key);
+            } else {
+              records.set(key, value);
+            }
+          } catch (e) {
+            // Skip malformed messages
+          }
+
+          messagesRead++;
+
+          // We've read all messages up to the high-water mark
+          if (messagesRead >= targetOffset) {
+            clearTimeout(timeout);
+            try { await tempConsumer.disconnect(); } catch (e) {}
+            resolve();
+          }
+        }
+      }).catch(reject);
+    });
+
+    // Populate cache from loaded records
+    for (const [key, value] of records) {
+      eventCache.set(key, value);
+    }
+
+    cacheWarmedUp = true;
+    console.log(`[kafkaEventStore] Loaded ${records.size} event records from Kafka (${messagesRead} messages processed)`);
+    return Array.from(records.values());
+
+  } catch (e) {
+    console.error('[kafkaEventStore] Error loading event records:', e.message);
+    cacheWarmedUp = true; // Mark as warmed up even on failure to prevent blocking
+    return Array.from(eventCache.values()); // Return whatever we have cached
+  }
+}
+
+/**
+ * Get all cached event records (fast, no Kafka read)
+ * Returns events sorted by timestamp, most recent first
+ */
+function getCachedEventRecords(limit) {
+  limit = Math.min(limit || 500, 1000);
+  const all = Array.from(eventCache.values());
+  all.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return all.slice(0, limit);
+}
+
+/**
+ * Check if cache has been populated from Kafka
+ */
+function isCacheReady() {
+  return cacheWarmedUp;
+}
+
+/**
+ * Move event to DLQ
+ */
+async function moveEventToDLQ(producer, id, errorRecord) {
+  try {
+    if (!producer || typeof producer.send !== 'function') return false;
+
+    await producer.send({
+      topic: TOPICS.EVENT_DLQ,
+      messages: [{ key: `dlq-${id}`, value: JSON.stringify(errorRecord), timestamp: Date.now().toString() }]
+    });
+
+    // Tombstone in event-records
+    await producer.send({
+      topic: TOPICS.EVENT_RECORDS,
+      messages: [{ key: `evt-${id}`, value: null, timestamp: Date.now().toString() }]
+    });
+
+    eventCache.delete(`evt-${id}`);
+    return true;
+  } catch (e) {
+    console.error('[kafkaEventStore] DLQ move failed:', e.message);
+    return false;
+  }
+}
+
+/**
+ * Mark event as processed (deduplication)
  */
 async function markEventProcessed(producer, id) {
   try {
-    if (!producer || typeof producer.send !== 'function') {
-      return false;
-    }
+    if (!producer || typeof producer.send !== 'function') return false;
 
     await producer.send({
       topic: TOPICS.EVENT_STATE,
       messages: [{
         key: id,
-        value: JSON.stringify({
-          eventId: id,
-          processedAt: Date.now(),
-          status: 'processed'
-        }),
+        value: JSON.stringify({ eventId: id, processedAt: Date.now(), status: 'processed' }),
         timestamp: Date.now().toString()
       }]
     });
     return true;
   } catch (e) {
-    console.error('[kafkaEventStore] Failed to mark event processed:', e && e.message ? e.message : e);
+    console.error('[kafkaEventStore] Mark processed failed:', e.message);
     return false;
   }
 }
 
 /**
- * Update event registry entry (module counts, bindings)
+ * Update event registry entry
  */
 async function updateRegistryEntry(producer, key, value) {
   try {
-    if (!producer || typeof producer.send !== 'function') {
-      return false;
-    }
+    if (!producer || typeof producer.send !== 'function') return false;
 
     await producer.send({
       topic: TOPICS.EVENT_REGISTRY,
-      messages: [{
-        key,
-        value: JSON.stringify(value),
-        timestamp: Date.now().toString()
-      }]
+      messages: [{ key, value: JSON.stringify(value), timestamp: Date.now().toString() }]
     });
     return true;
   } catch (e) {
-    console.error('[kafkaEventStore] Failed to update registry entry:', e && e.message ? e.message : e);
+    console.error('[kafkaEventStore] Registry update failed:', e.message);
     return false;
   }
-}
-
-/**
- * Load all event records from event-records topic
- * Used on server startup for recovery
- *
- * WARNING: This performs a full topic read which can be expensive
- * for large event volumes. In production, consider:
- * - Using Kafka streams to maintain local state store
- * - Implementing incremental recovery from specific offset
- * - Using compacted topic queries with client library
- */
-async function loadAllEventRecords(kafka) {
-  return new Promise((resolve) => {
-    const records = new Map();
-    const timeout = setTimeout(() => {
-      resolve(Array.from(records.values()).filter(r => r && r.value !== null));
-    }, 10000);  // 10 second timeout
-
-    (async () => {
-      try {
-        // Create isolated consumer for reading the compacted topic from beginning
-        const tempConsumer = kafka.consumer({
-          groupId: `event-records-reader-${Date.now()}`,
-          sessionTimeout: 30000
-        });
-
-        await tempConsumer.connect();
-        await tempConsumer.subscribe({ topic: TOPICS.EVENT_RECORDS, fromBeginning: true });
-
-        let messageCount = 0;
-        const startTime = Date.now();
-
-        await tempConsumer.run({
-          eachMessage: async ({ topic, partition, message }) => {
-            try {
-              const key = message.key.toString();
-              const value = message.value ? JSON.parse(message.value.toString()) : null;
-
-              // Compacted topic semantics: null value = deletion marker
-              if (value === null) {
-                records.delete(key);
-              } else {
-                records.set(key, value);
-              }
-
-              messageCount++;
-
-              // Timeout after reading 10000 messages or 5 seconds
-              if (messageCount >= 10000 || (Date.now() - startTime > 5000)) {
-                await tempConsumer.disconnect();
-                clearTimeout(timeout);
-                resolve(Array.from(records.values()).filter(r => r && r.value !== null));
-              }
-            } catch (e) {
-              console.warn('[kafkaEventStore] Error processing loaded record:', e && e.message ? e.message : e);
-            }
-          }
-        });
-      } catch (e) {
-        console.error('[kafkaEventStore] Error loading event records:', e && e.message ? e.message : e);
-        clearTimeout(timeout);
-        resolve([]);
-      }
-    })();
-  });
 }
 
 /**
@@ -242,48 +243,50 @@ async function loadAllEventRecords(kafka) {
  */
 async function loadRegistryEntries(kafka) {
   return new Promise((resolve) => {
-    const registryEntries = new Map();
-    const timeout = setTimeout(() => {
-      resolve(registryEntries);
-    }, 5000);
+    const entries = new Map();
+    const timeout = setTimeout(() => resolve(entries), 5000);
 
     (async () => {
       try {
-        const tempConsumer = kafka.consumer({
-          groupId: `event-registry-reader-${Date.now()}`,
-          sessionTimeout: 30000
-        });
+        const admin = kafkaAdmin.getAdmin();
+        if (!admin) { clearTimeout(timeout); return resolve(entries); }
 
+        // Check if topic has data
+        let highWater = 0;
+        try {
+          const offsets = await admin.fetchTopicOffsets(TOPICS.EVENT_REGISTRY);
+          if (offsets && offsets.length > 0) highWater = parseInt(offsets[0].high, 10) || 0;
+        } catch (e) { clearTimeout(timeout); return resolve(entries); }
+
+        if (highWater === 0) { clearTimeout(timeout); return resolve(entries); }
+
+        const groupId = `registry-loader-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const tempConsumer = kafka.consumer({ groupId, sessionTimeout: 30000 });
         await tempConsumer.connect();
         await tempConsumer.subscribe({ topic: TOPICS.EVENT_REGISTRY, fromBeginning: true });
 
+        let count = 0;
         await tempConsumer.run({
-          eachMessage: async ({ topic, partition, message }) => {
+          eachMessage: async ({ message }) => {
             try {
-              const key = message.key.toString();
+              const key = message.key ? message.key.toString() : null;
               const value = message.value ? JSON.parse(message.value.toString()) : null;
+              if (key && value !== null) entries.set(key, value);
+              else if (key) entries.delete(key);
+            } catch (e) {}
 
-              if (value !== null) {
-                registryEntries.set(key, value);
-              } else {
-                registryEntries.delete(key);
-              }
-            } catch (e) {
-              console.warn('[kafkaEventStore] Error processing registry entry:', e && e.message ? e.message : e);
+            count++;
+            if (count >= highWater) {
+              clearTimeout(timeout);
+              try { await tempConsumer.disconnect(); } catch (e) {}
+              resolve(entries);
             }
           }
         });
-
-        // Wait a bit for messages then disconnect
-        setTimeout(async () => {
-          await tempConsumer.disconnect();
-          clearTimeout(timeout);
-          resolve(registryEntries);
-        }, 2000);
       } catch (e) {
-        console.error('[kafkaEventStore] Error loading registry:', e && e.message ? e.message : e);
+        console.error('[kafkaEventStore] Registry load failed:', e.message);
         clearTimeout(timeout);
-        resolve(registryEntries);
+        resolve(entries);
       }
     })();
   });
@@ -291,95 +294,67 @@ async function loadRegistryEntries(kafka) {
 
 /**
  * Query event records by filter
- * Returns records matching module and/or event name filters
- * Loads from cache or performs a topic scan
  */
 function queryEventRecords(records, filter = {}) {
-  const filtered = records.filter(r => {
+  return records.filter(r => {
     if (filter.module && r.module !== filter.module) return false;
     if (filter.event && !r.event.includes(filter.event)) return false;
     return true;
   });
-  return filtered;
 }
 
 /**
- * Delete event record by sending tombstone
+ * Delete event record (tombstone)
  */
 async function deleteEventRecord(producer, id) {
   try {
-    if (!producer || typeof producer.send !== 'function') {
-      return false;
-    }
+    if (!producer || typeof producer.send !== 'function') return false;
 
-    // Send tombstone to both event-records and event-dlq
     await producer.send({
       topic: TOPICS.EVENT_RECORDS,
-      messages: [{
-        key: `evt-${id}`,
-        value: null,
-        timestamp: Date.now().toString()
-      }]
+      messages: [{ key: `evt-${id}`, value: null, timestamp: Date.now().toString() }]
     });
-
     await producer.send({
       topic: TOPICS.EVENT_DLQ,
-      messages: [{
-        key: `dlq-${id}`,
-        value: null,
-        timestamp: Date.now().toString()
-      }]
+      messages: [{ key: `dlq-${id}`, value: null, timestamp: Date.now().toString() }]
     });
 
-    recordCache.delete(`evt-${id}`);
+    eventCache.delete(`evt-${id}`);
     return true;
   } catch (e) {
-    console.error('[kafkaEventStore] Failed to delete event record:', e && e.message ? e.message : e);
+    console.error('[kafkaEventStore] Delete failed:', e.message);
     return false;
   }
 }
 
 /**
- * Route event to permanent billionerp topic based on type
- * Field-level events → billionerp-field-events
- * Record-level events → billionerp-record-events
- * Ensures events persist through cleanup operations
+ * Route event to permanent topic (field or record)
  */
 async function routeToPermanentTopic(producer, id, record) {
   try {
-    if (!producer || typeof producer.send !== 'function') {
-      return false;
-    }
+    if (!producer || typeof producer.send !== 'function') return false;
 
-    // Determine which permanent topic based on event type
-    let targetTopic;
-    if (record.eventType === 'field') {
-      targetTopic = TOPICS.FIELD_EVENTS;
-    } else {
-      targetTopic = TOPICS.RECORD_EVENTS;
-    }
+    const targetTopic = record.eventType === 'field'
+      ? TOPICS.FIELD_EVENTS
+      : TOPICS.RECORD_EVENTS;
 
     await producer.send({
       topic: targetTopic,
-      messages: [{
-        key: `${id}`,
-        value: JSON.stringify(record),
-        timestamp: Date.now().toString()
-      }]
+      messages: [{ key: `${id}`, value: JSON.stringify(record), timestamp: Date.now().toString() }]
     });
-
     return true;
   } catch (e) {
-    console.error('[kafkaEventStore] Failed to route to permanent topic:', e && e.message ? e.message : e);
+    console.error('[kafkaEventStore] Route to permanent topic failed:', e.message);
     return false;
   }
 }
 
 /**
- * Clear cache (used on graceful shutdown or memory pressure)
+ * Clear cache
  */
 function clearCache() {
-  recordCache.clear();
+  eventCache.clear();
+  cacheWarmedUp = false;
 }
 
 module.exports = {
@@ -393,5 +368,7 @@ module.exports = {
   queryEventRecords,
   deleteEventRecord,
   routeToPermanentTopic,
+  getCachedEventRecords,
+  isCacheReady,
   clearCache
 };

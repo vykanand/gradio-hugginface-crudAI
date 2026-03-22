@@ -517,8 +517,9 @@ async function clearAllEvents() {
     seenEventMap.clear();
     pendingSends.clear();
     eventHistory.length = 0;
+    kafkaEventStore.clearCache();
 
-    console.log('[eventBus] Cleared all events and registries');
+    console.log('[eventBus] Cleared all events, registries, and Kafka cache');
     return { ok: true, message: 'All events cleared' };
   } catch (e) {
     console.error('[eventBus] clearAllEvents error:', e);
