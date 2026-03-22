@@ -301,10 +301,10 @@ async function publishEvent(obj, opts) {
       action: evt.action || 'event',              // Specific action: 'added', 'updated', 'deleted', 'batch-updated'
       level: evt.level || 'domain',               // 'domain' or 'technical' (field-level)
 
-      // BRIDGE METADATA - For accuracy tracking
+      // BRIDGE METADATA - For accuracy tracking (normalized format per EVENT_SCHEMA.md)
       source: evt.source || 'unknown',            // Where event came from: 'field-level-dispatcher'
-      bridgeForwarded: evt._bridgeForwarded || false,  // Was it forwarded through index.php bridge?
-      bridgeReceiveTime: evt._bridgeTimestamp || null, // Timestamp when bridge received it
+      bridgeForwarded: evt.bridgeForwarded || evt._bridgeForwarded || false,  // Was it forwarded through index.php bridge?
+      bridgeReceiveTime: evt.bridgeReceiveTime || evt._bridgeTimestamp || null, // Timestamp when bridge received it (milliseconds)
       receivedTime: Date.now()                    // Timestamp when orchestrator received it
     };
 
