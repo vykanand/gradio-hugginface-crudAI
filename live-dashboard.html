@@ -1487,10 +1487,30 @@ function adjustLayout() {
   main.style.height = `calc(100vh - ${header}px - ${statsRow}px - ${bottomBar}px)`;
 }
 
+// ─── HYDRATE HISTORY ──────────────────────────────────────────────────────────
+async function loadEventHistory() {
+  try {
+    const res = await fetch('/api/events/history?limit=200');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.ok && Array.isArray(data.events)) {
+      // Replay events oldest-first so dashboard builds up in correct order
+      const sorted = data.events.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      sorted.forEach(evt => handleIncomingEvent(evt));
+      if (sorted.length > 0) {
+        showToast(`Loaded ${sorted.length} historical events`, 'success', 2000);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load event history:', e.message);
+  }
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function init() {
   await loadModules();
-  connectSSE();
+  await loadEventHistory();  // Hydrate dashboard with stored events before SSE
+  connectSSE();              // Then connect for live updates
 
   // Poll executions every 3 seconds
   await fetchExecutions();
