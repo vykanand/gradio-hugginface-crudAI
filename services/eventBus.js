@@ -19,6 +19,10 @@ const RECORD_EVENTS_TOPIC = process.env.RECORD_EVENTS_TOPIC || 'billionerp-recor
 const registry = {};
 const sseClients = new Set();
 
+// In-memory event history (survives SSE reconnect, lost on server restart)
+const MAX_HISTORY = 500;
+const eventHistory = [];
+
 // Track recently seen event ids to avoid double-counting
 const seenEventMap = new Map();
 const SEEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -465,6 +469,10 @@ function _updateRegistryAndBroadcast(evt) {
       bridgeForwarded: evt.bridgeForwarded || false,
       processingTime: Date.now() - (evt.receivedTime || Date.now())  // How long to process in orchestrator
     };
+    // Store in history for dashboard hydration on refresh
+    eventHistory.push(broadcastEnvelope);
+    if (eventHistory.length > MAX_HISTORY) eventHistory.shift();
+
     const payload = JSON.stringify(broadcastEnvelope);
 
     // broadcast to SSE clients
@@ -490,19 +498,25 @@ function removeSSEClient(res) {
 }
 
 /**
+ * getEventHistory - Return in-memory event history for dashboard hydration
+ */
+function getEventHistory(limit) {
+  limit = Math.min(limit || 200, MAX_HISTORY);
+  return eventHistory.slice(-limit);
+}
+
+/**
  * clearAllEvents - Clear all in-memory event data (for testing/debugging)
  * Useful when you want to start fresh during integration testing
  */
 async function clearAllEvents() {
   try {
-    // Clear registry
     for (const key in registry) {
       delete registry[key];
     }
-    // Clear seen events cache
     seenEventMap.clear();
-    // Clear pending sends
     pendingSends.clear();
+    eventHistory.length = 0;
 
     console.log('[eventBus] Cleared all events and registries');
     return { ok: true, message: 'All events cleared' };
@@ -525,5 +539,6 @@ module.exports = {
   deleteEventRecord,
   deleteEventsByFilter,
   clearModuleRegistry,
-  clearAllEvents
+  clearAllEvents,
+  getEventHistory
 };

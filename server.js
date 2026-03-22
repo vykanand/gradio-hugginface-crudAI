@@ -737,18 +737,10 @@ app.post('/api/events/requeue/:id', async (req, res) => {
 });
 
 // GET /api/events/history - Return recent events for dashboard hydration on refresh
-app.get('/api/events/history', async (req, res) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit) || 200, 500);
-    const records = await eventBus.listAllEventRecords({});
-    // Return most recent events (sorted by timestamp descending, capped at limit)
-    const sorted = (records || [])
-      .sort((a, b) => (b.ts || 0) - (a.ts || 0))
-      .slice(0, limit);
-    res.json({ ok: true, events: sorted, total: sorted.length });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message, events: [] });
-  }
+app.get('/api/events/history', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+  const events = eventBus.getEventHistory(limit);
+  res.json({ ok: true, events, total: events.length });
 });
 
 // DELETE /api/events - Clear all events (useful for testing/debugging)
